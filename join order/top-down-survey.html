@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top-Down Join Order Search：前因后果与核心算法</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #7c3aed;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85; color: var(--text); background: var(--bg);
+    max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; }
+  h2 {
+    font-size: 1.35rem; margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem; border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .callout {
+    border-left: 4px solid var(--accent); background: #f5f3ff;
+    padding: 0.7rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; font-size: 0.95rem;
+  }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.info { border-left-color: #10b981; background: #ecfdf5; }
+  .callout.red { border-left-color: #ef4444; background: #fef2f2; }
+
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.85rem 1rem; overflow-x: auto;
+    font-family: "SF Mono","Fira Code","Consolas","Noto Sans Mono CJK SC",monospace;
+    font-size: 0.88rem; line-height: 1.55; margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono","Fira Code","Consolas","Noto Sans Mono CJK SC",monospace;
+    font-size: 0.9em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+  th, td { border: 1px solid var(--border); padding: 0.45rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 600; }
+  blockquote {
+    margin: 1rem 0; padding: 0.55rem 1rem;
+    border-left: 4px solid var(--border); color: #333; background: #fffdf7;
+  }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; }
+  .toc li { margin: 0.15rem 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .tag {
+    display: inline-block; background: #ede9fe; color: #5b21b6;
+    font-size: 0.78rem; padding: 0.15em 0.55em; border-radius: 4px;
+    margin-right: 0.3rem; font-family: sans-serif;
+  }
+  .tag.bu { background: #d1fae5; color: #065f46; }
+  .tag.td { background: #dbeafe; color: #1e40af; }
+  .key-term {
+    background: var(--highlight); padding: 0.1em 0.3em; border-radius: 2px;
+    font-weight: 600;
+  }
+  .paper-ref { white-space: nowrap; }
+  .cite {
+    font-size: 0.72em; vertical-align: super; line-height: 0;
+    margin-left: 0.12rem; font-family: sans-serif;
+  }
+  .cite a { color: var(--accent); }
+  #refs li:target {
+    background: #fef9c3; border-radius: 4px;
+  }
+  .math-display {
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+  .diagram {
+    margin: 1.4rem 0; padding: 1rem 1rem 0.6rem;
+    background: var(--fig-bg); border: 1px solid var(--border);
+    border-radius: 8px; text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.88rem; color: var(--muted); margin-top: 0.4rem;
+    font-style: italic;
+  }
+  .diagram svg { max-width: 100%; }
+  .footnotes {
+    font-size: 0.85rem; color: var(--muted);
+    border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 3rem;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+  }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true,
+    tags: 'ams'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+
+<h1>Top-Down Join Order Search：前因后果与核心算法</h1>
+<p class="meta">
+  <strong>主题：</strong>为什么查询优化器会从 bottom-up DP 走到 top-down search，以及 top-down join-order search 到底解决了什么问题。<br>
+  <strong>重点：</strong>Volcano/Cascades 的变换式 top-down search，DeHaan &amp; Tompa 的 top-down partitioning search，以及 branch-and-bound 剪枝。<br>
+  <strong>日期：</strong>2026-06-07
+</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#s1">问题背景</a></li>
+  <li><a href="#s2">为什么需要 top-down search</a></li>
+  <li><a href="#s3">第一条路线：Volcano/Cascades</a></li>
+  <li><a href="#s4">第二条路线：Top-Down Partitioning</a></li>
+  <li><a href="#s5">Branch-and-Bound：top-down 的真正优势</a></li>
+  <li><a href="#s6">放在一起看：各算法在解决什么</a></li>
+  <li><a href="#s7">读完应记住的结论</a></li>
+  <li><a href="#refs">参考文献</a></li>
+</ol>
+</nav>
+
+<hr>
+
+<h2 id="s1">1. 问题背景</h2>
+
+<p>一个 SPJ 查询块可以抽象成 <span class="key-term">join graph</span> \(G=(V,E)\)：顶点是表，边是 join predicate。优化器要做的是在所有等价 join tree 中找到代价最低的计划。</p>
+
+<table>
+  <thead><tr><th>概念</th><th>含义</th><th>为什么重要</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>CP-free</strong></td>
+      <td>每个 join 的左右两侧在 join graph 中必须连通，避免 Cartesian Product。</td>
+      <td>真实优化器通常默认避免 CP；难点也集中在如何只枚举有效划分。</td>
+    </tr>
+    <tr>
+      <td><strong>Interesting order / property</strong></td>
+      <td>父算子对子计划的物理属性需求，例如排序、分布、分区方式。</td>
+      <td>这是 top-down search 的天然入口：从根需求反推子需求。</td>
+    </tr>
+    <tr>
+      <td><strong>Naive transformation rules</strong></td>
+      <td>对当前表达式逐条尝试交换律、结合律等 transformation rule；只要 pattern 能匹配，就生成新的等价表达式。</td>
+      <td>这种做法很通用，但不会提前判断不同规则路径是否会到达同一个表达式，因此后文会出现大量 duplicate。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><span class="paper-ref">[Ono &amp; Lohman '90]<sup class="cite"><a href="#ref-ono-lohman-1990">[2]</a></sup></span> 给出了不同搜索空间的 join operator 数量下界；后来的 <span class="paper-ref">[Moerkotte &amp; Neumann '06]<sup class="cite"><a href="#ref-moerkotte-neumann-2006">[7]</a></sup></span> 又把“枚举算法最优”定义为：<strong>算法实际工作量应与必须枚举的 join operator 数量同阶，中间不能靠大量 generate-and-test 浪费时间。</strong></p>
+
+<div class="callout info">
+这篇文章后面所有“最优”都指[Moerkotte & Neumann '06]中提的最优：枚举过程没有额外指数级浪费。
+</div>
+
+<hr>
+
+<h2 id="s2">2. 为什么需要 top-down search</h2>
+
+<p>从历史上看，top-down search 不是凭空出现的，它是 bottom-up DP 暴露出几个工程问题后自然长出来的。</p>
+
+<h3>2.1 System R / DP 的优点与局限</h3>
+
+<p><span class="paper-ref">[Selinger et al. '79]<sup class="cite"><a href="#ref-selinger-1979">[1]</a></sup></span> 的核心思路是 bottom-up dynamic programming：先枚举单表计划，再枚举两表计划、三表计划，直到得到完整 join tree。这个思想非常稳定，今天依然是很多 join 枚举算法的基础。</p>
+
+<p>但 bottom-up DP 有几个不舒服的点：</p>
+
+<ul>
+  <li><strong>它先生成子问题，再考虑父需求。</strong> 如果最终计划只需要某些 physical property，bottom-up 往往还是要预先维护大量可能的 interesting orders。</li>
+  <li><strong>剪枝不自然。</strong> DP 表是按大小逐层填满的，想用一个已知上界提前停止某些分支，比 top-down 递归困难。</li>
+  <li><strong>CP-free bushy 枚举很容易退化成 generate-and-test。</strong> 枚举所有子集再检查连通性，会产生大量无效候选。</li>
+  <li><strong>优化器扩展成本高。</strong> 新算子、新属性、新 rewrite 通常要求改动枚举器本身。</li>
+</ul>
+
+<h3>2.2 Top-down search 的基本想法</h3>
+
+<p>Top-down search 可以理解成一个提问顺序的变化。</p>
+
+<p>Bottom-up DP 的问题是从最小子表达式开始，一层层把所有可能的中间结果都算出来。Top-down search 则从最终目标开始问：</p>
+
+<ul>
+  <li>根表达式需要满足什么物理属性？例如是否要求有序、分布方式是什么。</li>
+  <li>有哪些候选方式可以实现这个根表达式？例如先做哪一侧、使用什么 join 算子、是否需要 enforcer。</li>
+  <li>每个候选方式会对子表达式提出什么要求？例如左输入必须有序，右输入可以无序。</li>
+  <li>这些子表达式是否已经被优化过？如果优化过，就直接复用 memo 里的结果。</li>
+</ul>
+
+<p>换句话说，top-down search 不是“先把所有小计划都造出来”，而是“从最终计划的需求出发，只追问当前候选计划真正需要的子问题”。这使得搜索过程天然带有需求驱动（demand-driven）的味道。</p>
+
+<div class="callout info">
+这里要先区分两个层次：Volcano/Cascades 中的 top-down search 最早不是专门为 join order search 设计的，而是整个查询优化器选择物理执行计划的组织方式。Join order 只是优化器搜索空间中的一部分；同一个框架还要处理逻辑改写、物理算子选择、required property、enforcer 插入和代价剪枝。后文的 <span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 才是把 top-down 思路专门落到 join-order enumeration 上。
+</div>
+
+<table>
+  <thead><tr><th>问题</th><th>Top-down search 的回答</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>为什么从根开始？</td>
+      <td>因为根节点携带最终 required property，子问题应该由父需求推导出来。</td>
+    </tr>
+    <tr>
+      <td>为什么需要 memo？</td>
+      <td>不同候选计划可能到达同一个子表达式；memo 让这些子问题只优化一次。</td>
+    </tr>
+    <tr>
+      <td>为什么容易剪枝？</td>
+      <td>一旦已有完整计划作为上界，递归分支的下界若不可能更优，就可以停止探索。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+因此，top-down search 真正关心的不只是“从根往叶递归”这个控制流，而是三件事：memoization、property-driven optimization、以及 branch-and-bound。
+</div>
+
+<hr>
+
+<h2 id="s3">3. 第一条路线：Volcano/Cascades</h2>
+
+<p><span class="tag td">Top-Down</span> <span class="tag">Transformation Rules</span> <span class="tag">Memo</span></p>
+
+<p><span class="paper-ref">[Graefe &amp; McKenna '93]<sup class="cite"><a href="#ref-graefe-mckenna-1993">[3]</a></sup></span> 和 <span class="paper-ref">[Graefe '95]<sup class="cite"><a href="#ref-graefe-1995">[4]</a></sup></span> 是 top-down optimizer framework 的经典出处。这里的 top-down 指的是<strong>优化器如何从目标表达式和 required property 出发组织搜索</strong>，而不是某个 join-order 专用枚举算法。它们把优化器做成一个可扩展框架：逻辑等价变换、逻辑到物理实现、物理属性要求，都由规则系统表达。</p>
+
+<h3>3.1 Volcano 带来的抽象</h3>
+
+<table>
+  <thead><tr><th>抽象</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Memo / Group</strong></td>
+      <td>一个 group 存放逻辑上等价的表达式；memo 避免重复优化同一个逻辑子问题。</td>
+    </tr>
+    <tr>
+      <td><strong>Transformation rule</strong></td>
+      <td>产生逻辑等价表达式，例如 join 交换律、结合律。</td>
+    </tr>
+    <tr>
+      <td><strong>Implementation rule</strong></td>
+      <td>把逻辑表达式映射成物理算子，例如 logical join 到 hash join / nested-loop join。</td>
+    </tr>
+    <tr>
+      <td><strong>Enforcer</strong></td>
+      <td>插入 sort、exchange 等算子来满足 required physical property。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Volcano 的搜索通常被描述成 two-pass：先用 transformation rules 生成逻辑等价空间，再做物理实现和代价选择。Cascades 的改进在于把两阶段解耦，按需探索 memo，而不是先完整生成所有逻辑表达式。</p>
+
+<h3>3.2 变换式搜索的核心问题：duplicate</h3>
+
+<blockquote>
+  <p>关于duplicate问题的详细讨论，可以参考<span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span></p>
+</blockquote>
+
+<p>用规则探索 join order 时，一个表达式可以通过很多条规则序列到达。例如四表 join 中，交换律和结合律的不同组合可能反复生成同一个 join tree。<span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 证明，naive transformation rules 会让枚举复杂度从 memo 中唯一表达式的 \(O(3^n)\) 膨胀到 \(O(4^n)\)。</p>
+
+<p>这里的 <span class="key-term">duplicate</span> 指的是：某次 rule application 生成了一个 operator，但这个 operator 在 memo-structure 中已经存在，因此插入 memo 时会被检测出来并丢弃。换句话说，duplicate 不是“最终 memo 里存了两份相同内容”，而是“搜索过程中不同的 transformation rule 序列推导出了同一个 memo operator”。</p>
+
+<p>例如，若 memo 中已经有 \([ab]\bowtie[c]\)，后续又从 \([c]\bowtie[ab]\) 应用 commutativity 生成 \([ab]\bowtie[c]\)，这次生成就是 duplicate。它不会增加最终 memo 大小，但生成、查重和丢弃本身都会消耗搜索时间。</p>
+
+<h4>3.2.1 枚举复杂度</h4>
+
+<p>先看 memo 里真正需要保存多少唯一 join operator。对一个完全连接的 \(n\) 表查询，任意非空关系集合 \(S\) 都对应一个 <span class="key-term">equivalence class</span>。这里的 equivalence class 指一组逻辑上等价、产生同一个中间结果的表达式；在 join 枚举中，可以粗略理解为“同一个关系集合 \(S\) 的所有生成方式”。</p>
+
+<p>设总共有 \(n\) 张表。对任意一个大小为 \(k\) 的关系集合 \(S\)，也就是 \(|S|=k\)，一个 join operator 本质上就是把 \(S\) 拆成左右两个非空子集：</p>
+
+<div class="math-display">
+\[
+[L] \bowtie [R], \quad L \cup R = S,\quad L \cap R = \emptyset,\quad L \ne \emptyset,\quad R \ne \emptyset
+\]
+</div>
+
+<p>关键是：这里把 \(L \bowtie R\) 和 \(R \bowtie L\) 当成两个 ordered operator，所以只要选择左边 \(L\)，右边 \(R=S-L\) 就确定了。</p>
+
+<p>对大小为 \(k\) 的集合 \(S\)：\(S\) 的所有子集数量是 \(2^k\)；不能选空集作为左边，所以减 1；也不能选全集 \(S\) 作为左边，因为右边会为空，所以再减 1。因此一个大小为 \(k\) 的 equivalence class 里有 \(2^k-2\) 个 ordered join operator。</p>
+
+<p>接着，大小为 \(k\) 的关系集合 \(S\) 有多少个？从 \(n\) 张表里选 \(k\) 张，共有 \(C_{n}^{k}\) 个。所以所有大小为 \(k\) 的 class 贡献：</p>
+
+<div class="math-display">
+\[
+C_{n}^{k}(2^k-2)
+\]
+</div>
+
+<p>再对所有 \(k \ge 2\) 求和，因为单表没有 join operator：</p>
+
+<div class="math-display">
+\[
+\sum_{k=2}^{n} C_{n}^{k}(2^k-2)
+\]
+</div>
+
+<p>这个求和式可以继续化简：</p>
+
+<div class="math-display">
+\[
+\begin{aligned}
+\sum_{k=2}^{n} C_{n}^{k}(2^k-2)
+&= \sum_{k=2}^{n} C_{n}^{k}2^k - 2\sum_{k=2}^{n} C_{n}^{k} \\
+&= (3^n - 1 - 2n) - 2(2^n - 1 - n) \\
+&= 3^n - 2^{n+1} + 1 \\
+&= O(3^n)
+\end{aligned}
+\]
+</div>
+
+<p>这就是 memo 压缩后的空间规模：所有 bushy join tree 很多，但它们共享子表达式后，只需要 \(O(3^n)\) 个 operator 表示。</p>
+
+<blockquote>
+  <p><strong>混淆点：</strong>直觉上容易把 \([ABC]\bowtie[D]\) 计成“\([ABC]\) 内部 12 种结构 × \([D]\) 的 1 种结构”。但这个 \(12 \times 1\) 数的是完整 join tree 展开后的组合，不是 memo 中的 root join operator 数量。memo operator 只把 \([ABC]\bowtie[D]\) 看作一个根部 operator，其中 \([ABC]\) 是一个 group 引用；\([ABC]\) 内部的 alternatives 会在自己的 group 中单独枚举，cost 阶段再按 required property 记录 best plan。</p>
+</blockquote>
+
+<p>问题出在 naive rule exploration 的“生成过程”上。<span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 分析的最小 naive 规则集 RS-B1 只保留一个方向的 associativity 加 commutativity。考虑一个包含 \(k\) 个关系的 class，取其中一个 operator \([L]\bowtie[R]\)，其中 \(|L|=\ell\)。对这个 operator：</p>
+
+<ul>
+  <li>commutativity 会生成 1 个候选：\([R]\bowtie[L]\)；</li>
+  <li>associativity 需要从左输入 \([L]\) 中抽出具体 partial tree。\(L\) 的有序二分有 \(2^\ell-2\) 种，因此会生成 \(2^\ell-2\) 个候选；</li>
+  <li>所以这个 operator 会尝试生成 \(2^\ell-1\) 个候选。</li>
+</ul>
+
+<p>把同一个 \(k\)-relation class 中所有可能的左侧大小 \(\ell\) 加起来：</p>
+
+<div class="math-display">
+\[
+\sum_{\ell=1}^{k-1} C_{k}^{\ell}(2^\ell-1)
+  = (3^k - 1 - 2^k) - (2^k - 2)
+  = 3^k - 2^{k+1} + 1
+\]
+</div>
+
+<p>这是这个 class 在探索过程中“尝试生成”的候选数。但这个 class 中真正唯一的 operator 只有 \(2^k-2\) 个，而且其中一个 initial operator 是给定的，不是通过规则生成的。因此该 class 里产生的重复数为：</p>
+
+<div class="math-display">
+\[
+(3^k - 2^{k+1} + 1) - ((2^k-2)-1)
+  = 3^k - 3 \cdot 2^k + 4
+\]
+</div>
+
+<p>最后再对所有大小为 \(k\) 的 class 求和。大小为 \(k\) 的 class 有 \(C_{n}^{k}\) 个：</p>
+
+<div class="math-display">
+\[
+\sum_{k=2}^{n} C_{n}^{k}(3^k - 3 \cdot 2^k + 4)
+  = 4^n - 3^{n+1} + 2^{n+2} - n - 2
+  = O(4^n)
+\]
+</div>
+
+<div class="callout info">
+直觉上，memo 只需要 \(O(3^n)\)，但 naive transformation search 在“走图”。同一个 memo operator 可能从许多规则路径到达。路径数由“对每个 class 尝试从 child class 中抽 partial tree 再变换”放大，最后主导项变成 \(4^n\)。所以问题不是存不下，而是生成和查重太浪费。
+</div>
+
+<p>把上面的计数对象整理一下：</p>
+
+<table>
+  <thead>
+    <tr><th>计数对象</th><th>公式</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>一个 \(k\)-relation class 中的唯一 root operator</td>
+      <td>\(2^k - 2\)</td>
+      <td>把 \(S\) 拆成 ordered 的左右非空子集 \([L]\bowtie[R]\)。</td>
+    </tr>
+    <tr>
+      <td>所有大小为 \(k\) 的 class 对唯一 operator 的贡献</td>
+      <td>\(C_{n}^{k}(2^k - 2)\)</td>
+      <td>从 \(n\) 张表中选择大小为 \(k\) 的集合 \(S\)，再枚举其有序二分。</td>
+    </tr>
+    <tr>
+      <td>整个 memo 中的唯一 operator 数</td>
+      <td>\(\sum_{k=2}^{n} C_{n}^{k}(2^k-2)=3^n-2^{n+1}+1\)</td>
+      <td>memo 压缩后的空间规模，主项为 \(O(3^n)\)。</td>
+    </tr>
+    <tr>
+      <td>对单个 \([L]\bowtie[R]\) 应用 RS-B1 生成的候选</td>
+      <td>\(2^{\ell}-1,\quad \ell=|L|\)</td>
+      <td>commutativity 生成 1 个，associativity 从 \([L]\) 内部二分生成 \(2^\ell-2\) 个。</td>
+    </tr>
+    <tr>
+      <td>探索一个 \(k\)-relation class 时生成的候选总数</td>
+      <td>\(\sum_{\ell=1}^{k-1} C_{k}^{\ell}(2^\ell-1)=3^k-2^{k+1}+1\)</td>
+      <td>包含新 operator 和 duplicate，是 rule application 的尝试次数。</td>
+    </tr>
+    <tr>
+      <td>探索一个 \(k\)-relation class 时生成的 duplicate 数</td>
+      <td>\((3^k-2^{k+1}+1)-((2^k-2)-1)=3^k-3\cdot2^k+4\)</td>
+      <td>生成总数减去“需要由 rule 生成的唯一 operator”。初始 operator 是给定的，不算 rule 生成。</td>
+    </tr>
+    <tr>
+      <td>构造整个 memo 时的 duplicate 总数</td>
+      <td>\(\sum_{k=2}^{n} C_{n}^{k}(3^k-3\cdot2^k+4)=4^n-3^{n+1}+2^{n+2}-n-2\)</td>
+      <td>naive transformation search 的额外浪费，主项为 \(O(4^n)\)。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>线性树的重复推导要单独看，因为原论文 3.2 使用的是 RS-L1：swap 加 bottom commutativity。这里的计数口径是 Section 3.2 duplicate proof 中的 ordered operator 口径，和 Figure 2 / Theorem 2 的 compact left-linear operator 口径不同。</p>
+
+<table>
+  <thead>
+    <tr><th>计数对象</th><th>公式</th><th>解释</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>\(k\)-relation 子集 \(S\) 中的唯一 join operator 数量，\(|S|=k\)</td>
+      <td>\(2k\;(k&gt;2),\quad 2\;(k=2)\)</td>
+      <td>Linear tree 的 root join 至少一边是单表。若 \(k&gt;2\)，\([r]\bowtie[S-\{r\}]\) 有 \(k\) 种，\([S-\{r\}]\bowtie[r]\) 也有 \(k\) 种；\(k=2\) 时两类重叠，只剩两个方向。</td>
+    </tr>
+    <tr>
+      <td>完全连接的 \(n\) 表查询，整个 memo 中的唯一 operator 数</td>
+      <td>\(2C_{n}^{2}+\sum_{k=3}^{n}C_{n}^{k}(2k)=n2^n-n^2-n\)</td>
+      <td>按上面的 ordered operator 口径分段求和。\(k=2\) 每个 class 贡献 2 个 operator；\(k&gt;2\) 每个 class 贡献 \(2k\) 个 operator。</td>
+    </tr>
+    <tr>
+      <td>对 \([L]\bowtie[R]\) 应用 RS-L1 探索出的候选，\(|L|=\ell\)</td>
+      <td>\(\begin{cases}1,&amp;\ell=1\\ k,&amp;|R|=1\end{cases}\)</td>
+      <td>若左侧是单表，论文计为 1 个 commutativity candidate；若右侧是单表，则计为 1 个 commutativity candidate 加 \(k-1\) 个 swap candidate。</td>
+    </tr>
+    <tr>
+      <td>探索一个 \(k\)-relation class 时生成的候选总数，\(k&gt;2\)</td>
+      <td>\(k\cdot1+k\cdot k=k^2+k\)</td>
+      <td>\(|L|=1\) 的 operator 有 \(k\) 个，每个生成 1 个候选；\(|R|=1\) 的 operator 也有 \(k\) 个，每个生成 \(k\) 个候选。</td>
+    </tr>
+    <tr>
+      <td>探索一个 \(k\)-relation 子集时生成的 duplicate 数，\(k&gt;2\)</td>
+      <td>\((k^2+k)-(2k-1)=k^2-k+1\)</td>
+      <td>候选总数减去“需要由 rule 生成的唯一 operator”。该 class 中共有 \(2k\) 个唯一 operator，其中一个 initial operator 已经给定。</td>
+    </tr>
+    <tr>
+      <td>构造整个 memo 时的 duplicate 总数</td>
+      <td>\(C_{n}^{2}+\sum_{k=3}^{n}C_{n}^{k}(k^2-k+1)=2^n+n(n-1)2^{n-2}-1-n^2\)</td>
+      <td>\(k=2\) 是特例：每个二表 class 只产生 1 个 duplicate，所以先加 \(C_{n}^{2}\)；\(k&gt;2\) 使用 Lemma 2 的 \(k^2-k+1\)。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+为了避免混用口径，后文只要引用这张表，就默认是在讨论 Section 3.2 的 duplicate exploration。若讨论原论文 Theorem 2 / Figure 2 的 linear Op 数，则对应的是更紧的 compact 口径：\(C_{n}^{2}+\sum_{k=3}^{n}C_{n}^{k}k=n2^{n-1}-\frac{n(n+1)}{2}\)。
+</div>
+
+<h4>3.2.2 Derivation history 怎么消掉重复</h4>
+
+<p>他们的解决办法是 <span class="key-term">derivation history</span>：给每个 join operator 记录少量规则应用历史，避免沿着会产生重复的路径继续派生。这样在 bushy with CP 空间中可以达到 \(O(3^n)\) 级别。</p>
+
+<p>最简单的例子是 commutativity：如果 \(B\bowtie A\) 正是从 \(A\bowtie B\) 交换得到的，那就没有必要再对 \(B\bowtie A\) 应用 commutativity，否则立刻回到 \(A\bowtie B\)。<span class="paper-ref">[Pellenkoft et al. '96]<sup class="cite"><a href="#ref-pellenkoft-1996">[5]</a></sup></span><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 的方案把这个想法推广到 associativity / exchange 等规则：每个 operator 带一小段 rule applicability bit，表示哪些规则继续应用仍可能产生新东西。论文中的 bushy 规则集需要 4 个 bit。</p>
+
+<p>这等价于给每个表达式选出一条 canonical derivation path：以前同一个 operator 可能从多条路径抵达；现在只保留一条路径，其余路径在规则级别就被关掉。</p>
+
+<h4>3.2.3 为什么 CP-free cyclic query 会漏计划</h4>
+
+<div class="callout warn">
+关键点：derivation history 为了不重复，会给每个目标表达式只保留一条 canonical 派生路径。若这条路径中间经过了包含 CP 的表达式，而优化器又用 generate-and-test 提前丢弃 CP，那么最终那个 CP-free 计划就再也没有第二条路径可以到达。
+</div>
+
+<p><span class="paper-ref">[Pellenkoft et al. '96]<sup class="cite"><a href="#ref-pellenkoft-1996">[5]</a></sup></span><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 的 duplicate-free 方法对“包含 CP 的完整 bushy 空间”成立；他们另有针对 acyclic query graph 的机制，可以保证 CP-free plan 的唯一派生路径本身也 CP-free。<span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 后来指出，这个性质不能推广到任意 cyclic query graph：某些简单 cyclic query 中，至少一个 bushy CP-free plan 的唯一派生路径必须穿过一个含 CP 的中间 plan。</p>
+
+<p>可以用下面这个简化构造理解“为什么会穿过 CP”（它是机制示意，不是原论文图例）。假设当前 class 的 initial split 是：</p>
+
+<pre><code>L = {a,b,c},  R = {d,e,f}
+initial: [abc] ⋈ [def]</code></pre>
+
+<p>join graph 中有这些边：</p>
+
+<pre><code>a-b, b-c          -- L 内部连通
+d-e, e-f          -- R 内部连通
+a-d, c-d, b-e     -- 跨 L/R 的连接边</code></pre>
+
+<p>于是目标 bushy plan 的根划分可以是：</p>
+
+<pre><code>target: [acd] ⋈ [bef]</code></pre>
+
+<p>它是 CP-free 的：\([acd]\) 可以通过 \(a-d\)、\(c-d\) 连起来，\([bef]\) 可以通过 \(b-e\)、\(e-f\) 连起来，根部两侧也有边相连。</p>
+
+<p>但在 <span class="paper-ref">[Pellenkoft et al. '96]<sup class="cite"><a href="#ref-pellenkoft-1996">[5]</a></sup></span><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 的 duplicate-free derivation 中，这种“左右两边都混合了原来 \(L\) 和 \(R\) 的关系”的划分通常由 exchange 类规则生成。相对于 initial split：</p>
+
+<pre><code>[abc] ⋈ [def]
+  L 被切成 {a,c} 和 {b}
+  R 被切成 {d} 和 {e,f}
+  exchange 后得到 {a,c,d} ⋈ {b,e,f}</code></pre>
+
+<p>问题就在 \(L\) 的内部切分：\(\{a,c\}\) 本身没有 join predicate，是一个 disconnected subset。也就是说，canonical path 中需要先出现一个包含 \([a,c]\) 的中间 operator，而 \([a,c]\) 只能通过 Cartesian Product 得到。如果优化器为了 CP-free 搜索在这里把 \([a,c]\) 丢掉，后面的 exchange 就没有材料生成 \([acd]\bowtie[bef]\)。最终目标明明 CP-free，却被漏掉了。</p>
+
+<div class="callout">
+这不是说所有 transformation search 都必然无法处理 CP-free cyclic graph；更准确地说，是 <span class="paper-ref">[Pellenkoft et al. '96]<sup class="cite"><a href="#ref-pellenkoft-1996">[5]</a></sup></span><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 这种“用 derivation history 选唯一派生路径，然后用 generate-and-test 丢 CP”的组合不完整。<span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 的转向就是避开规则派生路径，直接枚举 CP-free partition。
+</div>
+
+<h3>3.3 Volcano/Cascades 在主线中的位置</h3>
+
+<p>Volcano/Cascades 解决的是“如何构造一个可扩展、property-driven 的 top-down optimizer”。但如果问题缩小到 join-order enumeration，尤其是 <strong>任意 join graph 上的 CP-free bushy 枚举</strong>，单靠 transformation rules 会遇到重复和完整性问题。</p>
+
+<p>所以后面的关键转向是：保留 top-down + memo 的好处，但不用 transformation rules 生成 join order，而是直接把目标关系集合递归划分成两个连通子图。</p>
+
+<hr>
+
+<h2 id="s4">4. 第二条路线：Top-Down Partitioning</h2>
+
+<p><span class="tag td">DeHaan &amp; Tompa 2007</span> <span class="tag">Partitioning</span> <span class="tag">Minimal Cut</span></p>
+
+<h3>4.1 从“变换表达式”改成“划分集合”</h3>
+
+<p><span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 的 top-down partitioning search 可以写成一个很直接的递归：</p>
+
+<pre><code>BestPlan(G, required_property):
+  if memo[G, required_property] exists:
+    return memo[G, required_property]
+
+  if |V(G)| == 1:
+    return best scan satisfying required_property
+
+  best = infinity
+  for each valid partition (G_left, G_right) in Partition(G):
+    for each physical join operator that can satisfy required_property:
+      left_property, right_property = derive child properties
+      left_plan  = BestPlan(G_left, left_property)
+      right_plan = BestPlan(G_right, right_property)
+      best = min(best, join(left_plan, right_plan))
+
+  memo[G, required_property] = best
+  return best</code></pre>
+
+<p>这里最关键的抽象就是 <code>Partition(G)</code>。搜索空间由它决定：</p>
+
+<table>
+  <thead><tr><th>搜索空间</th><th><code>Partition(G)</code> 怎么做</th><th>难点</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Left-deep with CP</td>
+      <td>每次从 \(V\) 中拿出一个基表作为右子。</td>
+      <td>简单。</td>
+    </tr>
+    <tr>
+      <td>Bushy with CP</td>
+      <td>枚举 \(V\) 的所有非空真子集。</td>
+      <td>数量大，但没有连通性约束。</td>
+    </tr>
+    <tr>
+      <td>Bushy CP-free</td>
+      <td>只输出左右两边都连通的划分。</td>
+      <td>不能枚举所有子集再检查，否则会指数级浪费。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>4.2 Naive partition 为什么不够</h3>
+
+<p>如果对 bushy CP-free 空间使用 naive generate-and-test：</p>
+
+<pre><code>for each non-empty proper subset S of V:
+  if G[S] is connected and G[V-S] is connected:
+    output (S, V-S)</code></pre>
+
+<p>这在 clique 上还可以接受，因为几乎每个子集都有效；但在 chain、tree、star 这类真实查询常见拓扑上，大量子集是不连通的。算法时间被无效候选主导，因而不是 enumeration optimal。</p>
+
+<h3>4.3 Minimal cut：把 CP-free 划分变成图论问题</h3>
+
+<p>核心观察是：在连通图 \(G\) 中，把顶点划分成两个连通诱导子图，等价于找到一个 <span class="key-term">minimal cut</span>。删除这个 cut 后，图正好分成两个连通分量；这两个分量就是一个 CP-free bushy join 的左右输入。</p>
+
+<figure class="diagram">
+<svg width="650" height="240" viewBox="0 0 650 240">
+  <text x="325" y="24" text-anchor="middle" font-size="13" font-weight="600" fill="#444">CP-free partition 与 minimal cut 的对应关系</text>
+
+  <circle cx="90" cy="120" r="22" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="90" y="126" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">A</text>
+  <circle cx="170" cy="120" r="22" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="170" y="126" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">B</text>
+  <circle cx="250" cy="120" r="22" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="250" y="126" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">C</text>
+  <circle cx="330" cy="120" r="22" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="330" y="126" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">D</text>
+  <circle cx="410" cy="120" r="22" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="410" y="126" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">E</text>
+  <line x1="112" y1="120" x2="148" y2="120" stroke="#7c3aed" stroke-width="2"/>
+  <line x1="192" y1="120" x2="228" y2="120" stroke="#7c3aed" stroke-width="2"/>
+  <line x1="272" y1="120" x2="308" y2="120" stroke="#ef4444" stroke-width="4" stroke-dasharray="7,4"/>
+  <line x1="352" y1="120" x2="388" y2="120" stroke="#7c3aed" stroke-width="2"/>
+
+  <path d="M60 165 C80 205, 255 205, 275 165" fill="none" stroke="#10b981" stroke-width="2"/>
+  <path d="M305 165 C325 205, 430 205, 450 165" fill="none" stroke="#10b981" stroke-width="2"/>
+  <text x="167" y="218" text-anchor="middle" font-size="12" fill="#065f46">left: {A,B,C} 连通</text>
+  <text x="377" y="218" text-anchor="middle" font-size="12" fill="#065f46">right: {D,E} 连通</text>
+  <text x="290" y="92" text-anchor="middle" font-size="12" fill="#dc2626">minimal cut</text>
+</svg>
+<figcaption>只枚举 minimal cut，就等于只枚举 CP-free bushy join 的有效划分。</figcaption>
+</figure>
+
+<p>这一步是论文的关键：它不再从所有子集里筛有效划分，而是直接生成有效划分。</p>
+
+<h3>4.4 MincutLazy：为什么它能最优</h3>
+
+<p>通用 minimal-cut 枚举算法仍可能开销过大。<span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 进一步利用 join graph 的特点：真实查询通常不是 clique，而是低环形度、接近 tree/chain/star 的稀疏图。因此他们用 <span class="key-term">biconnection tree</span> 辅助枚举 minimal cut，并尽可能复用父递归节点的树结构。</p>
+
+<pre><code>MincutLazy(S, T, old_bcc_tree):
+  if S is not empty:
+    output partition (S, V-S)
+
+  if S cannot be expanded:
+    return
+
+  if old_bcc_tree is still usable after removing S:
+    tree = old_bcc_tree
+  else:
+    tree = BuildBiconnectionTree(G[V-S])
+
+  for each pivot v selected from the tree:
+    MincutLazy(S expanded by v's descendant region, updated_T, tree)</code></pre>
+
+<p>它的要点不是某个实现细节，而是 <strong>lazy tree building</strong>：构建 biconnection tree 是 \(O(|E|)\) 的昂贵操作，只要父节点的树还能用，就不重建。</p>
+
+<table>
+  <thead><tr><th>图形态</th><th>MincutLazy 行为</th><th>直觉</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Tree / chain / star</td>
+      <td>每个 cut 摊销接近 \(O(1)\)。</td>
+      <td>图结构变化局部，父 biconnection tree 大量可复用。</td>
+    </tr>
+    <tr>
+      <td>低环形度真实查询</td>
+      <td>实验中显著快于 eager 重建。</td>
+      <td>真实 join graph 往往稀疏，不像 clique 那样处处强连通。</td>
+    </tr>
+    <tr>
+      <td>Clique</td>
+      <td>每个 cut 可能要 \(O(|E|)\)。</td>
+      <td>但 clique 中有效划分本来就是指数多，这个开销仍与下界相容。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>把 MincutLazy 接到 top-down partitioning 框架上，就得到 <strong>TBNmc</strong>：Top-down Bushy No-CP with Minimal Cuts。它是第一个在任意 join graph 上达到 enumeration optimal 的 top-down CP-free bushy join 枚举算法。</p>
+
+<div class="callout info">
+TBNmc 的意义不是“比 DPccp 穷举更快很多”。论文实验表明，在纯穷举情况下，它和 bottom-up DPccp/BBNccp 性能接近。它真正有价值的地方在于：保留了 top-down 框架对 property、剪枝、缓存和多阶段优化的友好性。
+</div>
+
+<hr>
+
+<h2 id="s5">5. Branch-and-Bound：top-down 的真正优势</h2>
+
+<p>Top-down search 从根需求开始递归，因此很适合携带“当前已知最好完整计划”的上界。如果某个分支的下界已经不可能打败上界，就可以停止探索。这就是 branch-and-bound。</p>
+
+<h3>5.1 两类 bound</h3>
+
+<table>
+  <thead>
+    <tr><th>策略</th><th>剪枝条件</th><th>问题</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Accumulated-cost bounding</strong></td>
+      <td>从根到当前节点已经累积的实际代价超过上界。</td>
+      <td>会把“预算”变成子问题上下文，破坏 memoization。</td>
+    </tr>
+    <tr>
+      <td><strong>Predicted-cost bounding</strong></td>
+      <td>基于逻辑属性预测该子表达式的最低可能代价，若已超过上界则剪枝。</td>
+      <td>依赖下界估计质量，但与 memoization 更相容。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>5.2 Accumulated-cost 与 memoization 的冲突</h3>
+
+<p><span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 一个很重要的发现是：accumulated-cost bounding 在带 memo 的 divide-and-conquer top-down search 中可能变慢。</p>
+
+<div class="callout red">
+同一个逻辑子图 \(G[S]\) 如果在“小预算”下优化失败，memo 里不能简单记成“无解”。之后另一路径可能带着更大的预算再次到达 \(G[S]\)，于是整个子树要重新优化。预算成为上下文后，memo key 不再只是 \((S, property)\)，复用能力被破坏。
+</div>
+
+<p>论文实验中，TBNmcA（只用 accumulated-cost）虽然减少了存储计划数量，但 CPU 时间反而比穷举 TBNmc 慢 10 到 100 倍；TBNmcP（predicted-cost）则能显著减少搜索时间。</p>
+
+<div class="callout">
+实践结论：在 memoized top-down search 中，优先使用 predicted-cost bounding。Accumulated-cost bounding 看起来直观，但很容易把递归子问题变成“带预算的子问题”，从而制造重复优化。
+</div>
+
+<hr>
+
+<h2 id="s6">6. 放在一起看：各算法在解决什么</h2>
+
+<table>
+  <thead>
+    <tr><th>阶段</th><th>代表工作</th><th>核心问题</th><th>留下的问题</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Cost-based DP 起点</td>
+      <td><span class="paper-ref">[Selinger et al. '79]<sup class="cite"><a href="#ref-selinger-1979">[1]</a></sup></span></td>
+      <td>用 bottom-up DP 搜索 left-deep join order。</td>
+      <td>搜索空间窄；property-driven 与剪枝不自然。</td>
+    </tr>
+    <tr>
+      <td>复杂度下界</td>
+      <td><span class="paper-ref">[Ono &amp; Lohman '90]<sup class="cite"><a href="#ref-ono-lohman-1990">[2]</a></sup></span></td>
+      <td>说明不同 join graph/topology 下必须枚举多少 join operator。</td>
+      <td>只给下界，不给具体最优算法。</td>
+    </tr>
+    <tr>
+      <td>变换式 top-down 框架</td>
+      <td><span class="paper-ref">[Graefe &amp; McKenna '93]<sup class="cite"><a href="#ref-graefe-mckenna-1993">[3]</a></sup></span>, <span class="paper-ref">[Graefe '95]<sup class="cite"><a href="#ref-graefe-1995">[4]</a></sup></span></td>
+      <td>用 memo + rules 做 extensible、property-driven optimizer。</td>
+      <td>join-order transformation 容易重复；CP-free 完整枚举困难。</td>
+    </tr>
+    <tr>
+      <td>变换式复杂度修复</td>
+      <td><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span></td>
+      <td>用 derivation history 把 naive rule 重复从 \(O(4^n)\) 降到 \(O(3^n)\)。</td>
+      <td>对 CP-free bushy 空间不完整。</td>
+    </tr>
+    <tr>
+      <td>Bottom-up CP-free 最优枚举</td>
+      <td><span class="paper-ref">[Moerkotte &amp; Neumann '06]<sup class="cite"><a href="#ref-moerkotte-neumann-2006">[7]</a></sup></span>, <span class="paper-ref">[Neumann &amp; Moerkotte '09]<sup class="cite"><a href="#ref-neumann-moerkotte-2009">[9]</a></sup></span></td>
+      <td>直接枚举 connected-subgraph complement pairs，避免 generate-and-test。</td>
+      <td>仍是 bottom-up；top-down 的 property 与 B&amp;B 优势不明显。</td>
+    </tr>
+    <tr>
+      <td>Top-down CP-free 最优枚举</td>
+      <td><span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> TBNmc</td>
+      <td>用 minimal cut 直接生成 CP-free partition，实现任意图最优 top-down 枚举。</td>
+      <td>工程实现比普通 DP 复杂；剪枝质量依赖 cost lower bound。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>6.1 三种方法的心智模型</h3>
+
+<table>
+  <thead><tr><th>方法</th><th>一句话理解</th><th>适合强调的能力</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="tag bu">Bottom-up DP</span></td>
+      <td>从单表开始，把所有小集合的最优计划拼成大集合。</td>
+      <td>穷举简单、结构稳定、容易证明。</td>
+    </tr>
+    <tr>
+      <td><span class="tag td">Transformational search</span></td>
+      <td>从目标表达式出发，用规则探索等价表达式和物理实现。</td>
+      <td>优化器框架可扩展、property-driven、适合 rewrite + implementation 统一管理。</td>
+    </tr>
+    <tr>
+      <td><span class="tag td">Top-down partitioning</span></td>
+      <td>从目标关系集合出发，递归划分成两个可 join 的连通子图。</td>
+      <td>保留 top-down 好处，同时在 CP-free join order 上达到最优枚举。</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2 id="s7">7. 读完应记住的结论</h2>
+
+<ol>
+  <li><strong>Top-down search 首先是一种优化器控制结构。</strong> 它从根表达式和 required property 出发，按需生成子问题，并用 memo 复用结果。</li>
+  <li><strong>Volcano/Cascades 是 top-down optimizer framework 的出处。</strong> 它们用 memo、group、rules、enforcer 把逻辑优化和物理优化组织起来。</li>
+  <li><strong>Transformational search 不等于 join-order 枚举的最终答案。</strong> 它可扩展，但 naive rules 有重复问题；<span class="paper-ref">[Pellenkoft et al. '96]<sup class="cite"><a href="#ref-pellenkoft-1996">[5]</a></sup></span><span class="paper-ref">[Pellenkoft et al. '97]<sup class="cite"><a href="#ref-pellenkoft-1997">[6]</a></sup></span> 的修复对 CP-free bushy 空间仍有限制。</li>
+  <li><strong><span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 的关键贡献是把 CP-free partition 规约为 minimal cut。</strong> 这样 top-down partitioning 不需要枚举所有子集再过滤，而是直接生成有效划分。</li>
+  <li><strong>TBNmc 的价值在于“最优枚举 + top-down 优势”。</strong> 穷举性能与 DPccp 接近，但更容易接入 required property、predicted-cost branch-and-bound、多阶段优化和缓存复用。</li>
+  <li><strong>Branch-and-bound 要小心 accumulated-cost。</strong> 在带 memo 的 top-down search 中，它可能破坏子问题复用；predicted-cost bounding 更安全。</li>
+</ol>
+
+<div class="callout info">
+如果只想抓主线，可以记成一句话：System R 证明了 cost-based DP 可行，Volcano/Cascades 把优化器变成 top-down rule engine，DPccp 解决了 bottom-up CP-free 最优枚举，<span class="paper-ref">[DeHaan &amp; Tompa '07]<sup class="cite"><a href="#ref-dehaan-tompa-2007">[8]</a></sup></span> 则用 minimal cut 把这个最优枚举能力带回 top-down search。
+</div>
+
+<hr>
+
+<h2 id="refs">参考文献</h2>
+
+<ol>
+  <li id="ref-selinger-1979">P. G. Selinger, M. M. Astrahan, D. D. Chamberlin, R. A. Lorie, and T. G. Price. <strong>"Access Path Selection in a Relational Database Management System."</strong> SIGMOD, 1979.</li>
+  <li id="ref-ono-lohman-1990">K. Ono and G. M. Lohman. <strong>"Measuring the Complexity of Join Enumeration in Query Optimization."</strong> VLDB, 1990.</li>
+  <li id="ref-graefe-mckenna-1993">G. Graefe and W. J. McKenna. <strong>"The Volcano Optimizer Generator: Extensibility and Efficient Search."</strong> ICDE, 1993.</li>
+  <li id="ref-graefe-1995">G. Graefe. <strong>"The Cascades Framework for Query Optimization."</strong> IEEE Data Engineering Bulletin, 1995.</li>
+  <li id="ref-pellenkoft-1996">A. Pellenkoft, C. A. Galindo-Legaria, and M. L. Kersten. <strong>"Duplicate-Free Generation of Alternatives in Transformation-Based Optimizers."</strong> DASFAA, 1996.</li>
+  <li id="ref-pellenkoft-1997">A. Pellenkoft, C. A. Galindo-Legaria, and M. L. Kersten. <strong>"The Complexity of Transformation-Based Join Enumeration."</strong> VLDB, 1997.</li>
+  <li id="ref-moerkotte-neumann-2006">G. Moerkotte and T. Neumann. <strong>"Analysis of Two Existing and One New Dynamic Programming Algorithm for the Generation of Optimal Bushy Join Trees without Cross Products."</strong> VLDB, 2006.</li>
+  <li id="ref-dehaan-tompa-2007"><strong>D. DeHaan and F. W. Tompa. "Optimal Top-Down Join Enumeration."</strong> SIGMOD, 2007.</li>
+  <li id="ref-neumann-moerkotte-2009">T. Neumann and G. Moerkotte. <strong>"Generating Optimal DPhyp Join Orders."</strong> Technical Report, 2009.</li>
+</ol>
+
+<div class="footnotes">
+  <p>本文是对原调研稿的重构版：删去过宽的历史展开、重复实验细节和大段术语表，将叙事集中到 top-down search 的动机、两条技术路线、核心算法与剪枝结论。</p>
+</div>
+
+</body>
+</html>

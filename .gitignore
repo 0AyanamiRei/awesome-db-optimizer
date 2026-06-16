@@ -1,2 +1,3 @@
 .worktrees/
-demos/volcano_join_reorder/build/
+build/
+demos/**/build/

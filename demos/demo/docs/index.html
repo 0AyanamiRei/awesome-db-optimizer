@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join Order Algorithm Laboratory — 文档</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --border: #e5e7eb;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --border: #334155; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 960px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.2rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.5rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; color: var(--accent-2); }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: center; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🔬 Join Order Algorithm Laboratory</h1>
+<p>
+  <code>demos/volcano_join_reorder</code> —
+  一个面向学习与研究的 Join Order 优化算法对比实验室。
+  在同一套基础设施（JoinGraph / Cost Model / StatsCatalog）上运行三种不同的 Join Enumeration 策略，
+  输出可对比的搜索轨迹（Search Trace），直观展示各算法的核心行为。
+</p>
+
+<nav class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#motivation">设计动机</a></li>
+  <li><a href="#architecture">项目架构</a></li>
+  <li><a href="#datastructures">核心数据结构</a></li>
+  <li><a href="#costmodel">代价模型</a></li>
+  <li><a href="#strategy-bottomup">策略一：BottomUpDP</a></li>
+  <li><a href="#strategy-transform">策略二：Transformational</a></li>
+  <li><a href="#strategy-topdown">策略三：TopDownPartitioning</a></li>
+  <li><a href="#testcases">测试用例</a></li>
+  <li><a href="#cli">CLI 使用</a></li>
+  <li><a href="#exporter">导出与可视化</a></li>
+  <li><a href="#tests">单元测试</a></li>
+  <li><a href="#build">构建与运行</a></li>
+  <li><a href="#comparison">策略对比与关键洞察</a></li>
+  <li><a href="#references">参考文献</a></li>
+</ol>
+</nav>
+
+<!-- ================================================================== -->
+<h2 id="motivation">1. 设计动机</h2>
+
+<p>
+  Join Order 优化是查询优化中最核心的问题之一。不同的枚举策略——自底向上 DP、
+  基于变换规则的备忘录搜索、以及自顶向下的递归划分——在搜索效率、重复工作、
+  缓存友好度等方面有着本质差异。然而在完整的生产级优化器中，这些差异往往被工程技巧
+  （如启发式剪枝、cost-based pruning）掩盖，不利于初学者理解算法本质。
+</p>
+
+<p>本项目将 Join Order 枚举抽象为以下问题：</p>
+
+<div class="callout callout-info">
+<strong>输入：</strong>一个 <em>Join Graph</em> G = (V, E)，其中 V 是关系（表）的集合，
+E 是 join predicate 的集合。每个关系有行数 (rows) 和扫描代价 (scan_cost)，
+每条边有选择率 (selectivity)。<br>
+<strong>输出：</strong>一棵代价最小的 Join Tree（物理执行计划），满足所有 predicate 且无笛卡尔积。
+</div>
+
+<p>实验室的设计目标：</p>
+<ul>
+  <li><strong>可对比</strong> — 统一接口 + 统一 Trace，跨策略对比一目了然</li>
+  <li><strong>教学友好</strong> — 简单透明的 cost model，算法伪代码与实现一一对应</li>
+  <li><strong>自包含</strong> — 纯 C++20，无外部依赖（零 DuckDB / PostgreSQL / CMU 依赖）</li>
+  <li><strong>可扩展</strong> — 新策略只需实现 <code>SearchStrategy</code> 接口</li>
+  <li><strong>可复现</strong> — C++ 代码构造测试用例，结果确定且可重复</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="architecture">2. 项目架构</h2>
+
+<h3>2.1 目录结构</h3>
+
+<pre><code>demos/volcano_join_reorder/
+├── CMakeLists.txt
+├── docs/
+│   └── index.html                          ← 本文档
+├── include/volcano/
+│   ├── types.hpp                           ← JoinGraph, RelSet, PhysicalPlan, RequiredProperty
+│   ├── types_fwd.hpp                       ← 前向声明
+│   ├── stats.hpp                           ← StatsCatalog (统计信息)
+│   ├── search_strategy.hpp                 ← SearchStrategy 抽象接口 + SearchTrace
+│   ├── cost_model.hpp                      ← 统一代价模型
+│   ├── bottom_up_dp.hpp                    ← 策略一
+│   ├── transformational.hpp                ← 策略二
+│   ├── top_down_partitioning.hpp           ← 策略三
+│   └── exporter.hpp                        ← DOT/JSON 导出
+├── src/
+│   ├── types.cpp                           ← JoinGraph 连通性 / partition 逻辑
+│   ├── stats.cpp                           ← StatsCatalog + JSON 解析（可选）
+│   ├── cost_model.cpp                      ← MakeScan / MakeSort / MakeJoin
+│   ├── bottom_up_dp.cpp                    ← 策略一实现
+│   ├── transformational.cpp                ← 策略二实现
+│   ├── top_down_partitioning.cpp           ← 策略三实现
+│   ├── exporter.cpp                        ← 导出实现
+│   └── main.cpp                            ← CLI 入口
+├── examples/
+│   ├── test_cases.hpp                      ← 预定义测试用例声明
+│   └── test_cases.cpp                      ← 预定义测试用例实现
+└── tests/
+    └── test_join_search.cpp                ← 10 个单元测试</code></pre>
+
+<h3>2.2 CMake 库分层</h3>
+
+<table>
+  <tr><th>Target</th><th>内容</th><th>依赖</th></tr>
+  <tr>
+    <td><code>volcano_core</code></td>
+    <td><code>cost_model</code> + <code>exporter</code> + <code>stats</code> + <code>types</code></td>
+    <td>（无）</td>
+  </tr>
+  <tr>
+    <td><code>volcano_strategies</code></td>
+    <td><code>bottom_up_dp</code> + <code>transformational</code> + <code>top_down_partitioning</code></td>
+    <td><code>volcano_core</code></td>
+  </tr>
+  <tr>
+    <td><code>volcano_test_cases</code></td>
+    <td><code>test_cases</code></td>
+    <td><code>volcano_core</code></td>
+  </tr>
+  <tr>
+    <td><code>volcano_join_demo</code></td>
+    <td><code>main.cpp</code>（CLI 可执行文件）</td>
+    <td><code>volcano_strategies</code> + <code>volcano_test_cases</code></td>
+  </tr>
+  <tr>
+    <td><code>volcano_tests</code></td>
+    <td><code>test_join_search.cpp</code>（测试可执行文件）</td>
+    <td><code>volcano_strategies</code> + <code>volcano_test_cases</code></td>
+  </tr>
+</table>
+
+<h3>2.3 核心接口</h3>
+
+<pre><code>// ── 统一的、跨策略可对比的搜索轨迹 ──
+struct SearchTrace {
+  uint64_t partitions_explored;     // 考虑了多少 (L,R) 划分
+  uint64_t partitions_rejected;      // 被连通性 / CP-free 检查拒绝
+  uint64_t plans_costed;            // 实际计算了代价的计划数
+  uint64_t cache_hits;              // memoization 缓存命中
+  uint64_t plans_cached;            // 缓存的唯一 (RelSet, Property) 条目数
+
+  // 策略特定（不适用则为 0）
+  uint64_t duplicates_generated;    // Transformational: 重复逻辑表达式
+  uint64_t rule_applications;       // Transformational: 规则应用次数
+  uint64_t dp_cells_filled;         // BottomUpDP: DP 表条目
+  uint64_t branches_pruned;         // TopDown: branch-and-bound 剪枝
+
+  double   best_cost;               // 最优计划的代价
+};
+
+// ── 搜索策略抽象接口 ──
+class SearchStrategy {
+public:
+  virtual ~SearchStrategy() = default;
+  virtual std::string Name() const = 0;
+  virtual SearchResult Search(const JoinGraph&amp; graph,
+                               const StatsCatalog&amp; stats,
+                               const RequiredProperty&amp; property) = 0;
+};</code></pre>
+
+<p>
+  每个策略实现 <code>SearchStrategy</code> 接口，
+  返回 <code>SearchResult { PhysicalPlan best_plan; SearchTrace trace; }</code>。
+  通过统一的 <code>SearchTrace</code>，三种策略可以在同一张对比表中直接比较。
+</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4><span class="badge badge-accent">设计原则</span> 策略独立</h4>
+    <p>每个策略是独立的 .hpp/.cpp，不共享搜索状态（memo / cache / work queue），
+    确保 trace 数据纯粹反映该策略的行为。</p>
+  </div>
+  <div class="card">
+    <h4><span class="badge badge-accent">设计原则</span> Cost Model 共享</h4>
+    <p>三个策略调用同一个 <code>MakeScan</code> / <code>MakeSort</code> / <code>MakeJoin</code>，
+    保证同一 query 不同策略得到相同 best cost（正确性验证）。</p>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="datastructures">3. 核心数据结构</h2>
+
+<h3>3.1 RelSet — 关系集合的位掩码表示</h3>
+
+<pre><code>using RelSet = std::uint64_t;  // 最多 63 个关系</code></pre>
+
+<p>
+  每个关系分配一个唯一的 id (0…n-1)，关系集合用位掩码表示。
+  例如：<code>RelSet{1} &lt;&lt; 0 | RelSet{1} &lt;&lt; 2</code> 表示 {a, c}。
+  这允许 O(1) 的集合并/交/差和极快的哈希。
+</p>
+
+<h3>3.2 JoinGraph — 查询图</h3>
+
+<pre><code>class JoinGraph {
+  // 添加关系
+  std::size_t AddRelation(alias, table_name, rows, scan_cost);
+  // 添加 join predicate
+  void AddPredicate({left_alias, left_col}, {right_alias, right_col}, selectivity);
+
+  // 关键查询方法
+  RelSet  FullSet() const;                        // 全集的位掩码
+  bool    IsConnected(RelSet set) const;          // BFS 连通性检查
+  bool    IsValidJoinSplit(L, R, allow_cp) const; // CP-free 划分检查
+  bool    HasPredicateAcross(L, R) const;         // 两子集间是否有 join 边
+  std::vector&lt;JoinPredicate&gt; CrossingPredicates(L, R) const; // 跨子集 predicate
+  double  CrossingSelectivity(L, R) const;       // 跨子集选择率乘积
+};</code></pre>
+
+<div class="callout callout-info">
+<strong>IsValidJoinSplit 的检查逻辑：</strong>
+<ol>
+  <li><code>L ≠ ∅ ∧ R ≠ ∅ ∧ L ∩ R = ∅</code></li>
+  <li><code>IsConnected(L)</code> — 左侧子图连通（避免笛卡尔积子计划）</li>
+  <li><code>IsConnected(R)</code> — 右侧子图连通</li>
+  <li><code>HasPredicateAcross(L, R)</code> — 两子集间至少有一条 join predicate</li>
+</ol>
+如果 <code>allow_cross_products = true</code>，跳过检查 2-4，允许笛卡尔积。
+</div>
+
+<h3>3.3 RequiredProperty — 所需物理属性</h3>
+
+<pre><code>enum class PropertyKind { Any, Sorted };
+
+struct RequiredProperty {
+  PropertyKind kind;
+  ColumnRef sort_key;   // 仅在 kind == Sorted 时有效
+
+  static RequiredProperty Any();
+  static RequiredProperty Sorted(ColumnRef key);
+};</code></pre>
+
+<p>
+  物理属性目前支持两种：<strong>Any</strong>（无要求，可接受任何物理计划）和
+  <strong>Sorted(alias.column)</strong>（要求输出按指定列排序）。
+  Sorted 属性驱动了 <em>interesting orders</em> 机制——即使上层不需要排序，
+  中间结果也可能需要排序以支持 MergeJoin。
+</p>
+
+<h3>3.4 PhysicalPlan — 物理执行计划</h3>
+
+<pre><code>enum class PhysicalOp { SeqScan, HashJoin, NestedLoopJoin, MergeJoin, SortEnforcer };
+
+struct PhysicalPlan {
+  PhysicalOp           op;
+  RelSet               relset;           // 该计划覆盖的关系集合
+  double               rows;             // 估计输出行数
+  double               cost;             // 累计代价
+  RequiredProperty     property;         // 该计划提供的物理属性
+  std::string          relation_alias;   // SeqScan 时的关系别名
+  std::optional&lt;JoinPredicate&gt; predicate;// Join 时的 predicate
+  PlanPtr              left, right;      // Join 的左右子树
+  PlanPtr              child;            // SortEnforcer 的子计划
+};</code></pre>
+
+<p>
+  <code>SortEnforcer</code> 是一个特殊的物理算子——它不做数据操作，
+  只是在对子计划施加排序需求并累加排序代价。SortEnforcer 的存在使得优化器可以在需要时
+  "支付排序代价"来启用 MergeJoin。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="costmodel">4. 代价模型</h2>
+
+<p>所有策略共享同一套简单、确定性的教学代价公式：</p>
+
+<h4>SeqScan</h4>
+<pre><code>scan.cost  = relation.scan_cost
+scan.rows  = relation.rows
+scan.prop  = Any             // SeqScan 总是提供 Any 属性</code></pre>
+
+<h4>SortEnforcer</h4>
+<pre><code>sort.cost  = child.cost + child.rows · log₂(child.rows + 1)
+sort.rows  = child.rows
+sort.prop  = Sorted(sort_key)</code></pre>
+
+<h4>Join 算子</h4>
+<pre><code>join.rows = left.rows · right.rows · crossing_selectivity(L, R)
+
+HashJoin:         join.cost = left.cost + right.cost + left.rows + right.rows + join.rows
+NestedLoopJoin:   join.cost = left.cost + right.cost + left.rows · right.rows
+MergeJoin:        join.cost = left.cost + right.cost + left.rows + right.rows
+                  (要求 left.prop = Sorted(key_L) ∧ right.prop = Sorted(key_R))</code></pre>
+
+<div class="callout callout-warn">
+<strong>教学性质：</strong>此代价模型刻意简化，不反映真实数据库的 I/O、内存、并行等细节。
+HashJoin 的 cost 略高于 MergeJoin（因为多了 <code>join.rows</code> 项），
+但 HashJoin 不需要排序子节点，在大多数 toy 数据上反而是最优方案。
+MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="strategy-bottomup">5. 策略一：BottomUpDP（自底向上动态规划）</h2>
+
+<p>
+  <span class="badge badge-accent">System R 风格</span>
+  <span class="badge badge-purple">无 duplicate</span>
+  <span class="badge badge-amber">无剪枝</span>
+</p>
+
+<p>
+  这是最经典的 Join Order 优化方法，源自 System R (Selinger et al., SIGMOD 1979)。
+  从单表开始，按关系集合大小递增，系统性地填充 DP 表。
+</p>
+
+<h3>5.1 算法</h3>
+
+<pre><code>BottomUpDP::Search(graph, stats, property):
+  cache: map&lt;string, PlanPtr&gt;           // key = "relset|property"
+
+  // Step 1: 播种 — 单表扫描
+  for each relation r:
+    cache["{r}|Any"] = SeqScan(r)
+    // 对每个涉及 r 的 predicate 列，也生成 SortEnforcer 变体
+    for each predicate where r participates:
+      cache["{r}|Sorted(col)"] = SortEnforcer(SeqScan(r), col)
+
+  // Step 2: 自底向上，按大小递增
+  for size = 2 to n:
+    for each set S of |S| = size:                // 遍历所有 n 选 size 个子集
+      for each valid partition (L, R) of S:       // L ∪ R = S, L ∩ R = ∅, CP-free
+        partitions_explored++
+
+        // 对每个 partition，尝试三种 join 方法
+
+        // HashJoin (子节点提供 Any)
+        plan = HashJoin(cache[L|Any], cache[R|Any])
+        plans_costed++; update cache[S|Any]
+
+        // NestedLoopJoin (子节点提供 Any)
+        plan = NLJ(cache[L|Any], cache[R|Any])
+        plans_costed++; update cache[S|Any]
+
+        // MergeJoin (子节点提供 Sorted)
+        plan = MergeJoin(cache[L|Sorted(keyL)], cache[R|Sorted(keyR)])
+        plans_costed++; update cache[S|Any]
+
+        // 对每个 predicate，也尝试生成 Sorted 输出
+        for each predicate across (L, R):
+          plan = MergeJoin(cache[L|Sorted(keyL)], cache[R|Sorted(keyR)])
+          plans_costed++; update cache[S|Sorted(key)]
+
+      // Interesting Orders: 对每个 relation 的 predicate 列，SortEnforcer(cache[S|Any])
+      for each predicate column col involving a relation in S:
+        cached[S|Sorted(col)] = min(cached[S|Sorted(col)], SortEnforcer(cached[S|Any]))
+
+      dp_cells_filled = cache.size()
+
+  return cache["full_set|required_property"]</code></pre>
+
+<h3>5.2 核心特征</h3>
+
+<table>
+  <tr><th>特征</th><th>行为</th></tr>
+  <tr><td>枚举顺序</td><td>自底向上 — 小集合 → 大集合</td></tr>
+  <tr><td>重复表达式</td><td><strong>零</strong> — 每个 (RelSet, Property) 只填充一次最优计划</td></tr>
+  <tr><td>Cache Hits</td><td><strong>零</strong> — 所有子问题都已预计算，无需按需查找</td></tr>
+  <tr><td>搜索完整性</td><td>穷举所有 valid partition，保证最优</td></tr>
+  <tr><td>空间复杂度</td><td>O(3<sup>n</sup>) — 所有子集的 all valid partition</td></tr>
+  <tr><td>Interesting Orders</td><td>对每个子集，为所有可能的排序列生成 SortEnforcer</td></tr>
+  <tr><td>缺点</td><td>预先计算所有子问题，即使某些最终不需要；无剪枝</td></tr>
+</table>
+
+<p>
+  <code>dp_cells_filled</code> 计数器追踪 DP 表中填充了多少条目。
+  由于 Interesting Orders，实际条目数 &gt; 2<sup>n</sup>（每个子集可能有多个 property 变体）。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="strategy-transform">6. 策略二：Transformational（变换式搜索 / Volcano 风格）</h2>
+
+<p>
+  <span class="badge badge-accent">Volcano/Cascades 风格</span>
+  <span class="badge badge-purple">O(4ⁿ) duplicate 演示</span>
+  <span class="badge badge-amber">两阶段搜索</span>
+</p>
+
+<h3>6.1 两阶段架构</h3>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│  Phase 1: BuildMemo (bottom-up 逻辑枚举 + 变换规则)              │
+│                                                                 │
+│   Seed: Get(a), Get(b), Get(c)     // 单表                       │
+│          Join({a},{b}), Join({b},{c}), Join({a,c},{b})          │
+│            ↓                                                     │
+│   Work-queue 循环:                                               │
+│     ApplyRules(expr):                                           │
+│       Commutativity:    J(L,R) → J(R,L)                         │
+│       Associativity:    J(J(A,B),C) → J(A,J(B,C)), J(B,J(A,C)) │
+│       每个新表达式 insert 到 Memo（有 dedup）                     │
+│            ↓                                                     │
+│   输出: MemoStore { Group[{a}], Group[{b}], Group[{c}],          │
+│                     Group[{a,b}], Group[{b,c}], Group[{a,b,c}] } │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 2: Top-down physical optimization on the pre-built memo  │
+│                                                                 │
+│   OptimizeGroup(full_set, property):                            │
+│     for each logical expression in group:                       │
+│       递归优化子表达式 → 物理 join → 取最优                       │
+│     return best physical plan                                   │
+│                                                                 │
+│   使用 (RelSet, Property) → PlanPtr 缓存避免重复物理优化        │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+<h3>6.2 MemoStore 去重机制</h3>
+
+<pre><code>class MemoStore {
+  std::vector&lt;MemoGroup&gt; groups_;                    // 按 RelSet 分组的逻辑表达式
+  std::unordered_set&lt;std::string&gt; expression_keys_;  // 全局去重集合
+
+  bool InsertExpression(expr, trace, count_duplicate):
+    key = expr.Key()    // 例如 "J:3:4" 表示 Join({a},{b})
+    if key ∈ expression_keys_:
+      if count_duplicate: trace.duplicates_generated++     // ★ 计数重复
+      return false
+    expression_keys_.insert(key)
+    groups_[relset].expressions.push_back(expr)
+    return true
+};</code></pre>
+
+<h3>6.3 变换规则</h3>
+
+<table>
+  <tr><th>规则</th><th>模式</th><th>生成</th></tr>
+  <tr>
+    <td>Commutativity</td>
+    <td>Join(L, R)</td>
+    <td>→ Join(R, L)</td>
+  </tr>
+  <tr>
+    <td>Left Associativity</td>
+    <td>Join(Join(A,B), C)</td>
+    <td>→ Join(A, Join(B,C))<br>→ Join(B, Join(A,C))</td>
+  </tr>
+  <tr>
+    <td>Right Associativity</td>
+    <td>Join(A, Join(B,C))</td>
+    <td>→ Join(Join(A,B), C)<br>→ Join(Join(A,C), B)</td>
+  </tr>
+</table>
+
+<div class="callout callout-warn">
+<strong>O(4<sup>n</sup>) 重复问题 (Pellenkoft et al., VLDB 1997)：</strong><br>
+变换规则从不同的路径生成相同的逻辑表达式。例如 Join({a},{b,c}) 既可以从初始枚举产生，
+也可以从 Join({a,b},{c}) 经 associativity 产生。去重机制阻止了 memo 膨胀，
+但每次去重都是一次无效工作 — 这正是 <code>duplicates_generated</code> 计数器展示的内容。
+4 表查询的 duplicates 远超 3 表，增长趋势清晰地展示了 O(4<sup>n</sup>) 行为。
+</div>
+
+<h3>6.4 核心特征</h3>
+
+<table>
+  <tr><th>特征</th><th>行为</th></tr>
+  <tr><td>Memo 构建</td><td>自底向上枚举 + work-queue 应用变换规则</td></tr>
+  <tr><td>重复表达式</td><td><strong>显著 &gt; 0</strong> — 核心演示价值，随 n 指数增长</td></tr>
+  <tr><td>物理优化</td><td>在预构建 memo 上自顶向下递归优化</td></tr>
+  <tr><td>Cache Hits</td><td>物理优化阶段有缓存命中，避免重复物理代价计算</td></tr>
+  <tr><td>优缺点</td><td>文法声明式（规则可扩展），但 memo 构建的 repeat work 是本质缺陷</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="strategy-topdown">7. 策略三：TopDownPartitioning（自顶向下划分搜索）</h2>
+
+<p>
+  <span class="badge badge-accent">DeHaan &amp; Tompa 2007 风格</span>
+  <span class="badge badge-purple">Memoization + Branch-and-Bound</span>
+  <span class="badge badge-amber">Naive 或 Mincut 划分</span>
+</p>
+
+<p>
+  直接从全关系集开始，递归地将其划分为两个连通子图。
+  每个子问题以 <code>(RelSet, RequiredProperty)</code> 为 key 缓存结果。
+  利用预测代价下界进行 branch-and-bound 剪枝。
+</p>
+
+<h3>7.1 算法</h3>
+
+<pre><code>TopDownPartitioning::Search(graph, stats, property):
+  cache.clear()
+  return BestPlan(graph, graph.FullSet(), property, trace)
+
+
+BestPlan(S, required_prop):
+  // ── Memoization ──
+  key = "S|required_prop"
+  if key in cache:
+    cache_hits++; return cache[key]
+
+  // ── Base case: 单表 ──
+  if |S| == 1:
+    plan = SeqScan(the_relation)
+    plans_costed++
+    if required_prop.IsSorted():
+      plan = SortEnforcer(plan, sort_key)   // 或返回 null（无法满足）
+    cache[key] = plan; return plan
+
+  // ── 递归: 枚举划分 ──
+  best = null
+  for each valid partition (L, R) of S:      // ← EnumeratePartitions
+    partitions_explored++
+
+    // Branch-and-bound: 先检查下界
+    if LowerBound(L) + LowerBound(R) + 1 ≥ best.cost:
+      branches_pruned++; continue
+
+    // HashJoin
+    plan = HashJoin(BestPlan(L, Any), BestPlan(R, Any))
+    plans_costed++; update(best)
+
+    // NestedLoopJoin
+    plan = NLJ(BestPlan(L, Any), BestPlan(R, Any))
+    plans_costed++; update(best)
+
+    // MergeJoin (需要 sorted 子节点)
+    plan = MergeJoin(BestPlan(L, Sorted(keyL)), BestPlan(R, Sorted(keyR)))
+    plans_costed++; update(best)
+
+  // SortEnforcer fallback (对 Sorted property)
+  if required_prop.IsSorted():
+    plan = SortEnforcer(BestPlan(S, Any), sort_key)
+    plans_costed++; update(best)
+
+  cache[key] = best; return best</code></pre>
+
+<h3>7.2 划分策略</h3>
+
+<table>
+  <tr><th>策略</th><th>方法</th><th>复杂度</th><th>状态</th></tr>
+  <tr>
+    <td><code>PartitionStrategy::Naive</code></td>
+    <td>枚举所有非空真子集 → 过滤连通性</td>
+    <td>O(2<sup>|S|</sup>) per call</td>
+    <td><span class="badge badge-accent">已实现</span></td>
+  </tr>
+  <tr>
+    <td><code>PartitionStrategy::Mincut</code></td>
+    <td>用 biconnection tree 直接生成 CP-free 划分</td>
+    <td>O(|V|·|E|) per call</td>
+    <td><span class="badge badge-amber">第二期</span></td>
+  </tr>
+</table>
+
+<h3>7.3 Branch-and-Bound 下界</h3>
+
+<pre><code>LowerBound(S, property):
+  return sum of scan_cost for each relation in S   // 忽略 property（简单下界）
+  // 这个下界总是 ≤ 真实最优代价，保证正确性
+  // 但可能太弱无法触发剪枝（对 toy 数据尤甚）</code></pre>
+
+<h3>7.4 核心特征</h3>
+
+<table>
+  <tr><th>特征</th><th>行为</th></tr>
+  <tr><td>搜索方向</td><td><strong>自顶向下</strong> — 从全集递归到单表</td></tr>
+  <tr><td>Memoization</td><td>(RelSet, Property) → 最优计划，高 <code>cache_hits</code></td></tr>
+  <tr><td>剪枝</td><td>预测代价 branch-and-bound，效果取决于下界质量</td></tr>
+  <tr><td>重复工作</td><td><strong>零</strong> — 每个 (RelSet, Property) 只计算一次</td></tr>
+  <tr><td>按需计算</td><td>只计算实际需要的子问题（vs. BottomUp 全预计算）</td></tr>
+  <tr><td>优点</td><td>自然的 branch-and-bound 结构，可扩展下界</td></tr>
+  <tr><td>缺点</td><td>Naive 划分枚举仍为 O(2<sup>n</sup>)，需 Mincut 优化</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="testcases">8. 预定义测试用例</h2>
+
+<p>测试用例完全在 C++ 代码中构造（<code>examples/test_cases.cpp</code>），无需 SQL 或 JSON 输入。</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>two_table</h4>
+    <p>两表 join，最简非平凡 case</p>
+    <pre>a(1000) ⋈ b(100)
+ON a.x = b.x (sel=0.01)</pre>
+  </div>
+  <div class="card">
+    <h4>chain_3</h4>
+    <p>三表链式 join</p>
+    <pre>a(1000) → b(100) → c(500)
+a.x=b.x (0.01)
+b.y=c.y (0.05)</pre>
+  </div>
+  <div class="card">
+    <h4>chain_4</h4>
+    <p>四表链式 join</p>
+    <pre>a(1000) → b(100) → c(500) → d(200)
+a.x=b.x, b.y=c.y, c.z=d.z</pre>
+  </div>
+  <div class="card">
+    <h4>star_4</h4>
+    <p>星型 schema (1 fact + 3 dims)</p>
+    <pre>center(10000) — a(100)
+center(10000) — b(200)
+center(10000) — c(300)</pre>
+  </div>
+  <div class="card">
+    <h4>cycle_4</h4>
+    <p>四表环状 join（循环）</p>
+    <pre>a → b → c → d → a
+all rows=100, sel=0.1</pre>
+  </div>
+  <div class="card">
+    <h4>clique_4</h4>
+    <p>四表完全图（最坏情况）</p>
+    <pre>a-b, a-c, a-d,
+b-c, b-d, c-d
+all rows=100, sel=0.1</pre>
+  </div>
+</div>
+
+<p>
+  测试用例通过静态注册表 <code>TestCase::Lookup(name)</code> 访问，
+  在程序启动时自动注册（利用静态初始化）。
+  每个用例包含完整的 <code>JoinGraph</code> + <code>StatsCatalog</code>。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="cli">9. CLI 使用</h2>
+
+<h3>9.1 列出所有测试用例</h3>
+<pre><code>$ ./volcano_join_demo --list
+
+Available test cases:
+  two_table — Two tables: a(1000 rows) JOIN b(100 rows) ON a.x=b.x, sel=0.01
+  chain_3   — Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05)
+  chain_4   — Chain: a-b-c-d, 4 tables
+  star_4    — Star: center(10000) connected to a(100), b(200), c(300)
+  cycle_4   — Cycle: a-b-c-d-a, all rows=100, all sel=0.1
+  clique_4  — Clique: 4 fully-connected tables, all rows=100, all sel=0.1</code></pre>
+
+<h3>9.2 运行单个策略</h3>
+<pre><code>$ ./volcano_join_demo --strategy topdown --test chain_3
+
+Strategy: TopDown(Naive)
+Test: chain_3 (Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05))
+Relations: 3, Predicates: 2
+Required property: Any
+
+Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(a), SeqScan(b))), Sort[c.y](SeqScan(c)))
+Cost: 19651.56
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     ...
+TopDown(Naive)      7             1             25            7             ...</code></pre>
+
+<h3>9.3 对比模式（--compare）</h3>
+<pre><code>$ ./volcano_join_demo --compare --test cycle_4
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+BottomUpDP          18            7             162           0             69            0             0             69            0             14800.00
+Transformational    0             0             136           132           68            164           196           0             0             14800.00
+TopDown(Naive)      43            9             86            52            56            0             0             0             0             14800.00</code></pre>
+
+<h3>9.4 导出模式</h3>
+<pre><code>$ ./volcano_join_demo --compare --test clique_4 --out /tmp/out
+
+# 生成:
+#   /tmp/out/bottomup/join_graph.dot
+#   /tmp/out/bottomup/best_plan.dot
+#   /tmp/out/bottomup/BottomUpDP_trace.json
+#   /tmp/out/transform/join_graph.dot
+#   /tmp/out/transform/best_plan.dot
+#   /tmp/out/transform/Transformational_trace.json
+#   /tmp/out/topdown/join_graph.dot
+#   /tmp/out/topdown/best_plan.dot
+#   /tmp/out/topdown/TopDown_Naive__trace.json
+#   /tmp/out/strategy_comparison.json</code></pre>
+
+<h3>9.5 物理属性需求</h3>
+<pre><code># 默认 required=Any
+$ ./volcano_join_demo --strategy topdown --test chain_3
+
+# 请求最终结果按 b.x 排序
+$ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</code></pre>
+
+<h3>9.6 CLI 参数完整列表</h3>
+
+<table>
+  <tr><th>参数</th><th>说明</th></tr>
+  <tr><td><code>--strategy &lt;name&gt;</code></td><td>策略：<code>bottomup</code> | <code>transform</code> | <code>topdown</code></td></tr>
+  <tr><td><code>--test &lt;name&gt;</code></td><td>测试用例名（<code>--list</code> 查看全部）</td></tr>
+  <tr><td><code>--compare</code></td><td>运行全部三种策略并输出对比表</td></tr>
+  <tr><td><code>--out &lt;dir&gt;</code></td><td>导出 DOT/JSON 的输出目录</td></tr>
+  <tr><td><code>--required &lt;prop&gt;</code></td><td>默认 <code>any</code>；或 <code>sorted:alias.column</code></td></tr>
+  <tr><td><code>--list</code></td><td>列出所有测试用例</td></tr>
+  <tr><td><code>--help</code>, <code>-h</code></td><td>显示帮助</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="exporter">10. 导出与可视化</h2>
+
+<h3>10.1 DOT 文件</h3>
+
+<p>每次运行可以生成两个 Graphviz DOT 文件：</p>
+
+<table>
+  <tr><th>文件</th><th>内容</th><th>可视化工具</th></tr>
+  <tr>
+    <td><code>join_graph.dot</code></td>
+    <td>Join Graph 的无向图表示（关系为节点，predicate 为边，标注 rows/sel）</td>
+    <td><code>dot -Tsvg join_graph.dot -o graph.svg</code></td>
+  </tr>
+  <tr>
+    <td><code>best_plan.dot</code></td>
+    <td>最优物理计划的树结构（内部节点为算子，叶节点为 SeqScan）</td>
+    <td><code>dot -Tsvg best_plan.dot -o plan.svg</code></td>
+  </tr>
+</table>
+
+<p>DOT 节点标注了算子类型、行数估计、代价和物理属性。</p>
+
+<h3>10.2 Trace JSON</h3>
+
+<p>每个策略导出一个 <code>&lt;策略名&gt;_trace.json</code>：</p>
+
+<pre><code>{
+  "strategy": "TopDown(Naive)",
+  "partitions_explored": 43,
+  "partitions_rejected": 9,
+  "plans_costed": 86,
+  "cache_hits": 52,
+  "plans_cached": 56,
+  "duplicates_generated": 0,
+  "rule_applications": 0,
+  "dp_cells_filled": 0,
+  "branches_pruned": 0,
+  "best_cost": 14800.00
+}</code></pre>
+
+<h3>10.3 对比 JSON</h3>
+
+<p><code>strategy_comparison.json</code> 汇总了所有策略的结果：</p>
+
+<pre><code>{
+  "query": "cycle_4",
+  "strategies": [
+    { "name": "BottomUpDP",        ... },
+    { "name": "Transformational",  ... },
+    { "name": "TopDown(Naive)",    ... }
+  ]
+}</code></pre>
+
+<!-- ================================================================== -->
+<h2 id="tests">11. 单元测试</h2>
+
+<p>
+  <code>tests/test_join_search.cpp</code> 包含 <strong>10 个测试</strong>，
+  覆盖正确性、跨策略一致性和算法特性。
+</p>
+
+<table>
+  <tr><th>#</th><th>测试</th><th>验证内容</th></tr>
+  <tr>
+    <td>1</td><td>Two-table query</td>
+    <td>两表 join 的基础正确性，plan 存在且代价 &gt; 0</td>
+  </tr>
+  <tr>
+    <td>2</td><td>Cross-strategy (chain_3)</td>
+    <td>三种策略同 query 同 cost；Transformational 有 duplicates &amp; rules；TopDown 有 cache hits</td>
+  </tr>
+  <tr>
+    <td>3</td><td>Cross-strategy (star_4)</td>
+    <td>同上，星型查询</td>
+  </tr>
+  <tr>
+    <td>4</td><td>Cross-strategy (cycle_4)</td>
+    <td>同上，环状查询（有循环 join predicate）</td>
+  </tr>
+  <tr>
+    <td>5</td><td>Cross-strategy (clique_4)</td>
+    <td>同上，完全图查询（最复杂拓扑）</td>
+  </tr>
+  <tr>
+    <td>6</td><td>Sorted property</td>
+    <td>Sorted(b.x) 方案存在且代价 ≥ Any 方案的代价</td>
+  </tr>
+  <tr>
+    <td>7</td><td>Duplicates scale</td>
+    <td>chain_4 的 duplicates ≥ chain_3（更多关系 → 更多重复）</td>
+  </tr>
+  <tr>
+    <td>8</td><td>Branch-and-bound</td>
+    <td>TopDown 在 clique_4 上找到正确计划（剪枝可能为 0 如果下界太弱）</td>
+  </tr>
+  <tr>
+    <td>9</td><td>JoinGraph 连通性</td>
+    <td>IsConnected / IsValidJoinSplit 函数正确性</td>
+  </tr>
+  <tr>
+    <td>10</td><td>All test cases load</td>
+    <td>所有预定义测试用例可加载，关系数 ∈ [2, 63]</td>
+  </tr>
+</table>
+
+<p>关键不变量：<strong>三种策略在同一 query 上必须产生相同的最优代价</strong>。这是正确性的基本保证。</p>
+
+<!-- ================================================================== -->
+<h2 id="build">12. 构建与运行</h2>
+
+<pre><code># 构建
+cmake -S demos/volcano_join_reorder -B demos/volcano_join_reorder/build \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build demos/volcano_join_reorder/build -j$(nproc)
+
+# 运行所有测试
+ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
+
+# 运行 demo
+./demos/volcano_join_reorder/build/volcano_join_demo --compare --test cycle_4</code></pre>
+
+<div class="callout callout-info">
+<strong>零外部依赖：</strong>项目仅依赖 C++20 标准库和 CMake ≥ 3.20。
+不需要 DuckDB、PostgreSQL、Boost 或任何其他第三方库。
+这也使得该项目非常适合作为教学示例 — 学生可以在任何有 C++20 编译器的环境上立即构建运行。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="comparison">13. 策略对比与关键洞察</h2>
+
+<h3>13.1 对比维度</h3>
+
+<table>
+  <tr><th>维度</th><th>BottomUpDP</th><th>Transformational</th><th>TopDown(Naive)</th></tr>
+  <tr>
+    <td>搜索方向</td>
+    <td>Bottom-up<br>(singleton → full)</td>
+    <td>Bottom-up 逻辑 + Top-down 物理</td>
+    <td>Top-down<br>(full → singleton)</td>
+  </tr>
+  <tr>
+    <td>枚举机制</td>
+    <td>按 size 递增遍历所有子集</td>
+    <td>子集枚举 + 变换规则 work-queue</td>
+    <td>递归划分（Naive 枚举子集）</td>
+  </tr>
+  <tr>
+    <td>重复工作</td>
+    <td>✅ 无</td>
+    <td>❌ duplicates &gt; 0 (O(4<sup>n</sup>))</td>
+    <td>✅ 无（memoization）</td>
+  </tr>
+  <tr>
+    <td>Cache 行为</td>
+    <td>cache_hits = 0<br>（全预计算）</td>
+    <td>cache_hits &gt; 0<br>（物理优化阶段）</td>
+    <td>cache_hits &gt; 0<br>（按需 + 命中多）</td>
+  </tr>
+  <tr>
+    <td>剪枝</td>
+    <td>无</td>
+    <td>无</td>
+    <td>Branch-and-Bound<br>（下界质量决定效果）</td>
+  </tr>
+  <tr>
+    <td>预计算</td>
+    <td>全量（所有子问题）</td>
+    <td>全量（所有逻辑表达式）</td>
+    <td>按需（仅被递归到的）</td>
+  </tr>
+  <tr>
+    <td>可扩展性</td>
+    <td>规则不易添加</td>
+    <td>✅ 变换规则易扩展</td>
+    <td>划分策略可替换</td>
+  </tr>
+</table>
+
+<h3>13.2 核心洞察</h3>
+
+<h4>1. 变换式搜索的 O(4<sup>n</sup>) 问题</h4>
+<p>
+  从 <code>--compare</code> 输出可直观看到：4 表 clique，Transformational 产生了
+  <strong>164 duplicates + 196 rule attempts</strong>，而 BottomUpDP 和 TopDown 均为 0。
+  这直接展示了 Pellenkoft et al. (VLDB 1997) 的分析 — associativity/commutativity 规则
+  在自底向上的逻辑枚举框架中，会产生指数级的重复推导。
+</p>
+
+<h4>2. 自顶向下 + Memoization 的优势</h4>
+<p>
+  TopDown 在 cache_hits 上显著 &gt; 0（如 clique_4: 60 hits for 4 relations），
+  因为 (RelSet, Property) 组合在递归树的多个分支中重复出现。
+  这是自顶向下方法的自然优势 — 按需计算 + 自动去重。
+</p>
+
+<h4>3. 自底向上的"over-computation"</h4>
+<p>
+  BottomUpDP 对所有子集预计算了计划（dp_cells_filled &gt; 0），即使某些最终不需要。
+  如果查询有剪枝机会（如按某些属性排序），TopDown 可以通过 branch-and-bound 避免
+  计算无用的子问题。
+</p>
+
+<h4>4. Branch-and-Bound 的实际效果</h4>
+<p>
+  当前 <code>LowerBound</code> 实现非常保守（仅 sum of scan costs），
+  在 toy 数据上可能不触发剪枝（branches_pruned = 0）。
+  这正是教学目的 — 展示下界质量对剪枝效果的直接影响。
+  改进下界（如加入最小 join cost 估计、利用 predicate selectivity）
+  是理解 advanced top-down optimization 的下一步。
+</p>
+
+<h3>13.3 典型对比输出（cycle_4）</h3>
+
+<div class="diagram">
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+BottomUpDP          18          7         162           0          69       0      0     69       0       14800
+Transformational     0          0         136         132          68     164    196      0       0       14800
+TopDown(Naive)      43          9          86          52          56       0      0      0       0       14800
+</div>
+
+<p>关键观察：</p>
+<ul>
+  <li><strong>BestCost 一致</strong>（14800）→ 三种策略都找到了真正的最优计划 ✅</li>
+  <li><strong>Transformational 的 Duplicates 164</strong> — 虽然有去重，但每次去重都是一次失败的 insert 尝试</li>
+  <li><strong>TopDown 的 PlansCosted 最少</strong>（86 vs 162）— 因为只有被递归到的路径才被评估</li>
+  <li><strong>TopDown 的 PartitionsExplored 最大</strong>（43）— Naive 划分枚举从全集开始，子集枚举开销大；Mincut 版本将大幅降低此值</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="references">14. 参考文献</h2>
+
+<ol>
+  <li>
+    <strong>P. G. Selinger et al.</strong> —
+    <em>"Access Path Selection in a Relational Database Management System."</em>
+    SIGMOD 1979.
+    <br><small>System R 风格自底向上 DP 的起源。</small>
+  </li>
+  <li>
+    <strong>G. Graefe, W. J. McKenna</strong> —
+    <em>"The Volcano Optimizer Generator: Extensibility and Efficient Search."</em>
+    ICDE 1993.
+    <br><small>Volcano/Cascades 变换式搜索架构，memo + rules。</small>
+  </li>
+  <li>
+    <strong>A. Pellenkoft, C. A. Galindo-Legaria, M. L. Kersten</strong> —
+    <em>"The Complexity of Transformation-Based Join Enumeration."</em>
+    VLDB 1997.
+    <br><small>证明了变换式 join 枚举在最坏情况下可产生 O(4<sup>n</sup>) 个重复表达式。</small>
+  </li>
+  <li>
+    <strong>D. DeHaan, F. W. Tompa</strong> —
+    <em>"Optimal Top-Down Join Enumeration."</em>
+    SIGMOD 2007.
+    <br><small>自顶向下划分搜索 + minimal cut (biconnection tree) 实现最优 CP-free bushy join 枚举。</small>
+  </li>
+  <li>
+    <strong>G. Moerkotte, T. Neumann</strong> —
+    <em>"Analysis of Two Existing and One New Dynamic Programming Algorithm for the Generation of Optimal Bushy Join Trees without Cross Products."</em>
+    VLDB 2006.
+    <br><small>DPccp / DPsub 算法——目前最快的自底向上 CP-free bushy join 枚举。</small>
+  </li>
+</ol>
+
+<hr>
+
+<p style="text-align:center; color:var(--subtle); font-size:.9rem;">
+  <strong>Join Order Algorithm Laboratory</strong> —
+  <code>demos/volcano_join_reorder</code> —
+  构建于 C++20，无外部依赖。
+  <br>
+  <a href="https://github.com/0AyanamiRei/awesome-db-optimizer">awesome-db-optimizer</a>
+</p>
+
+</body>
+</html>

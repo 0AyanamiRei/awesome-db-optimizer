@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>基于变换的 Join 枚举复杂度</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --muted: #666;
+    --accent: #2563eb;
+    --border: #e0dcd0;
+    --paper: #fffefb;
+    --code-bg: #f3f1eb;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.86;
+    font-size: 17px;
+  }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+    background: var(--paper);
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 2rem;
+    line-height: 1.28;
+    margin: 0 0 0.8rem;
+    text-align: center;
+  }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.6rem 0 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid var(--accent);
+  }
+  h3 {
+    font-size: 1.08rem;
+    margin: 1.7rem 0 0.55rem;
+    color: #333;
+  }
+  p { margin: 0.68rem 0; }
+  .authors, .affiliations, .meta {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  .authors {
+    color: var(--text);
+    margin: 0.9rem 0 0.5rem;
+  }
+  .authors span {
+    display: inline-block;
+    margin: 0.2rem 0.75rem;
+  }
+  .toc {
+    margin: 1.4rem 0 2rem;
+    padding: 1rem 1.2rem;
+    border: 1px solid var(--border);
+    background: #fdfdfc;
+    border-radius: 6px;
+  }
+  .toc ol { margin: 0.4rem 0 0.2rem 1.4rem; columns: 2; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.65rem 0.9rem;
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+    color: #4b5563;
+    font-size: 0.95rem;
+  }
+  blockquote p { margin: 0; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", Consolas, "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", Consolas, "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+  .term {
+    font-weight: 600;
+    background: #fef9c3;
+    padding: 0.08em 0.25em;
+    border-radius: 3px;
+  }
+  .theorem {
+    border-left: 4px solid var(--accent);
+    background: #eff6ff;
+    padding: 0.72rem 0.95rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .proof {
+    color: #374151;
+  }
+  figure {
+    margin: 1.5rem 0;
+    padding: 1rem 1rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--fig-bg);
+    text-align: center;
+  }
+  figure img {
+    max-width: 100%;
+    height: auto;
+    background: white;
+  }
+  figcaption {
+    margin-top: 0.5rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-style: italic;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f0ede5; }
+  ul, ol { margin: 0.5rem 0 0.5rem 1.55rem; }
+  li { margin: 0.28rem 0; }
+  .refs li { margin-bottom: 0.65rem; }
+  @media (max-width: 640px) {
+    main { padding: 1.5rem 1rem 4rem; }
+    body { font-size: 16px; }
+    .toc ol { columns: 1; }
+  }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+<main>
+
+<h1>基于变换的 Join 枚举复杂度</h1>
+
+<p class="authors">
+  <span>Arjan Pellenkoft</span>
+  <span>César A. Galindo-Legaria</span>
+  <span>Martin Kersten</span>
+</p>
+<p class="affiliations">
+  Microsoft, One Microsoft Way, Redmond, WA 98052-6399 USA<br>
+  CWI, P. O. Box 94079, 1090 GB Amsterdam, The Netherlands
+</p>
+
+<nav class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#abstract">摘要</a></li>
+    <li><a href="#s1">1 Introduction</a></li>
+    <li><a href="#s2">2 Memoizing</a></li>
+    <li><a href="#s3">3 Duplicates</a></li>
+    <li><a href="#s4">4 Duplicate-free join order generation</a></li>
+    <li><a href="#s5">5 Experiments</a></li>
+    <li><a href="#s6">6 Conclusion</a></li>
+    <li><a href="#refs">References</a></li>
+  </ol>
+</nav>
+
+<h2 id="abstract">摘要</h2>
+
+<p>使用 <span class="term">transformation rules</span> 穷尽搜索空间的查询优化器，通常会对每一个 <span class="term">alternative</span> 应用所有可能规则，并在不再产生新信息时停止。McKenna 提出的 <span class="term">memoizing structure</span> 可以提高公共子表达式的复用，从而显著提升搜索效率。不过仍有一个问题没有回答：基于变换的枚举过程本身复杂度是多少？特别是当 relation 数量为 \(n\) 时，它是否能达到 Ono 和 Lohman 给出的 \(O(3^n)\) 下界？</p>
+
+<p>本文考察 <span class="term">transformation-based enumeration</span> 中的 <span class="term">duplicates</span> 问题。一般来说，不同的 transformation rule 序列可能最终推导出同一个元素，优化器必须检测并丢弃这些由多条路径生成的重复元素。我们证明，用于 join 的常规 commutativity / associativity rules 会生成 \(O(4^n)\) 个 duplicate operator。随后，我们在通用 transformation-based framework 内提出一种避免生成 duplicate 的方案，使 join enumeration 达到 \(O(3^n)\) 下界。实验表明，在一个 8-table query 上，避免 duplicate 而不是检测 duplicate，可以让优化时间提升最多约 5 倍。</p>
+
+<blockquote><p>&gt; 注：这里保留 alternative、transformation rule、duplicate、operator 等关键术语，因为它们在优化器论文中有固定含义。</p></blockquote>
+
+<h2 id="s1">1 Introduction</h2>
+
+<p>Ono 和 Lohman 通过计数 bottom-up dynamic programming 枚举算法必须考虑的 join operator 数量，给出了 join enumeration 复杂度的下界：对于 \(n\) 个 relation，复杂度为 \(O(3^n)\)。这个算法用于 System R 和 Starburst 中，对 join enumeration 很高效，代码也经过了长期测试和调优。</p>
+
+<p>但是，优化器还有一个重要需求：除了 join 之外，还需要重排其他 operator，并根据 cost estimation 在新 alternative 中选择。例如，虽然该算法已经被扩展来处理 aggregates、outerjoins 和 expensive functions，但对于哪些 operator 可以由 enumeration algorithm 处理，并没有精确刻画。也没有一种通用技术可以保证下一次扩展仍然可行。举例来说，为了处理 subqueries，Seshadri 等人提出了一个聪明的迭代过程，其中扩展的 bottom-up enumeration 模块会被调用多次；但这样就被迫超出了 bottom-up enumeration framework。</p>
+
+<p>支持 <span class="term">rule-based, extensible optimizers</span> 的人会说，问题来自缺乏 extensibility，并会指出过去十年发展出的许多研究原型。但普遍看法是，extensible optimizers 的代价是效率。</p>
+
+<p>那么，transformation-based enumeration 能否和 bottom-up enumeration 一样高效？这个问题在实践中很重要，因为 Tandem 和 Microsoft 等公司正在为新的 DBMS 版本采用 transformation-based optimization engine。目标是在通过 transformation rules 生成 alternative 的同时，对它们做 cost-based selection，并且不在 join reordering 上付出性能代价。</p>
+
+<p>本文证明，在 transformation-based system 中，join enumeration 可以达到 Ono 和 Lohman 给出的下界。这个结果依赖两个关键组件：Volcano 中提出的 <span class="term">memoizing structure</span>，以及一种避免生成 duplicate expression 的新技术。</p>
+
+<p>Duplicates 是 transformation-based enumeration 中的主要问题。为了生成完整空间，通用算法通常会持续应用所有可能的 transformation rules，直到不再产生新元素。为了理解这个问题，可以把 search space 看成一张图：每个 solution 是一个 node，transformation rules 在 node 之间提供 edge。这样，生成 duplicate 的数量取决于空间中的 node 数 \(n\)，以及每个 node 的 neighbor 数 \(b_i\)。naive 地应用规则直到没有新元素时，会生成 \(\sum_i b_i\) 个 alternative。为简单起见，假设每个 alternative 的 neighbor 数相同，即 \(b=b_1=b_2=\cdots=b_n\)，则会生成 \(b\cdot n\) 个 alternative。由于空间中只有 \(n\) 个 node，duplicate 数量为 \(n(b-1)\)。也就是说，随着 \(b\) 增大，生成的 tree 中只有 \(1/b\) 是新的，大部分都是 duplicate。</p>
+
+<h3>术语说明</h3>
+
+<p>“rule-based optimizer literature” 中的一些术语常被宽泛地用于不同特性的系统。本文区分 <span class="term">bottom-up join enumeration</span> 和 <span class="term">transformation-based enumeration</span>。后者指：从一个 initial algebraic expression 出发，应用一组 transformation rules，生成所有可达的 alternative，再用 estimated cost 选择其中一个。</p>
+
+<p>本文组织如下。第 2 节描述 Volcano 的 MEMO structure，并分析它的复杂度。第 3 节识别并量化 duplicates 问题。第 4 节说明如何在不生成 duplicate 的情况下枚举 join orders。第 5 节通过实验展示避免 duplicate 带来的性能提升。第 6 节给出结论。</p>
+
+<h2 id="s2">2 Memoizing</h2>
+
+<p>一个空间的 transformation-based enumeration 过程如下：维护一个 visited plans 集合，该集合一开始只包含一个 input expression。对 visited plans 应用所有 transformation rules；如果结果是新的，就加入集合。当无法再生成新 plan 时，这组 transformation 的完整 search space 就探索完毕。对于 join reordering，常用来生成 bushy space 的 transformations 是：</p>
+
+<pre><code>Rule set RS-B0:
+
+Right Associativity:
+  (A ⋈ B) ⋈ C  =>  A ⋈ (B ⋈ C)
+
+Left Associativity:
+  A ⋈ (B ⋈ C)  =>  (A ⋈ B) ⋈ C
+
+Commutativity:
+  A ⋈ B        =>  B ⋈ A</code></pre>
+
+<p>这个集合是冗余的，因为删除 Right Associativity 或 Left Associativity 后仍能生成同样的空间。本文使用最小集合 <span class="term">RS-B1</span>，其中只包含 Left Associativity 和 Commutativity。对于 left linear trees，基于 Swami 和 Gupta 的最小规则集为：</p>
+
+<pre><code>Rule set RS-L1:
+
+Swap:
+  (A ⋈ B) ⋈ C  =>  (A ⋈ C) ⋈ B
+
+Bottom Commutativity:
+  B1 ⋈ B2      =>  B2 ⋈ B1
+  其中 B1、B2 是 base table。</code></pre>
+
+<p>由于生成的 alternative 之间可能有大量 common subexpression，Volcano 引入了一种节省内存的搜索空间表示方式，灵感来自 memoizing。</p>
+
+<h3>2.1 Volcano 中的 MEMO-structure</h3>
+
+<p><span class="term">MEMO structure</span> 通过最大化 common sub-tree 的共享，来最小化内存需求。它的核心思想是：只使用共享副本，避免复制 subtree。MEMO 被组织成一个 equivalence classes 网络。每个 class 包含一组产生相同中间结果的 operator。operator 的输入是 class，可以理解为“该 class 中任意 operator 都可以作为输入”。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-1.png" alt="Figure 1: MEMO-structure">
+  <figcaption>Figure 1：四表完全连接查询 \(a,b,c,d\) 的完整 MEMO-structure，编码 bushy join orders。</figcaption>
+</figure>
+
+<p>Figure 1 展示了一个四表 join query 的 MEMO-structure。为方便起见，class 用它们 join 的 relation 标记。join space 的 memo structure 与 Vance 和 Maier 工作中维护的结构非常接近。MEMO-structure 帮助缓解 alternative join orders 的组合爆炸。对于 \(n\) 个 relation 的完全连接 join query，ordered bushy 和 linear join trees 的数量已知很大；7 个 relation 的完全连接查询已经会产生 5040 个 linear join trees 和 665280 个 bushy join trees。Figure 2 给出了若干查询规模下 join trees 和 operator 数量。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-2.png" alt="Figure 2: join tree counts">
+  <figcaption>Figure 2：完全连接 \(n\)-relation 查询中，ordered bushy / linear join trees 与 operator 数量。</figcaption>
+</figure>
+
+<h3>2.2 MEMO-structure 的大小</h3>
+
+<p>相对于 feasible evaluation orders 的总数，MEMO-structure 是一种高效的 search space 编码方式。下面两个 theorem 给出 MEMO-structure 为编码所有 bushy 或 left linear join trees 所需的 join operator 数量。这里假设 query graph 是完全连接的。</p>
+
+<div class="theorem">Theorem 1：对于 \(n\) 个 relation 的完全连接查询，MEMO-structure 需要 \(3^n-2^{n+1}+1\) 个 operator 来编码 bushy join trees 的空间。</div>
+
+<div class="theorem">Theorem 2：对于 \(n>2\) 的完全连接查询，MEMO-structure 需要 \(n2^{n-1}-n(n+1)/2\) 个 operator 来编码 linear join trees 的空间。</div>
+
+<blockquote><p>&gt; 注：原 PDF 文本层中部分上标和乘号存在 OCR 误读；这里按论文公式语义写成标准形式。</p></blockquote>
+
+<p>Ono 和 Lohman 通过计数其 dynamic programming algorithm 必须考虑的 join operator 数量，为这些 query graph topology 与 join tree shape 的组合确定了下界。本文发现与他们的下界一致。其他由 Ono 和 Lohman 覆盖的情况也与本文结果一致，详见技术报告。</p>
+
+<h3>2.3 Exploration process</h3>
+
+<p>一个完整的 MEMO-structure 会从 initial expression 开始，通过递归探索 operator tree 的 root 构造出来。探索一个 operator 时，会穷尽应用所有 transformation rules，以生成所有 alternative。一般来说，应用 transformation rule 可能生成一个已经存在于 MEMO-structure 中的 operator。最简单的例子是 commutativity：第二次应用 commutativity 会重新生成原 operator。因此，在把新 operator 插入 MEMO-structure 之前，必须确认它是否已经存在。通常使用 hash table 来加速 duplicate detection。</p>
+
+<h2 id="s3">3 Duplicates</h2>
+
+<p>在量化 duplicate generation 的影响之前，先看一个小例子：对 relation \(a,b,c\) 的完全连接查询构造 MEMO-structure。即使在这个很小的例子中，duplicate 的数量也已经相当大。</p>
+
+<p>对于包含 relation \(a,b,c\) 的完全连接查询，Figure 3 展示了探索 operator \([ab]\bowtie[c]\) 前后的 MEMO-structure。在 “before” MEMO-structure 中，children class \(ab\) 和 \(c\) 已完全探索。对 operator \([ab]\bowtie[c]\) 应用 RS-B1 规则会生成新的 operator。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-3.png" alt="Figure 3: MEMO before and after exploration">
+  <figcaption>Figure 3：探索前后的 MEMO-structure。</figcaption>
+</figure>
+
+<p>Commutativity 会从 \([ab]\bowtie[c]\) 生成 \([c]\bowtie[ab]\)，并加入 class \(abc\)。Associativity 不能直接匹配，因为左 child 是一个 class，而规则需要一个 tree。为了解决这个问题，需要从左 class \(ab\) 中抽取 partial tree。</p>
+
+<p>抽取 \([a]\bowtie[b]\) 时，得到 tree \((([a]\bowtie[b])\bowtie[c])\)。此时 associativity 可以应用，生成 \([a]\bowtie([b]\bowtie[c])\)，并把它加入 class \(abc\)。其中 subexpression \([b]\bowtie[c]\) 会启动一个新 class \(bc\)。抽取 \([b]\bowtie[a]\) 时，会类似生成 \([b]\bowtie([a]\bowtie[c])\)，并启动 class \(ac\)。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-4.png" alt="Figure 4: duplicates in class abc">
+  <figcaption>Figure 4：完全探索 class \(abc\) 后生成的 duplicate。</figcaption>
+</figure>
+
+<p>如上例所示，直接应用 transformation rules 会生成已经存在于 MEMO-structure 中的 operator，也就是 duplicate。Duplicate generation 会显著影响 join enumeration 的效率。因为每生成一个 operator，MEMO-structure 都要被搜索，以判断它是否已经存在。搜索成本和生成 duplicate 本身的时间都会成为 search cost 的一部分。</p>
+
+<h3>3.1 Bushy join trees</h3>
+
+<p>下面的 theorem 说明，在完全连接 query graph 上，探索 bushy join trees 的 search space 时会生成多少 duplicate。这里假设使用最小的单向 join associativity 与 commutativity rule set，即 RS-B1。</p>
+
+<div class="theorem">Lemma 1：在完全连接 graph 上，RS-B1 探索一个包含 \(k\) 个 relation 的 class 时，生成的 duplicate 数量为 \(3^k-3\cdot2^k+4\)。</div>
+
+<p class="proof">Proof：在包含 \(k\) 个 relation 的 class 中，考虑 operator \([L]\bowtie[R]\)，其中 \([L]\) 包含 \(\ell\) 个 relation，\([R]\) 包含 \(k-\ell\) 个 relation。对该 operator 应用 commutativity 和 associativity 会生成若干 alternative。将 class 中所有 operator 的生成数求和，并减去该 class 中唯一 operator 的数量以及 initial operator，可得 duplicate 数量 \(3^k-3\cdot2^k+4\)。</p>
+
+<div class="theorem">Theorem 3：在完全连接 graph 上，RS-B1 构造编码所有 bushy join trees 的 MEMO-structure 时，生成的 duplicate 数量为 \(4^n-3^{n+1}+2^{n+2}-n-2\)。</div>
+
+<p class="proof">Proof：大小为 \(k\) 的 class 有 \(C_n^k\) 个。把 Lemma 1 中每个 class 的 duplicate 数量对所有 \(k\) 求和，可得 \(\sum_k C_n^k(3^k-3\cdot2^k+4)\)，化简得到 \(4^n-3^{n+1}+2^{n+2}-n-2\)。</p>
+
+<h3>3.2 Linear join trees</h3>
+
+<p>下面的 lemma 和 theorem 说明，在为所有 left linear join trees 生成 MEMO-structure 时，会生成多少 duplicate join operator。</p>
+
+<div class="theorem">Lemma 2：在完全连接 graph 上，RS-L1 探索一个包含 \(k\) 个 relation 的 class 时，生成的 duplicate 数量为 \(k^2-k+1\)，其中 \(k>2\)。</div>
+
+<p class="proof">Proof：在包含 \(k\) 个 relation 的 class 中，考虑 operator \([L]\bowtie[R]\)。因为只考虑 linear join trees，对每个 operator，左侧或右侧至少有一侧是单 relation。若一侧是单 relation，commutativity 和 swap rules 生成的 operator 数可以计数得到。减去 class 中唯一 operator 数以及 initial operator，可得每个 class 的 duplicate 数量 \(k^2-k+1\)。</p>
+
+<div class="theorem">Theorem 4：在完全连接 graph 上，RS-L1 构造编码 left linear join trees 的 MEMO-structure 时，生成的 duplicate 数量为 \(2^n+n(n-1)2^{n-2}-1-n^2\)，其中 \(n>2\)。</div>
+
+<p>Figure 5 给出了 MEMO-structure 的大小以及探索过程中生成的 duplicate 数量。对于 bushy trees，第 2 列给出编码所有 bushy trees 所需的 operator 数量，第 3 列给出探索过程中生成的 duplicate 数量。对于 linear trees，第 4、5 列分别给出 MEMO-structure 大小和 duplicate 数量。结果显示，duplicate 数量很快超过唯一 operator 数量。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-5.png" alt="Figure 5: duplicate counts">
+  <figcaption>Figure 5：探索 MEMO-structure 时生成的 duplicate 数量。</figcaption>
+</figure>
+
+<h2 id="s4">4 Duplicate-free join order generation</h2>
+
+<p>虽然根据 Theorem 1，transformation-based join enumeration 的空间复杂度是 \(O(3^n)\)，但根据 Theorem 3，枚举过程本身会花费 \(O(4^n)\)。本节说明如何避免生成 duplicate，使枚举过程和 Ono 与 Lohman 的下界一样高效。</p>
+
+<p>为了避免 duplicate，需要利用 transformation rules 的行为信息。最简单的例子是 commutativity：如果一个元素是通过应用 commutativity rule 生成的，那么没有必要再对它应用 commutativity，因为结果只会回到原元素。更一般地说，需要记录每个 operator 的 <span class="term">derivation history</span>，或者反过来记录哪些 rules 仍然值得应用。例如，应用 commutativity rule 后，会在新 operator 的 rule set 中关闭 commutativity rule。</p>
+
+<blockquote><p>&gt; 注：derivation history 可以理解为每个 operator 的“来源标记”，用于避免沿着必然重复的规则路径继续探索。</p></blockquote>
+
+<h3>4.1 完全连接查询的 duplicate-free transformation rules</h3>
+
+<p>为了生成完全连接 query graph 的所有 alternative bushy join trees，本文使用以下 transformation rules，即 RS-B2。</p>
+
+<pre><code>R1: Commutativity
+  x ⋈0 y  =>  y ⋈1 x
+  对新 operator ⋈1 关闭 R1, R2, R3, R4。
+
+R2: Right associativity
+  (x ⋈0 y) ⋈1 z  =>  x ⋈2 (y ⋈3 z)
+  对新 operator ⋈2 关闭 R2, R3, R4。
+
+R3: Left associativity
+  x ⋈0 (y ⋈1 z)  =>  (x ⋈2 y) ⋈3 z
+  对新 operator ⋈3 关闭 R2, R3, R4。
+
+R4: Exchange
+  (w ⋈0 x) ⋈1 (y ⋈2 z)  =>  (w ⋈3 y) ⋈4 (x ⋈5 z)
+  对新 operator ⋈4 关闭 R1, R2, R3, R4。</code></pre>
+
+<p>例如，考虑 relation \(w,x,y,z\) 上的完全连接查询。使用 class 的 initial element \([wx]\bowtie[yz]\)，以及已经完全探索的 class \(wx\) 与 \(yz\)，四条 transformation rules 会生成 Figure 6 中的六组元素。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-6.png" alt="Figure 6: rule-generated sets">
+  <figcaption>Figure 6：transformation rules 生成的集合。</figcaption>
+</figure>
+
+<p>为每个 operator 维护 derivation history 会增加内存需求。不过，rule 的 applicability 可以用一个 bit 编码。使用四条 transformation rules 时，每个 operator 只需要额外 4 bit 来存储 derivation history。</p>
+
+<div class="theorem">Theorem 5：按上述方式应用 R1、R2、R3 和 R4 时，不会生成 duplicate。</div>
+
+<p class="proof">Proof：如果两个 operator 由同一条 rule 生成，它们不会相同。R1 生成 mirror image；由于左右 operand 不会相同，因此不会生成 duplicate。R2 将 left child 中的唯一 operator 与 initial operator 的 right operand 组合，只生成唯一 operator。R3 类似。R4 组合 left operand 与 right operand 中的唯一 operator，也只生成唯一 operator。不同 rules 生成的集合之间也不会相交，因为 relation sets 是互斥的，无法得到相同的左右划分。</p>
+
+<div class="theorem">Theorem 6：对于完全连接查询，R1、R2、R3 和 R4 能生成所有 valid bushy join orders。</div>
+
+<p class="proof">Proof：在引用 \(n\) 个 relation 的 fully explored class 中，join operator 数量为 \(d(n)=2^n-2\)。设 class 的 initial element 是 \([L]\bowtie[R]\)。R2 将 class \([L]\) 中的每个 element 与 \([R]\) 组合；R3 对 \([R]\) 做类似操作；R4 组合 \([L]\) 与 \([R]\) 中的 operator；R1 生成 initial operator 以及 R2、R3 生成 operator 的 mirror images。把所有新生成的 operator 加上 initial operator 后，数量正好等于包含 \(|L|+|R|\) 个 relation 的 fully explored class 中应有的 operator 数。由于 Theorem 5 已证明没有 duplicate，因此必然生成了所有 valid bushy join orders。</p>
+
+<h3>4.2 Example</h3>
+
+<p>给定完全连接查询 \(\{a,b,c,d,e\}\)，以及 Figure 7 所示的 MEMO-structure，其中 class \(abcde\) 即将被探索。class \(abcde\) 的 initial operator 为 \([ab]\bowtie[cde]\)，其 child classes 已经被完全探索。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-7.png" alt="Figure 7: class abcde">
+  <figcaption>Figure 7：\([ab]\bowtie[cde]\) 即将被探索时的 MEMO-structure。</figcaption>
+</figure>
+
+<p>探索从对 \([ab]\bowtie[cde]\) 应用 R2、R3 和 R4 开始，然后应用 R1 生成 mirror images。R2 将 left subtree \([ab]\) 的每个 operator 与 right subtree \([cde]\) 组合。R3 将 right subtree \([cde]\) 的每个 operator 与 left subtree \([ab]\) 组合。R4 则组合 left subtree 与 right subtree 的 split。最后，R1 生成原始 join operator 以及 R2、R3 生成 operator 的 mirror images。</p>
+
+<p>探索完成后，class \(abcde\) 包含 30 个 operator。在探索过程中还创建了 20 个新 class，并递归地完全探索它们。</p>
+
+<h3>Linear join trees</h3>
+
+<p>为了高效生成所有 linear trees，并且不产生 duplicate，本文使用以下两条 transformation rules 和 application schema。完整性和效率证明与 bushy join trees 的情形类似。</p>
+
+<pre><code>Rule R1:
+  (A ⋈0 B) ⋈1 C  =>  (A ⋈2 C) ⋈3 B
+  对新 operator ⋈3 关闭 R1。
+  A、B、C 是引用一个或多个 relation 的 class。
+
+Rule R2:
+  Table1 ⋈0 Table2  =>  Table2 ⋈1 Table1
+  对新 operator ⋈1 关闭 R2。
+  Table1 和 Table2 是正好引用一个 relation 的 class。</code></pre>
+
+<h2 id="s5">5 Experiments</h2>
+
+<p>本节通过实验验证 duplicate-free join enumeration 的效率提升。对于 3 到 8 个 relation 的完全连接查询，实验分别使用两组 transformation rules 生成所有 bushy 和 linear join trees：一组是 naive transformation rules，另一组是 duplicate-free rules。</p>
+
+<p>实验在一台 90 MHz Pentium PC 上进行，运行 Windows NT，主存 64MB，足以容纳最大的 MEMO-structure，即 8-relation 查询的所有 bushy trees。实验使用 Cascades optimizer，它是 Volcano optimizer 的后继。除了增加关闭 transformation rules 的能力之外，没有使用 Volcano 中不存在的特性。对每个唯一 logical join operator，实验还生成一个 physical operator，即 Nested Loop，并做简单的 cardinality cost estimation。</p>
+
+<h3>Bushy join trees</h3>
+
+<p>对于 naive bushy join tree generation，实验使用第 2.3 节中的 commutativity 和 associativity rules。Graefe 和 DeWitt 已经观察到，只对 commutativity rule 应用一次，可以改善 join enumerator 的性能，因为这避免了长度为 2 的 cycle，例如 \((a\bowtie b)\rightarrow(b\bowtie a)\rightarrow(a\bowtie b)\)。不过改善很小；在 8 relation 时，提升不到 2%。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-8.png" alt="Figure 8: bushy generation">
+  <figcaption>Figure 8：完全连接查询中，bushy trees 的 exhaustive generation。</figcaption>
+</figure>
+
+<p>实验表明，duplicate-free join order generation 总是快于生成并丢弃 duplicate。性能提升从 3 relation 时的 1.22 倍增加到 8 relation 时的 5.67 倍。根据 generation algorithms 的复杂度分析，随着 query 规模增大，提升因子会继续增加。</p>
+
+<h3>Linear join trees</h3>
+
+<p>生成完整 linear join tree 空间的 naive 方法使用 Swami 的 Swap rule，即 \((A\bowtie B)\bowtie C \rightarrow (A\bowtie C)\bowtie B\)，以及 commutativity rule。与 naive bushy generation 一样，commutativity rule 只应用一次，以避免长度为 2 的 cycle。</p>
+
+<figure>
+  <img src="Transformative-vldb1997-assets/figure-9.png" alt="Figure 9: linear generation">
+  <figcaption>Figure 9：完全连接查询中，linear trees 的 exhaustive generation。</figcaption>
+</figure>
+
+<p>Figure 9 展示了使用 naive method 和 duplicate-free method 生成所有 linear trees 的实验结果。对于 3 到 8 relation 的查询，避免生成 duplicate 带来了 1.33 到 3.67 倍的性能提升。提升因子同样会随着 relation 数量增加而继续增加。</p>
+
+<h2 id="s6">6 Conclusion</h2>
+
+<p>本文说明，只要避免生成 duplicate，transformation-based optimizers 的 join enumeration 过程就可以达到 Ono 和 Lohman 给出的 \(O(3^n)\) 下界。本文证明 duplicate 数量为 \(O(4^n)\)，并且即使在小查询中也会超过新元素数量。</p>
+
+<p>本文的方法是记录仍然可以应用而不会生成 duplicate 的 transformation rules。我们针对 bushy 和 linear join trees 的生成，详细描述了该机制。实验显示，这种方法能显著降低优化时间；对于 8-table joins，提升可达 5 倍。实现该方法相对简单，只需要对 transformation-rule engine 做一个小扩展：允许关闭 transformation rules。当然，大部分工作在于设计合适的 transformation rule set；这是一项非常重要但在 rule-based optimization literature 中较少被强调的任务。</p>
+
+<p>关于 duplicate 以及如何避免 duplicate 的一般问题，仍有大量工作要做。对于任意 transformation rules 集合，可能很难把它转换成高效且避免 duplicate 的集合。不过，我们相信其中存在有用且可处理的规则类别。</p>
+
+<h2 id="acks">Acknowledgements</h2>
+
+<p>Bennet Vance 独立地考虑了 duplicate 问题，并提出了 Exchange transformation rule，虽然其使用方式与本文略有不同。作者感谢他带来的有益讨论、分享的结果以及对本文的评论。</p>
+
+<h2 id="refs">References</h2>
+
+<ol class="refs">
+  <li>[BMG93] J. A. Blakeley, W. J. McKenna, and G. Graefe. <em>Experiences Building the Open OODB Query Optimizer</em>. SIGMOD, 1993.</li>
+  <li>[CS96] S. Chaudhuri and K. Shim. <em>Optimizing Queries with Aggregate Views</em>. EDBT, 1996.</li>
+  <li>[GD87] G. Graefe and D. J. DeWitt. <em>The EXODUS Optimizer Generator</em>. SIGMOD, 1987.</li>
+  <li>[GLPK95] C. A. Galindo-Legaria, A. Pellenkoft, and M. L. Kersten. <em>Uniformly-Distributed Random Generation of Join Orders</em>. ICDT, 1995.</li>
+  <li>[GLR96] C. A. Galindo-Legaria and A. Rosenthal. <em>Outerjoin Simplification and Reordering for Query Optimization</em>. To appear in ACM TODS, 1996.</li>
+  <li>[GM93] G. Graefe and W. J. McKenna. <em>The Volcano Optimizer Generator: Extensibility and Efficient Search</em>. ICDE, 1993.</li>
+  <li>[HN96] J. M. Hellerstein and J. F. Naughton. <em>Query Execution Techniques for Caching Expensive Methods</em>. SIGMOD, 1996.</li>
+  <li>[IK91] Y. E. Ioannidis and Y. C. Kang. <em>Left-Deep vs. Bushy Trees: An Analysis of Strategy Spaces and Its Implications for Query Optimization</em>. SIGMOD, 1991.</li>
+  <li>[IW87] Y. E. Ioannidis and E. Wong. <em>Query Optimization by Simulated Annealing</em>. SIGMOD, 1987.</li>
+  <li>[Kan91] Y. C. Kang. <em>Randomized Algorithms for Query Optimization</em>. PhD thesis, University of Wisconsin-Madison, 1991.</li>
+  <li>[LVZ93] R. S. G. Lanzelotte, P. Valduriez, and M. Zait. <em>On the Effectiveness of Optimization Search Strategies for Parallel Execution Spaces</em>. VLDB, 1993.</li>
+  <li>[McK93] W. J. McKenna. <em>Efficient Search in Extensible Database Query Optimization: The Volcano Optimizer Generator</em>. PhD thesis, University of Colorado, Boulder, 1993.</li>
+  <li>[OL90] K. Ono and G. M. Lohman. <em>Measuring the Complexity of Join Enumeration in Query Optimization</em>. VLDB, 1990.</li>
+  <li>[PGLK96] A. Pellenkoft, G. A. Galindo-Legaria, and M. L. Kersten. <em>Complexity of Transformation-Based Optimizers and Duplicate-Free Generation of Alternatives</em>. CWI Technical Report CS-R9639, 1996.</li>
+  <li>[SG88] A. N. Swami and A. Gupta. <em>Optimization of Large Join Queries</em>. SIGMOD, 1988.</li>
+  <li>[SHP+96] P. Seshadri et al. <em>Cost-Based Optimization for Magic: Algebra and Implementation</em>. SIGMOD, 1996.</li>
+  <li>[Van96a] B. Vance. <em>Complexity of Join Enumeration in Starburst</em>. Manuscript, 1996.</li>
+  <li>[Van96b] B. Vance. Personal communication, 1996.</li>
+  <li>[VM96] B. Vance and D. Maier. <em>Rapid Bushy Join-Order Optimization with Cartesian Products</em>. SIGMOD, 1996.</li>
+</ol>
+
+</main>
+</body>
+</html>

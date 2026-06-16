@@ -1,0 +1,11 @@
+{
+  "relations": {
+    "o": { "rows": 100000, "scan_cost": 100000 },
+    "c": { "rows": 1000, "scan_cost": 1000 },
+    "l": { "rows": 500000, "scan_cost": 500000 }
+  },
+  "selectivities": [
+    { "left": "o.customer_id", "right": "c.id", "selectivity": 0.001 },
+    { "left": "l.customer_id", "right": "c.id", "selectivity": 0.01 }
+  ]
+}

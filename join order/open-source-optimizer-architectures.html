@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>开源数据库优化器架构调研：从 System R 到 Cascades 与 Hypergraph</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #0f766e;
+    --accent-2: #2563eb;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85; color: var(--text); background: var(--bg);
+    max-width: 980px; margin: 0 auto; padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; line-height: 1.35; }
+  h2 {
+    font-size: 1.35rem; margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem; border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+  .lead { font-size: 1.02rem; color: #2f2f2f; }
+  .callout {
+    border-left: 4px solid var(--accent); background: #ecfdf5;
+    padding: 0.7rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; font-size: 0.95rem;
+  }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.blue { border-left-color: var(--accent-2); background: #eff6ff; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.85rem 1rem; overflow-x: auto;
+    font-family: "SF Mono","Fira Code","Consolas","Noto Sans Mono CJK SC",monospace;
+    font-size: 0.88rem; line-height: 1.55; margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono","Fira Code","Consolas","Noto Sans Mono CJK SC",monospace;
+    font-size: 0.9em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.45rem 0.62rem; text-align: left; vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 600; }
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; }
+  .toc li { margin: 0.15rem 0; }
+  .tag {
+    display: inline-block; background: #d1fae5; color: #065f46;
+    font-size: 0.78rem; padding: 0.12em 0.5em; border-radius: 4px;
+    margin-right: 0.25rem; font-family: sans-serif;
+  }
+  .tag.memo { background: #ede9fe; color: #5b21b6; }
+  .tag.pipe { background: #dbeafe; color: #1e40af; }
+  .tag.graph { background: #fee2e2; color: #991b1b; }
+  .tag.dist { background: #ffedd5; color: #9a3412; }
+  .key-term {
+    background: var(--highlight); padding: 0.1em 0.3em; border-radius: 2px; font-weight: 600;
+  }
+  .cite { font-size: 0.72em; vertical-align: super; margin-left: 0.12rem; font-family: sans-serif; }
+  #refs li:target { background: #fef9c3; border-radius: 4px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+    gap: 0.8rem; margin: 1rem 0;
+  }
+  .card {
+    background: #fffdf7; border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.8rem 0.9rem;
+  }
+  .card h3 { margin-top: 0; }
+  .diagram {
+    margin: 1.4rem 0; padding: 1rem 1rem 0.6rem;
+    background: var(--fig-bg); border: 1px solid var(--border);
+    border-radius: 8px; text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.88rem; color: var(--muted); margin-top: 0.4rem; font-style: italic;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+  .small { font-size: 0.86rem; color: var(--muted); }
+  .refs { font-size: 0.9rem; }
+  @media (max-width: 700px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+    table { font-size: 0.84rem; }
+  }
+</style>
+</head>
+<body>
+<h1>开源数据库优化器架构调研：从 System R 到 Cascades 与 Hypergraph</h1>
+<p class="meta">调研日期：2026-06-16｜范围：著名开源数据库、SQL 引擎和优化器框架｜资料优先级：官方文档、源码 README、官方博客、论文</p>
+
+<p class="lead">
+  这份文档关心的不是单个 join order 算法，而是“一个可维护的开源优化器通常怎么分层”：
+  SQL AST 如何变成逻辑关系代数，规则如何组织，cost 和统计信息如何介入，join reorder 在哪里发生，
+  physical property 如何表达，以及最终怎么落到物理计划。调研对象横跨 PostgreSQL、SQLite、DuckDB、
+  Apache Calcite、Apache DataFusion、Spark Catalyst、Trino、CockroachDB、TiDB、GPORCA、Apache Doris Nereids
+  和 MySQL hypergraph optimizer。
+</p>
+
+<div class="callout">
+  <strong>一句话结论：</strong>著名开源优化器大致分成四类：PostgreSQL/SQLite 式的工程化 System R 后代，
+  Spark/DataFusion/DuckDB/Trino 式的规则流水线加局部 CBO，Calcite/Cockroach/ORCA/Doris 式的 memo/Cascades
+  架构，以及 DuckDB/MySQL 新一代 join optimizer 中更直接的 hypergraph/DP 枚举。真实系统往往混合使用这些路线。
+</div>
+
+<nav class="toc">
+  <ol>
+    <li><a href="#taxonomy">架构谱系总览</a></li>
+    <li><a href="#matrix">横向比较表</a></li>
+    <li><a href="#postgres">PostgreSQL</a></li>
+    <li><a href="#sqlite">SQLite</a></li>
+    <li><a href="#duckdb">DuckDB</a></li>
+    <li><a href="#calcite">Apache Calcite</a></li>
+    <li><a href="#datafusion">Apache DataFusion</a></li>
+    <li><a href="#spark">Spark Catalyst</a></li>
+    <li><a href="#trino">Trino</a></li>
+    <li><a href="#cockroach">CockroachDB</a></li>
+    <li><a href="#tidb">TiDB</a></li>
+    <li><a href="#orca">GPORCA</a></li>
+    <li><a href="#doris">Apache Doris Nereids</a></li>
+    <li><a href="#mysql">MySQL Hypergraph Optimizer</a></li>
+    <li><a href="#lessons">对本仓库 demo 的启发</a></li>
+    <li><a href="#refs">参考资料</a></li>
+  </ol>
+</nav>
+
+<section id="taxonomy">
+<h2>一、架构谱系总览</h2>
+
+<figure class="diagram">
+<svg viewBox="0 0 900 310" role="img" aria-label="开源优化器架构谱系图">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6b6b6b"></path>
+    </marker>
+  </defs>
+  <rect x="30" y="35" width="185" height="80" rx="8" fill="#ecfdf5" stroke="#0f766e"></rect>
+  <text x="122" y="68" text-anchor="middle" font-size="15" font-weight="700">System R 后代</text>
+  <text x="122" y="92" text-anchor="middle" font-size="13">Paths / Joinrels / Loops</text>
+
+  <rect x="260" y="35" width="185" height="80" rx="8" fill="#eff6ff" stroke="#2563eb"></rect>
+  <text x="352" y="68" text-anchor="middle" font-size="15" font-weight="700">规则流水线</text>
+  <text x="352" y="92" text-anchor="middle" font-size="13">Tree rewrite + CBO islands</text>
+
+  <rect x="490" y="35" width="185" height="80" rx="8" fill="#f5f3ff" stroke="#7c3aed"></rect>
+  <text x="582" y="68" text-anchor="middle" font-size="15" font-weight="700">Memo / Cascades</text>
+  <text x="582" y="92" text-anchor="middle" font-size="13">Equivalence + Rules + Properties</text>
+
+  <rect x="710" y="35" width="160" height="80" rx="8" fill="#fee2e2" stroke="#dc2626"></rect>
+  <text x="790" y="68" text-anchor="middle" font-size="15" font-weight="700">Hypergraph</text>
+  <text x="790" y="92" text-anchor="middle" font-size="13">Join graph DP search</text>
+
+  <line x1="215" y1="75" x2="260" y2="75" stroke="#6b6b6b" marker-end="url(#arrow)"></line>
+  <line x1="445" y1="75" x2="490" y2="75" stroke="#6b6b6b" marker-end="url(#arrow)"></line>
+  <line x1="675" y1="75" x2="710" y2="75" stroke="#6b6b6b" marker-end="url(#arrow)"></line>
+
+  <text x="122" y="155" text-anchor="middle" font-size="13">PostgreSQL / SQLite</text>
+  <text x="122" y="178" text-anchor="middle" font-size="13">MySQL classic</text>
+  <text x="352" y="155" text-anchor="middle" font-size="13">Spark Catalyst / DataFusion</text>
+  <text x="352" y="178" text-anchor="middle" font-size="13">DuckDB / Trino phases</text>
+  <text x="582" y="155" text-anchor="middle" font-size="13">Calcite / CockroachDB</text>
+  <text x="582" y="178" text-anchor="middle" font-size="13">GPORCA / Doris Nereids</text>
+  <text x="790" y="155" text-anchor="middle" font-size="13">DuckDB DPccp</text>
+  <text x="790" y="178" text-anchor="middle" font-size="13">MySQL hypergraph</text>
+
+  <rect x="105" y="225" width="690" height="48" rx="7" fill="#fffdf7" stroke="#e0dcd0"></rect>
+  <text x="450" y="245" text-anchor="middle" font-size="13">真实系统的共同骨架</text>
+  <text x="450" y="265" text-anchor="middle" font-size="13">Parser/Binder → Logical IR → Rewrite/Search → Cost/Stats → Physical Properties → Executable Plan</text>
+</svg>
+<figcaption>图 1：这是架构谱系，不是时间线。许多系统同时使用多种方法。</figcaption>
+</figure>
+
+<div class="grid">
+  <div class="card">
+    <h3><span class="tag">System R</span>Path / Joinrel</h3>
+    <p>核心是按 relation set 自底向上产生候选路径，保留不同访问方法、join 方法和排序属性。PostgreSQL 是最典型的开源代表。</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag pipe">Pipeline</span>Tree Rewrite</h3>
+    <p>用一系列 analyzer/optimizer/planner rules 改写树，必要处嵌入 cost-based 阶段。Spark Catalyst、DataFusion、DuckDB、Trino 都有这个味道。</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag memo">Memo</span>Cascades</h3>
+    <p>把等价表达式放进 memo group，用规则探索逻辑等价和物理实现，并用 required/derived properties 剪枝。Calcite、ORCA、CockroachDB、Doris Nereids 属于这一类。</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag graph">Graph</span>Hypergraph Join Search</h3>
+    <p>把 join reorder 问题显式建模为 join graph/hypergraph 上的子集枚举，专注解决复杂 join 谓词和 bushy plans。DuckDB DPccp 和 MySQL Hypergraph 是代表。</p>
+  </div>
+</div>
+</section>
+
+<section id="matrix">
+<h2>二、横向比较表</h2>
+<table>
+  <thead>
+    <tr>
+      <th>项目</th>
+      <th>核心 IR / 状态</th>
+      <th>搜索形态</th>
+      <th>Property 设计</th>
+      <th>最值得借鉴的架构点</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>PostgreSQL</td>
+      <td><code>RelOptInfo</code>, <code>Path</code>, <code>Plan</code></td>
+      <td>自底向上 joinrel DP；大 join 可切 GEQO</td>
+      <td><code>PathKeys</code>, parameterized paths, parallel-safety 等</td>
+      <td>工程化候选路径管理，比纯 memo 更贴近执行器能力。</td>
+    </tr>
+    <tr>
+      <td>SQLite</td>
+      <td>WHERE terms, loops, query graph</td>
+      <td>嵌套循环顺序选择；NGQP 用图算法处理 join order</td>
+      <td>主要围绕 index/order/distinct 的局部性质</td>
+      <td>小型嵌入式系统如何用有限结构做稳定、快速、可解释的优化。</td>
+    </tr>
+    <tr>
+      <td>DuckDB</td>
+      <td>Bound tree → logical operators → physical operators</td>
+      <td>规则优化流水线；join order 用 DPccp</td>
+      <td>以 logical/physical operator 转换为主，properties 较轻</td>
+      <td>单机 OLAP 中把大量规则优化和高质量 join enumeration 组合起来。</td>
+    </tr>
+    <tr>
+      <td>Apache Calcite</td>
+      <td><code>RelNode</code>, traits, planner</td>
+      <td><code>VolcanoPlanner</code> cost-based search，也有 heuristic planner</td>
+      <td><code>RelTrait</code>：convention, collation, distribution 等</td>
+      <td>把优化器做成可嵌入框架，adapter 和 trait 是第一等概念。</td>
+    </tr>
+    <tr>
+      <td>Apache DataFusion</td>
+      <td>LogicalPlan, Expr, ExecutionPlan</td>
+      <td>Analyzer → logical optimizer → physical planner → physical optimizer</td>
+      <td>Ordering、partitioning、distribution 等 physical properties</td>
+      <td>Rust 中清晰的阶段化 rule pipeline 和可扩展 optimizer rules。</td>
+    </tr>
+    <tr>
+      <td>Spark Catalyst</td>
+      <td>TreeNode / LogicalPlan / PhysicalPlan</td>
+      <td>rule batches + pattern matching；部分 CBO</td>
+      <td>partitioning, ordering, codegen support 等物理约束</td>
+      <td>把分析、优化、物理规划、代码生成统一到树转换框架里。</td>
+    </tr>
+    <tr>
+      <td>Trino</td>
+      <td>PlanNode tree</td>
+      <td>规则迭代 + cost-based join enumeration/distribution</td>
+      <td>distributed execution 下的 partitioning/exchange/locality</td>
+      <td>分布式 SQL 引擎中 cost model 与 data movement 的强绑定。</td>
+    </tr>
+    <tr>
+      <td>CockroachDB</td>
+      <td>Optgen expressions + memo</td>
+      <td>Cascades-style exploration + cost-based implementation</td>
+      <td>ordering、presentation、distribution 等 properties</td>
+      <td>现代 Cascades 在生产 OLTP/HTAP 数据库里的可维护实现。</td>
+    </tr>
+    <tr>
+      <td>TiDB</td>
+      <td>Logical/Physical Plan；Cascades planner 实验/演进</td>
+      <td>rule + cost-based；传统 planner 与 Cascades 方向并存</td>
+      <td>TiKV/TiFlash coprocessor、MPP、order、task type</td>
+      <td>分布式 MySQL-compatible 系统如何把下推和物理位置放入 optimizer。</td>
+    </tr>
+    <tr>
+      <td>GPORCA</td>
+      <td>Memo group/expression, metadata, properties</td>
+      <td>Cascades-style top-down search</td>
+      <td>required/derived properties，distribution/order/rewindability 等</td>
+      <td>把 Cascades 做成模块化、大数据/MPP 优化器的经典工程样本。</td>
+    </tr>
+    <tr>
+      <td>Apache Doris Nereids</td>
+      <td>Plan tree + memo/group expression</td>
+      <td>Cascades optimizer 替代旧 planner</td>
+      <td>逻辑/物理属性、分布式执行相关属性</td>
+      <td>开源 OLAP 系统从旧 planner 迁移到 Cascades 的案例。</td>
+    </tr>
+    <tr>
+      <td>MySQL Hypergraph</td>
+      <td>Join hypergraph</td>
+      <td>Hypergraph optimizer 替代 classic join optimizer 的复杂 join 搜索</td>
+      <td>访问路径、join order、engine 能力与 cost 结合</td>
+      <td>主流关系数据库把 hypergraph join optimizer 产品化的近例。</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<section id="postgres">
+<h2>三、PostgreSQL：RelOptInfo / Path 驱动的工程化 System R 后代</h2>
+<p>
+  PostgreSQL 的优化器不是 Cascades memo，而是围绕 <code>RelOptInfo</code> 和 <code>Path</code> 组织搜索：
+  base relation、join relation 都有自己的 <code>RelOptInfo</code>，候选访问路径和 join 路径作为 <code>Path</code>
+  挂在 relation 上。源码 README 明确区分 optimizer path stage 和 plan creation stage，前者产生路径、估算 cost，
+  后者把最便宜 path 转成 executor 能跑的 plan tree。<span class="cite"><a href="#ref-postgres-readme">[1]</a></span>
+</p>
+<p>
+  这种架构的关键思想是：<span class="key-term">relation set 自底向上聚合</span>。单表先产生 seq scan、index scan 等 paths；
+  两表 joinrel 再由两个较小 rel 的 path 组合产生 nested loop、merge join、hash join 等；更大 joinrel 继续递推。
+  <code>PathKeys</code> 保存排序属性，因此同一个 relation set 会保留多条 cost/property 不同的 path。
+</p>
+<p>
+  PostgreSQL 的 join search 还带有工程控制：普通查询用动态规划枚举 join relations；当 join 数太大时可以启用
+  GEQO 遗传算法，牺牲最优性换搜索时间。它代表了一类成熟系统的现实选择：不追求“理论上最优雅的 optimizer 框架”，
+  而是让 access path、join path、sort order、parameterized path、parallel path、FDW path 等执行器能力可以增量接入。
+</p>
+</section>
+
+<section id="sqlite">
+<h2>四、SQLite：极小内核里的 NGQP 与嵌套循环优化</h2>
+<p>
+  SQLite 的执行模型以嵌套循环 join 为中心，优化器主要决定表访问顺序、每层循环用什么 index、是否能利用 ORDER BY/GROUP BY 等。
+  官方文档把 join reorder 描述为对 FROM 子句中 nested loops 顺序的选择，并说明 SQLite 可以用 polynomial-time graph algorithm
+  在几十路 join 上很快产生顺序。<span class="cite"><a href="#ref-sqlite-optoverview">[2]</a></span>
+</p>
+<p>
+  SQLite 的 Next Generation Query Planner 文档则把 join planning 显式画成图搜索问题，节点是 loop，边权是依赖于外层 loop
+  的代价；优化目标变成找一条低成本路径。<span class="cite"><a href="#ref-sqlite-ngqp">[3]</a></span>
+  这和大型 Cascades memo 不同：SQLite 保持极小状态和高可预测性，非常适合嵌入式场景。
+</p>
+<p>
+  借鉴点是：并不是所有优化器都需要 memo。只要执行器形态简单、join algorithm 主要是 nested loop，优化器可以用更窄的模型获得稳定表现。
+  代价是物理实现空间较小，复杂 bushy plan、分布式 property 和多种 join algorithm 的表达能力有限。
+</p>
+</section>
+
+<section id="duckdb">
+<h2>五、DuckDB：规则优化流水线 + DPccp Join Order</h2>
+<p>
+  DuckDB 的官方 optimizer 博客把 optimizer 描述为一组逐步应用的优化规则：expression rewriter、filter pull-up/pushdown、
+  join order optimizer、top-N optimizer 等。官方文档也列出 DuckDB 有多个 optimizer 阶段。<span class="cite"><a href="#ref-duckdb-optimizer">[4]</a></span>
+  <span class="cite"><a href="#ref-duckdb-internals">[5]</a></span>
+</p>
+<p>
+  对 join reorder 来说，DuckDB 著名之处在于使用 DPccp 这类 connected-subgraph DP 枚举方法，面向 join graph
+  直接枚举无交叉积的 connected partitions。它不像 Calcite/ORCA 那样把所有逻辑等价表达式都放入通用 memo，
+  而是在优化流水线中为 join order 放一个专门的高质量算法。
+</p>
+<p>
+  这种混合架构对分析型单机数据库很自然：大多数 rewrite 用简单 rule pipeline，join reorder 作为独立“重型 pass”处理。
+  它给本仓库 demo 的启发是：Volcano/Cascades skeleton 可以作为理解框架，但后续要研究 CP-free bushy search 时，
+  应该把 join graph partitioning 算法作为一个独立模块接入，而不是只依赖 commutativity/associativity 规则撞出搜索空间。
+</p>
+</section>
+
+<section id="calcite">
+<h2>六、Apache Calcite：把优化器做成可嵌入框架</h2>
+<p>
+  Calcite 的定位不是单一数据库，而是查询处理框架。官方文档强调它提供 SQL parser、validator、relational algebra、
+  metadata provider、planner rules 和 adapter 机制。它的 optimizer 核心围绕 <code>RelNode</code>、<code>RelOptRule</code>、
+  <code>RelOptPlanner</code> 和 trait system。<span class="cite"><a href="#ref-calcite-algebra">[6]</a></span>
+  <span class="cite"><a href="#ref-calcite-javadoc">[7]</a></span>
+</p>
+<p>
+  Calcite 同时提供 heuristic planner 和 <code>VolcanoPlanner</code>。后者是 cost-based optimizer，会在 equivalence classes
+  中探索不同 relational expressions；trait 则表达 convention、collation、distribution 等物理属性。
+  Adapter 可以把同一套关系代数映射到不同后端，因此 <span class="key-term">trait/convention</span> 是 Calcite 架构的中心。
+</p>
+<p>
+  如果要设计研究 demo，Calcite 值得学的是边界：SQL parse/validate、relational algebra、metadata、rule、planner、adapter
+  都是独立层。即使 demo 很小，也应该避免让 SQL AST 直接污染 optimizer 内部，这一点和我们当前 demo 的
+  <code>DuckDBSqlFrontend</code> 边界是一致的。
+</p>
+</section>
+
+<section id="datafusion">
+<h2>七、Apache DataFusion：Rust 里的阶段化 Optimizer Pipeline</h2>
+<p>
+  DataFusion 官方架构文档把查询执行分成 SQL/DF API、logical plan、logical optimization、physical planning、
+  physical optimization 和 execution。文档明确列出 optimizer 是一组规则，并提供自定义 optimizer rules。
+  <span class="cite"><a href="#ref-datafusion-architecture">[8]</a></span>
+  <span class="cite"><a href="#ref-datafusion-optimizer">[9]</a></span>
+</p>
+<p>
+  DataFusion 的架构重点不是通用 Cascades memo，而是清晰的 stage contract：
+  analyzer 负责名字和类型相关改写，logical optimizer 做 projection/filter/simplification/join reorder 等逻辑层优化，
+  physical planner 产生 <code>ExecutionPlan</code>，physical optimizer 再处理 ordering、coalesce、repartition 等物理层问题。
+</p>
+<p>
+  这类设计的好处是插件性和可读性强。对于研究项目，它提醒我们把“逻辑等价探索”和“物理属性修复”拆开记录：
+  一个 trace 只写最终 cost 不够，还要能看到每个阶段改了什么、为什么改。
+</p>
+</section>
+
+<section id="spark">
+<h2>八、Spark Catalyst：统一的 Tree Transformation 框架</h2>
+<p>
+  Spark SQL 的 Catalyst 优化器论文把 Catalyst 描述为基于 Scala pattern matching 的可扩展 optimizer，
+  使用 tree transformation rules 处理 analysis、logical optimization、physical planning 和 code generation。
+  <span class="cite"><a href="#ref-spark-paper">[10]</a></span>
+  Spark 源码中 Catalyst package 也以 expressions、plans、rules、analysis、optimizer、planner 等模块组织。
+  <span class="cite"><a href="#ref-spark-catalyst-source">[11]</a></span>
+</p>
+<p>
+  Catalyst 的优势是统一抽象：逻辑计划、表达式、物理计划都是 tree，规则可以用模式匹配重写子树。
+  它不是传统意义上“所有等价表达式进 memo”的 Cascades，但通过 rule batches 和 fixed-point execution
+  达到很强的工程扩展性。后来 Spark 也加入了统计信息和 cost-based join reorder，但其骨架仍然是 rule pipeline。
+</p>
+<p>
+  对分布式系统来说，Catalyst 后半段要处理 partitioning、ordering、exchange、whole-stage codegen 等物理约束。
+  这说明 optimizer architecture 不能只看 join order：物理计划阶段对数据分布和执行后端的建模同样决定最终性能。
+</p>
+</section>
+
+<section id="trino">
+<h2>九、Trino：分布式 SQL 引擎中的规则优化与数据移动成本</h2>
+<p>
+  Trino 文档把 optimizer 暴露为一组可配置的优化能力，例如 join reordering strategy、join distribution type、
+  cost-based optimizations 和 table statistics。<span class="cite"><a href="#ref-trino-optimizer">[12]</a></span>
+  它的计划 IR 是 <code>PlanNode</code> 树，优化器由大量 plan optimizers/rules 迭代改写。
+</p>
+<p>
+  Trino 的特殊性在于它是 MPP 查询引擎：join order 不能只看 CPU/IO，还要看广播 join、partitioned join、exchange、
+  connector statistics、动态过滤等。换句话说，<span class="key-term">distribution property</span> 是核心 cost 变量。
+</p>
+<p>
+  对 demo 的启发是：一旦研究对象从单机 join reorder 扩展到分布式 join reorder，<code>RequiredProperty</code>
+  至少要从 <code>Sorted</code> 扩成 <code>Partitioned(keys)</code>、<code>SingleNode</code>、<code>Broadcast</code> 或
+  <code>HashDistributed(keys)</code> 这样的属性，否则无法表达 exchange/enforcer 的真实成本。
+</p>
+</section>
+
+<section id="cockroach">
+<h2>十、CockroachDB：生产级 Cascades 与 Optgen</h2>
+<p>
+  CockroachDB 官方文档介绍其 cost-based optimizer 会枚举等价 SQL 表达式，利用统计信息估算成本，并选择最低成本计划。
+  官方博客和源码文档进一步说明它借鉴 Cascades，使用 memo 保存等价表达式，并通过 optgen 生成表达式和规则相关代码。
+  <span class="cite"><a href="#ref-cockroach-cost">[13]</a></span>
+  <span class="cite"><a href="#ref-cockroach-optgen">[14]</a></span>
+</p>
+<p>
+  Cockroach 的架构重点是让 Cascades 可工程化：规则不是散落在手写 visitor 里，而是有 DSL/生成器；
+  memo group 中保存 logically equivalent expressions；physical properties 会影响实现选择和 enforcer 插入；
+  metadata/statistics 独立于表达式树。
+</p>
+<p>
+  它是研究 Cascades 生产化的好样本：比 Calcite 更接近一个完整数据库内核，比 ORCA 更容易从现代 Go 代码和文档中追踪实现。
+</p>
+</section>
+
+<section id="tidb">
+<h2>十一、TiDB：MySQL-compatible 分布式数据库的 Planner 分层</h2>
+<p>
+  TiDB developer guide 把 planner 切成逻辑优化和物理优化：逻辑阶段做列裁剪、谓词下推、聚合下推等，
+  物理阶段为不同 task type 和存储引擎选择访问路径、join 算法、是否下推到 TiKV/TiFlash。
+  <span class="cite"><a href="#ref-tidb-planner">[15]</a></span>
+</p>
+<p>
+  TiDB 还有 Cascades planner 方向的实现和设计文档，试图用 memo、transformation rules、implementation rules
+  管理更复杂的搜索空间。<span class="cite"><a href="#ref-tidb-cascades">[16]</a></span>
+  这体现了许多成熟系统的演进路线：旧 planner 常常是 rule pipeline + CBO modules，随着规则和物理属性变复杂，
+  会引入 Cascades 或 Cascades-like 结构来控制复杂度。
+</p>
+<p>
+  TiDB 还有一个重要提醒：分布式数据库的 optimizer 不只是 SQL 层，它还必须知道数据在哪、哪些算子可下推、
+  不同存储引擎的 cost 结构如何、MPP 和 coprocessor 的边界在哪里。
+</p>
+</section>
+
+<section id="orca">
+<h2>十二、GPORCA：模块化 Cascades 优化器的经典样本</h2>
+<p>
+  GPORCA 是 Greenplum 使用的开源 optimizer。ORCA 论文把它定位为 modular query optimizer architecture for big data，
+  使用 memo、transformation/implementation rules、metadata cache、required/derived properties 和 cost model。
+  <span class="cite"><a href="#ref-orca-paper">[17]</a></span>
+  Greenplum 文档也介绍 ORCA 作为可选 optimizer，用于复杂 analytical queries。<span class="cite"><a href="#ref-greenplum-orca">[18]</a></span>
+</p>
+<p>
+  ORCA 的 property system 很值得研究：除了 ordering，还要处理 distribution、rewindability、partition propagation 等。
+  在 MPP 系统中，一个 join 的物理实现不仅是 hash/merge/nestloop，还包括是否需要 motion/exchange、数据是否已经按 key 分布。
+</p>
+<p>
+  如果本仓库的 Volcano demo 要继续往“大系统味道”走，ORCA 是最接近教科书 Cascades + MPP 现实约束的模板。
+</p>
+</section>
+
+<section id="doris">
+<h2>十三、Apache Doris Nereids：OLAP 系统迁移到 Cascades 的案例</h2>
+<p>
+  Apache Doris 的 Nereids 是新一代 optimizer，官方设计文档说明它采用 Cascades-style framework，
+  以 memo、rule、cost、stats 和 property 组织优化流程。<span class="cite"><a href="#ref-doris-nereids">[19]</a></span>
+</p>
+<p>
+  Nereids 的价值在于迁移案例：很多 OLAP 系统一开始有一个可用但逐渐复杂的旧 planner，随着物化视图、复杂 join、
+  分布式执行、统计信息和新算子加入，旧 planner 难以维护，于是引入 Cascades-like optimizer。
+</p>
+<p>
+  对研究者来说，Doris/Nereids 可以回答一个现实问题：不是“Cascades 是否优雅”，而是“什么时候旧 pipeline 复杂到值得上 memo”。
+</p>
+</section>
+
+<section id="mysql">
+<h2>十四、MySQL Hypergraph Optimizer：主流关系数据库的 Hypergraph 产品化</h2>
+<p>
+  MySQL 传统 optimizer 长期以 join order、access path 和 cost-based choices 为核心。近年的 Hypergraph Optimizer
+  把 join 查询表示为 hypergraph，能够更系统地处理复杂 join predicates 和 bushy plans。MySQL 9.7 官方 release notes
+  说明 Hypergraph Optimizer 已可在 Community Edition 中使用，并可通过 <code>optimizer_switch</code> 开关启用。
+  <span class="cite"><a href="#ref-mysql-hypergraph">[20]</a></span>
+</p>
+<p>
+  Hypergraph 路线和 Cascades 路线的区别在于关注点：Cascades 是通用等价表达式管理框架，
+  hypergraph optimizer 则把 join reorder 这个子问题抽成图模型，直接在图上枚举和剪枝。
+  对于 join-heavy workloads，后者可以更精确地表达多表谓词和 bushy search。
+</p>
+<p>
+  和 DuckDB DPccp 一样，MySQL hypergraph optimizer 提醒我们：join reorder 未必只能靠通用 rewrite rules。
+  当研究目标聚焦 join order，显式 join graph/hypergraph IR 可能比通用 logical expression memo 更直接。
+</p>
+</section>
+
+<section id="lessons">
+<h2>十五、对本仓库 Volcano Demo 的启发</h2>
+<p>
+  当前 <code>demos/volcano_join_reorder</code> 已经具备一个最小 Volcano/Cascades 骨架：
+  parser boundary、JoinGraph、memo groups、transformation rules、implementation rules、required property、
+  SortEnforcer、costing 和 trace。对比上面的系统，可以得到几个下一步设计方向。
+</p>
+
+<h3>1. 把 optimizer 明确分成 “framework” 和 “join algorithm” 两层</h3>
+<p>
+  Calcite/ORCA/Cockroach 证明 memo framework 很适合表达 rule、property 和 enforcer；
+  DuckDB/MySQL 证明 join order 本身最好有专门的 graph/hypergraph 枚举模块。因此后续可以让 demo 保留 memo，
+  但把 join group 的候选 split 来源替换为 DPccp/min-cut/top-down partitioning，而不是只靠交换律和结合律生成。
+</p>
+
+<h3>2. 扩展 property system，而不是只扩展 join algorithm</h3>
+<p>
+  PostgreSQL 的 <code>PathKeys</code>、Calcite traits、ORCA/Cockroach required properties、Trino distribution choices
+  都说明 property 是 optimizer 架构核心。当前 demo 只有 <code>Any</code> 和 <code>Sorted(alias.column)</code>；
+  后续可增加 <code>Partitioned(keys)</code>、<code>Replicated</code>、<code>SingleNode</code>、<code>PreservesOrder</code> 等，
+  并把 exchange/sort/materialize 都作为 enforcer。
+</p>
+
+<h3>3. 独立 metadata/statistics provider</h3>
+<p>
+  真实系统不会让 optimizer 到处直接读 JSON 或 catalog。Calcite metadata provider、ORCA metadata cache、
+  Cockroach/TiDB stats 模块都提示：stats、约束、唯一键、NDV、histogram、foreign key、functional dependency
+  应成为独立接口。当前 demo 的 <code>StatsCatalog</code> 可以演进成 <code>MetadataProvider</code>。
+</p>
+
+<h3>4. Trace 要记录 “为什么”，不只是 “结果”</h3>
+<p>
+  研究 demo 的价值在可观察性。现有 <code>trace.json</code> 已记录 rule attempts、duplicates、cache hits 和 final cost；
+  后续可以增加每条 rule 的 before/after、被剪枝原因、property request stack、cardinality 推导、cost breakdown。
+  这比单纯输出 best plan 更适合研究 Volcano/Cascades 的优缺点。
+</p>
+
+<h3>5. 不要过早绑定某个生产系统的全部复杂度</h3>
+<p>
+  PostgreSQL、Spark、Trino、ORCA 的复杂度来自各自执行器和部署模型。研究 demo 应先保留最小核：
+  local IR、memo、property、stats、cost、trace。等 join enumeration 研究清楚后，再逐步加入 distribution 和 execution backend。
+</p>
+</section>
+
+<section>
+<h2>十六、按研究用途推荐阅读顺序</h2>
+<ol>
+  <li><strong>想理解传统 CBO：</strong>PostgreSQL optimizer README → SQLite query planner docs。</li>
+  <li><strong>想理解规则流水线：</strong>DuckDB optimizer blog → DataFusion optimizer docs → Spark SQL Catalyst paper。</li>
+  <li><strong>想理解 Volcano/Cascades：</strong>Calcite planner/trait docs → Cockroach optimizer docs → ORCA paper。</li>
+  <li><strong>想理解 join graph/hypergraph：</strong>SQLite NGQP → DuckDB join order optimizer → MySQL Hypergraph Optimizer。</li>
+  <li><strong>想做 demo 下一步：</strong>先把 JoinGraph enumeration 模块化，再扩展 RequiredProperty 和 trace。</li>
+</ol>
+</section>
+
+<section id="refs">
+<h2>参考资料</h2>
+<ol class="refs">
+  <li id="ref-postgres-readme">PostgreSQL source: <a href="https://github.com/postgres/postgres/blob/master/src/backend/optimizer/README">src/backend/optimizer/README</a>.</li>
+  <li id="ref-sqlite-optoverview">SQLite Documentation: <a href="https://www.sqlite.org/optoverview.html">Query Optimizer Overview</a>.</li>
+  <li id="ref-sqlite-ngqp">SQLite Documentation: <a href="https://www.sqlite.org/queryplanner-ng.html">The Next Generation Query Planner</a>.</li>
+  <li id="ref-duckdb-optimizer">DuckDB Blog: <a href="https://duckdb.org/2024/11/14/optimizers.html">Optimizers: The Low-Key MVP</a>.</li>
+  <li id="ref-duckdb-internals">DuckDB Documentation: <a href="https://duckdb.org/docs/current/internals/overview.html">Internals Overview</a>.</li>
+  <li id="ref-calcite-algebra">Apache Calcite Documentation: <a href="https://calcite.apache.org/docs/algebra.html">Algebra</a>.</li>
+  <li id="ref-calcite-javadoc">Apache Calcite API: <a href="https://calcite.apache.org/javadocAggregate/org/apache/calcite/plan/RelOptPlanner.html">RelOptPlanner</a>.</li>
+  <li id="ref-datafusion-architecture">Apache DataFusion Documentation: <a href="https://datafusion.apache.org/library-user-guide/building-logical-plans.html">Building Logical Plans</a>.</li>
+  <li id="ref-datafusion-optimizer">Apache DataFusion Documentation: <a href="https://datafusion.apache.org/library-user-guide/query-optimizer.html">Query Optimizer</a>.</li>
+  <li id="ref-spark-paper">Armbrust et al., Spark SQL: <a href="https://people.csail.mit.edu/matei/papers/2015/sigmod_spark_sql.pdf">Relational Data Processing in Spark</a>.</li>
+  <li id="ref-spark-catalyst-source">Apache Spark source: <a href="https://github.com/apache/spark/tree/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst">sql/catalyst package</a>.</li>
+  <li id="ref-trino-optimizer">Trino Documentation: <a href="https://trino.io/docs/current/admin/properties-optimizer.html">Optimizer properties</a>.</li>
+  <li id="ref-cockroach-cost">CockroachDB Documentation: <a href="https://www.cockroachlabs.com/docs/stable/cost-based-optimizer">Cost-based optimizer</a>.</li>
+  <li id="ref-cockroach-optgen">CockroachDB source docs: <a href="https://github.com/cockroachdb/cockroach/blob/master/pkg/sql/opt/doc.go">pkg/sql/opt/doc.go</a>.</li>
+  <li id="ref-tidb-planner">TiDB Developer Guide: <a href="https://pingcap.github.io/tidb-dev-guide/understand-tidb/planner.html">Planner</a>.</li>
+  <li id="ref-tidb-cascades">TiDB source/design: <a href="https://github.com/pingcap/tidb/tree/master/pkg/planner/cascades">planner/cascades</a>.</li>
+  <li id="ref-orca-paper">Soliman et al.: <a href="https://15721.courses.cs.cmu.edu/spring2016/papers/p337-soliman.pdf">Orca: A Modular Query Optimizer Architecture for Big Data</a>.</li>
+  <li id="ref-greenplum-orca">VMware Tanzu Greenplum Documentation: <a href="https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-greenplum/7/greenplum-database/admin_guide-query-topics-query-piv-opt-overview.html">GPORCA Overview</a>.</li>
+  <li id="ref-doris-nereids">Apache Doris Documentation: <a href="https://doris.apache.org/docs/dev/query-acceleration/nereids/">Nereids Optimizer</a>.</li>
+  <li id="ref-mysql-hypergraph">MySQL 9.7 Release Notes: <a href="https://dev.mysql.com/doc/relnotes/mysql/9.7/en/news-9-7-0.html">Changes in MySQL 9.7.0</a>.</li>
+</ol>
+</section>
+
+</body>
+</html>

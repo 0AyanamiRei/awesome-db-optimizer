@@ -5,17 +5,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DUCKDB_ROOT "/home/refrain/proj/duckdb-adl" CACHE PATH "Path to a DuckDB source checkout")
-
-if(NOT EXISTS "${DUCKDB_ROOT}/CMakeLists.txt")
-  message(FATAL_ERROR "DUCKDB_ROOT must point to a DuckDB source checkout")
-endif()
-
-add_subdirectory("${DUCKDB_ROOT}" "${CMAKE_BINARY_DIR}/duckdb" EXCLUDE_FROM_ALL)
-
+# --- volcano_core library (shared infrastructure) ---
 add_library(volcano_core STATIC
+  src/cost_model.cpp
   src/exporter.cpp
-  src/optimizer.cpp
   src/stats.cpp
   src/types.cpp
 )
@@ -25,43 +18,61 @@ target_include_directories(volcano_core
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-add_library(volcano_duckdb_frontend STATIC
-  src/duckdb_sql_frontend.cpp
+# --- Strategy implementations ---
+add_library(volcano_strategies STATIC
+  src/bottom_up_dp.cpp
+  src/top_down_partitioning.cpp
+  src/transformational.cpp
 )
 
-target_include_directories(volcano_duckdb_frontend
+target_include_directories(volcano_strategies
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${DUCKDB_ROOT}/src/include"
 )
 
-target_link_libraries(volcano_duckdb_frontend
+target_link_libraries(volcano_strategies
   PUBLIC
     volcano_core
-    duckdb_static
-    dummy_static_extension_loader
 )
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-  add_executable(volcano_join_demo
-    src/main.cpp
-  )
+# --- Test cases library ---
+add_library(volcano_test_cases STATIC
+  examples/test_cases.cpp
+)
 
-  target_link_libraries(volcano_join_demo
-    PRIVATE
-      volcano_duckdb_frontend
-  )
-endif()
+target_include_directories(volcano_test_cases
+  PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/examples"
+)
 
+target_link_libraries(volcano_test_cases
+  PUBLIC
+    volcano_core
+)
+
+# --- Main demo binary ---
+add_executable(volcano_join_demo
+  src/main.cpp
+)
+
+target_link_libraries(volcano_join_demo
+  PRIVATE
+    volcano_strategies
+    volcano_test_cases
+)
+
+# --- Tests ---
 enable_testing()
 
 add_executable(volcano_tests
-  tests/test_volcano.cpp
+  tests/test_join_search.cpp
 )
 
 target_link_libraries(volcano_tests
   PRIVATE
-    volcano_duckdb_frontend
+    volcano_strategies
+    volcano_test_cases
 )
 
 add_test(NAME volcano_tests COMMAND volcano_tests)

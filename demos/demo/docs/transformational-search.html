@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformational Search Workflow — Volcano Join Demo</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --border: #e5e7eb;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+    --ok-bg: #ecfdf5;
+    --ok-border: #6ee7b7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --border: #334155; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+      --ok-bg: #064e3b; --ok-border: #059669;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 980px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.15rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.5rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; color: var(--accent-2); }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: left; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+  .small { color: var(--subtle); font-size: .9rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Transformational Search Workflow</h1>
+<p>
+  <code>demos/demo/src/transformational.cpp</code> 的算法说明：
+  当前 demo 的两阶段 Transformational 搜索如何工作，它与微软
+  <em>Extensible Query Optimizers in Practice</em> 中 on-demand Volcano 框架的差异，
+  以及一个完整的 <code>chain_3</code> 流程模拟。
+</p>
+
+<div class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#scope">文档定位</a></li>
+  <li><a href="#data-model">数据模型</a></li>
+  <li><a href="#implemented-workflow">当前 Transformational 工作流</a></li>
+  <li><a href="#memo-phase">Phase 1: BuildMemo</a></li>
+  <li><a href="#physical-phase">Phase 2: 物理优化</a></li>
+  <li><a href="#trace">Trace 计数器</a></li>
+  <li><a href="#volcano-paper">完整 on-demand Volcano 框架</a></li>
+  <li><a href="#differences">关键差异</a></li>
+  <li><a href="#example">例子：chain_3 流程模拟</a></li>
+  <li><a href="#next-step">如何演进到更完整的 Volcano</a></li>
+  <li><a href="#references">参考资料</a></li>
+</ol>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="scope">1. 文档定位</h2>
+
+<p>
+  当前项目里有三种 join order search strategy：
+  <code>BottomUpDP</code>、<code>Transformational</code>、<code>TopDownPartitioning</code>。
+  本文只聚焦 <code>Transformational</code>。
+</p>
+
+<div class="callout callout-info">
+  <strong>路径说明：</strong>当前 checkout 中 demo 目录是 <code>demos/demo</code>。
+  早期提交中相同模块曾位于 <code>demos/volcano_join_reorder</code>，如果 IDE 标签仍显示旧路径，
+  可以把本文中的 <code>demos/demo</code> 视为重命名后的对应位置。
+</div>
+
+<p>
+  这个实现的名字叫 <code>Transformational</code>，但它不是完整论文版本的 Volcano optimizer。
+  它更准确的定位是：
+</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>教学目标</h4>
+    <p>展示 memo group、逻辑变换规则、重复表达式、required property、enforcer、物理实现规则之间的关系。</p>
+  </div>
+  <div class="card">
+    <h4>实现策略</h4>
+    <p>先批量构造逻辑 memo，再在已经构造好的 memo 上做 top-down physical optimization。</p>
+  </div>
+  <div class="card">
+    <h4>刻意简化</h4>
+    <p>没有 promise 排序、没有 cost limit 剪枝、没有通用 move/rule registry，也没有边优化边生成 memo。</p>
+  </div>
+</div>
+
+<p>
+  因此，本文会把当前实现称为 <strong>two-phase transform prototype</strong>，
+  把论文里更完整的框架称为 <strong>on-demand Volcano</strong>。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="data-model">2. 数据模型</h2>
+
+<h3>2.1 RelSet 与 JoinGraph</h3>
+
+<p>
+  Join reorder 的搜索空间用 <code>RelSet</code> 表示。<code>RelSet</code> 是一个
+  <code>uint64_t</code> bitmask，每一位代表一个 relation。
+  对 <code>chain_3</code> 来说：
+</p>
+
+<table>
+  <tr><th>Relation</th><th>id</th><th>bit</th><th>mask</th></tr>
+  <tr><td><code>a</code></td><td>0</td><td><code>1 &lt;&lt; 0</code></td><td><code>1</code></td></tr>
+  <tr><td><code>b</code></td><td>1</td><td><code>1 &lt;&lt; 1</code></td><td><code>2</code></td></tr>
+  <tr><td><code>c</code></td><td>2</td><td><code>1 &lt;&lt; 2</code></td><td><code>4</code></td></tr>
+  <tr><td><code>{a,b,c}</code></td><td>-</td><td><code>1 | 2 | 4</code></td><td><code>7</code></td></tr>
+</table>
+
+<p>
+  <code>JoinGraph</code> 负责判断一个 split 是否可以作为 CP-free join：
+</p>
+
+<pre><code>IsValidJoinSplit(left, right, allow_cross_products):
+  if left == 0 or right == 0 or left intersects right:
+    return false
+
+  if allow_cross_products:
+    return true
+
+  return IsConnected(left)
+      and IsConnected(right)
+      and HasPredicateAcross(left, right)</code></pre>
+
+<p>
+  当前 <code>Transformational::Search</code> 调用时把 <code>allow_cp</code> 固定传为
+  <code>false</code>，所以逻辑 memo 中不会插入物理意义上的 cross product split。
+</p>
+
+<h3>2.2 LogicalExpr 与 MemoGroup</h3>
+
+<pre><code>struct LogicalExpr {
+  enum class Kind { Get, Join };
+
+  Kind kind;
+  RelSet relset;
+  std::size_t relation_id;  // Get
+  RelSet left_set;          // Join
+  RelSet right_set;         // Join
+};</code></pre>
+
+<p>
+  当前实现中，逻辑表达式只有两种：
+</p>
+
+<table>
+  <tr><th>LogicalExpr</th><th>含义</th><th>例子</th></tr>
+  <tr>
+    <td><code>Get(relation_id)</code></td>
+    <td>单表逻辑访问</td>
+    <td><code>Get(a)</code></td>
+  </tr>
+  <tr>
+    <td><code>Join(left_set, right_set)</code></td>
+    <td>两个 relation set 的逻辑 join</td>
+    <td><code>Join({a,b}, {c})</code></td>
+  </tr>
+</table>
+
+<p>
+  <code>MemoGroup</code> 是等价类的简化版本：同一个 <code>RelSet</code> 下的所有
+  <code>LogicalExpr</code> 放在同一个 group 里。
+</p>
+
+<pre><code>struct MemoGroup {
+  RelSet relset;
+  std::vector&lt;LogicalExpr&gt; expressions;
+};</code></pre>
+
+<div class="callout callout-warn">
+  <strong>重要简化：</strong>生产级 Volcano/Cascades 的 group 通常由 group id 标识，
+  group expression 的 child 指向 child group。当前 demo 直接用 <code>RelSet</code>
+  作为 group key，这对 pure inner join reorder 足够直观，但表达能力比完整 memo 窄。
+</div>
+
+<h3>2.3 MemoStore 去重</h3>
+
+<p>
+  <code>MemoStore</code> 同时维护：
+</p>
+
+<ul>
+  <li><code>groups_</code>：按 <code>RelSet</code> 保存 group。</li>
+  <li><code>group_by_relset_</code>：从 <code>RelSet</code> 找 group index。</li>
+  <li><code>expression_keys_</code>：全局表达式去重集合。</li>
+</ul>
+
+<pre><code>LogicalExpr::Key():
+  if Get:
+    return "G:" + relation_id
+  else:
+    return "J:" + left_set + ":" + right_set
+
+MemoStore::InsertExpression(expr):
+  if expr.Key() already exists:
+    duplicates_generated++
+    return false
+
+  expression_keys_.insert(expr.Key())
+  EnsureGroup(expr.relset).expressions.push_back(expr)
+  return true</code></pre>
+
+<p>
+  注意 <code>Join({a},{b})</code> 与 <code>Join({b},{a})</code> 的 key 不同。
+  因此 commuted join 会作为不同 expression 进入同一个 memo group。
+  它们逻辑等价，但方向不同，可以让后续物理优化看到不同 child order。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="implemented-workflow">3. 当前 Transformational 工作流</h2>
+
+<p>
+  <code>Transformational::Search</code> 的顶层控制流可以概括为：
+</p>
+
+<pre><code>Transformational::Search(graph, stats, required_property):
+  trace = {}
+  memo.clear()
+  best_cache.clear()
+
+  full = graph.FullSet()
+  if full is empty:
+    return empty result
+
+  // Phase 1: 先构造完整逻辑 memo
+  work = deque()
+  SeedInitialExpressions(graph, allow_cp=false, work, trace)
+  ExploreTransformations(graph, allow_cp=false, work, trace)
+
+  // Phase 2: 再在 memo 上做 property-aware physical optimization
+  plan = OptimizeGroup(graph, full, required_property, trace)
+
+  result.best_plan = plan
+  result.trace.best_cost = plan.cost
+  result.trace.plans_cached = best_cache.size()
+  return result</code></pre>
+
+<div class="diagram">
+┌──────────────────────────────────────────────────────────────────────┐
+│ Input: JoinGraph + RequiredProperty                                  │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Phase 1: BuildMemo                                                   │
+│                                                                      │
+│   1. Seed singleton Get expressions                                  │
+│   2. Enumerate every valid ordered partition of every relation set    │
+│   3. Put every inserted expression into a work queue                  │
+│   4. Pop expressions and apply commutativity / associativity rules    │
+│   5. Deduplicate by expression key                                   │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Phase 2: OptimizeGroup(full, property)                               │
+│                                                                      │
+│   1. Memoize by (RelSet, RequiredProperty)                           │
+│   2. For every logical expression in a group, try physical methods    │
+│   3. Recursively optimize children with derived required properties   │
+│   4. Try SortEnforcer fallback for Sorted property                    │
+│   5. Return lowest-cost physical plan                                │
+└──────────────────────────────────────────────────────────────────────┘</div>
+
+<p>
+  这就是它和完整 on-demand Volcano 最大的分界：
+  <strong>当前实现把 transformation 全部放在物理优化之前完成。</strong>
+</p>
+
+<!-- ================================================================== -->
+<h2 id="memo-phase">4. Phase 1: BuildMemo</h2>
+
+<h3>4.1 SeedInitialExpressions</h3>
+
+<p>
+  seed 阶段做两件事：插入所有单表 <code>Get</code>，然后枚举所有 relation set 的合法 ordered partition。
+</p>
+
+<pre><code>SeedInitialExpressions(graph, allow_cp=false):
+  for relation in graph.Relations():
+    insert Get(relation.id)
+    work.push(Get)
+
+  full = graph.FullSet()
+  for set in [1..full]:
+    if set contains bits outside full or PopCount(set) &lt; 2:
+      continue
+
+    for left in graph.ValidOrderedPartitions(set, allow_cp=false):
+      right = set ^ left
+      TryInsertJoin(left, right, from_rule=false)</code></pre>
+
+<p>
+  这里的 <code>ValidOrderedPartitions</code> 会保留 <code>(L,R)</code> 和 <code>(R,L)</code>。
+  也就是说 <code>Join({a},{b})</code> 与 <code>Join({b},{a})</code> 都会被 seed 出来。
+</p>
+
+<div class="callout callout-info">
+  <strong>为什么是 ordered partition？</strong>
+  对逻辑关系代数来说 join 通常是 commutative 的，但对物理实现来说 child order
+  可能影响 build/probe side、nested-loop outer/inner side、以及后续 required property 推导。
+  demo 保留两个方向，可以让物理优化阶段显式比较。
+</div>
+
+<h3>4.2 TryInsertJoin</h3>
+
+<pre><code>TryInsertJoin(graph, allow_cp, left, right, from_rule):
+  if from_rule:
+    trace.rule_applications++
+
+  if not graph.IsValidJoinSplit(left, right, allow_cp):
+    return false
+
+  expr = LogicalExpr::Join(left, right)
+  inserted = memo.InsertExpression(expr, trace, count_duplicate=from_rule)
+
+  if inserted:
+    work.push(expr)
+
+  return inserted</code></pre>
+
+<p>
+  这个函数是 Phase 1 的唯一插入入口，所以所有初始枚举和规则生成都会经过同一层过滤。
+  当 <code>from_rule=true</code> 时，失败的重复插入会计入
+  <code>duplicates_generated</code>。
+</p>
+
+<h3>4.3 ExploreTransformations</h3>
+
+<p>
+  变换阶段使用 work queue。每个新插入的 expression 都会被拿出来匹配规则。
+</p>
+
+<pre><code>ExploreTransformations(work):
+  while work is not empty:
+    expr = work.pop_front()
+    ApplyRules(expr)</code></pre>
+
+<h3>4.4 ApplyRules</h3>
+
+<table>
+  <tr><th>规则</th><th>触发条件</th><th>生成表达式</th></tr>
+  <tr>
+    <td>Commutativity</td>
+    <td><code>Join(L, R)</code></td>
+    <td><code>Join(R, L)</code></td>
+  </tr>
+  <tr>
+    <td>Left associativity-like</td>
+    <td><code>L</code> group 中存在 <code>Join(A, B)</code></td>
+    <td><code>Join(A, B|R)</code><br><code>Join(B, A|R)</code></td>
+  </tr>
+  <tr>
+    <td>Right associativity-like</td>
+    <td><code>R</code> group 中存在 <code>Join(B, C)</code></td>
+    <td><code>Join(L|B, C)</code><br><code>Join(L|C, B)</code></td>
+  </tr>
+</table>
+
+<pre><code>ApplyRules(expr):
+  if expr is not Join:
+    return
+
+  // Join(L, R) -> Join(R, L)
+  TryInsertJoin(expr.right_set, expr.left_set, from_rule=true)
+
+  // If left child is itself a join: (A join B) join C
+  for left_expr in memo.FindGroup(expr.left_set).expressions:
+    if left_expr is Join:
+      TryInsertJoin(left_expr.left_set,
+                    left_expr.right_set | expr.right_set,
+                    from_rule=true)
+      TryInsertJoin(left_expr.right_set,
+                    left_expr.left_set | expr.right_set,
+                    from_rule=true)
+
+  // If right child is itself a join: A join (B join C)
+  for right_expr in memo.FindGroup(expr.right_set).expressions:
+    if right_expr is Join:
+      TryInsertJoin(expr.left_set | right_expr.left_set,
+                    right_expr.right_set,
+                    from_rule=true)
+      TryInsertJoin(expr.left_set | right_expr.right_set,
+                    right_expr.left_set,
+                    from_rule=true)</code></pre>
+
+<div class="callout callout-warn">
+  <strong>这里正是 duplicate 演示的来源：</strong>
+  seed 阶段已经枚举了许多合法 ordered partition，规则阶段又会从不同路径推导出相同
+  <code>Join(L,R)</code>。memo 去重会阻止表达式实际膨胀，但每次失败插入仍然是一次搜索工作。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="physical-phase">5. Phase 2: 物理优化</h2>
+
+<h3>5.1 OptimizeGroup</h3>
+
+<p>
+  物理优化阶段在已经构造好的 memo 上递归搜索。
+  缓存 key 是 <code>(RelSet, RequiredProperty)</code>。
+</p>
+
+<pre><code>OptimizeGroup(relset, property):
+  key = relset + "|" + property.ToString()
+
+  if key in best_cache:
+    trace.cache_hits++
+    return best_cache[key]
+
+  if property == Any:
+    result = OptimizeAny(relset)
+  else:
+    result = OptimizeSorted(relset, property.sort_key)
+
+  best_cache[key] = result
+  return result</code></pre>
+
+<p>
+  这部分已经很接近论文里的 <code>FindBestPlan(Group, PhyProp)</code>：
+  它递归优化子 group，并且按照 required property 做 memoization。
+  但它少了 <code>Limit</code>，因此不会做 branch-and-bound 剪枝。
+</p>
+
+<h3>5.2 OptimizeAny</h3>
+
+<pre><code>OptimizeAny(relset):
+  group = memo.FindGroup(relset)
+  best = null
+
+  for expr in group.expressions:
+    candidate = OptimizeAnyExpr(expr)
+    best = min_cost(best, candidate)
+
+  return best</code></pre>
+
+<p>
+  对 <code>Get</code>，它直接生成 <code>SeqScan</code>。
+  对 <code>Join</code>，它递归获取左右 child 的 <code>Any</code> 最优计划，
+  然后尝试三类 join implementation：
+</p>
+
+<table>
+  <tr><th>Physical op</th><th>子属性要求</th><th>cost 公式</th></tr>
+  <tr>
+    <td><code>HashJoin</code></td>
+    <td><code>left: Any</code>, <code>right: Any</code></td>
+    <td><code>left_cost + right_cost + left_rows + right_rows + output_rows</code></td>
+  </tr>
+  <tr>
+    <td><code>NestedLoopJoin</code></td>
+    <td><code>left: Any</code>, <code>right: Any</code></td>
+    <td><code>left_cost + right_cost + left_rows * right_rows</code></td>
+  </tr>
+  <tr>
+    <td><code>MergeJoin</code></td>
+    <td><code>left: Sorted(join_key_left)</code>, <code>right: Sorted(join_key_right)</code></td>
+    <td><code>left_cost + right_cost + left_rows + right_rows</code></td>
+  </tr>
+</table>
+
+<pre><code>OptimizeAnyExpr(Join(L, R)):
+  left_any  = OptimizeGroup(L, Any)
+  right_any = OptimizeGroup(R, Any)
+
+  best = min(
+    HashJoin(left_any, right_any),
+    NestedLoopJoin(left_any, right_any)
+  )
+
+  if there is a crossing predicate:
+    left_sorted  = OptimizeGroup(L, Sorted(left_join_key))
+    right_sorted = OptimizeGroup(R, Sorted(right_join_key))
+    best = min(best, MergeJoin(left_sorted, right_sorted))
+
+  return best</code></pre>
+
+<h3>5.3 OptimizeSorted</h3>
+
+<p>
+  当 root 要求 <code>Sorted(alias.column)</code> 时，当前实现先尝试找到一个天然产生该排序的
+  merge join；如果没有，就回退到 <code>Any + SortEnforcer</code>。
+</p>
+
+<pre><code>OptimizeSorted(relset, sort_key):
+  best = null
+
+  for expr in memo.FindGroup(relset).expressions:
+    best = min(best, OptimizeSortedExpr(expr, sort_key))
+
+  any = OptimizeGroup(relset, Any)
+  if any exists:
+    best = min(best, SortEnforcer(any, sort_key))
+
+  return best</code></pre>
+
+<p>
+  单表 sorted property 的处理更简单：如果 sort key 属于该表，就在 <code>SeqScan</code>
+  上补一个 <code>SortEnforcer</code>；如果 sort key 属于别的表，则该单表 group 无法满足这个 property。
+</p>
+
+<pre><code>OptimizeSortedExpr(Get(r), sort_key):
+  if sort_key.alias != r.alias:
+    return null
+
+  return SortEnforcer(SeqScan(r), sort_key)</code></pre>
+
+<!-- ================================================================== -->
+<h2 id="trace">6. Trace 计数器</h2>
+
+<p>
+  <code>Transformational</code> 主要使用以下 trace 字段：
+</p>
+
+<table>
+  <tr><th>字段</th><th>当前 Transformational 中的含义</th></tr>
+  <tr>
+    <td><code>rule_applications</code></td>
+    <td>从规则触发的 <code>TryInsertJoin</code> 次数，包括最终因为 CP-free 检查失败的尝试。</td>
+  </tr>
+  <tr>
+    <td><code>duplicates_generated</code></td>
+    <td>规则生成了一个已存在 expression key，memo 拒绝插入。</td>
+  </tr>
+  <tr>
+    <td><code>plans_costed</code></td>
+    <td>实际创建并比较过的 physical plan 或 sort enforcer 数量。</td>
+  </tr>
+  <tr>
+    <td><code>cache_hits</code></td>
+    <td><code>OptimizeGroup(RelSet, Property)</code> 命中 <code>best_cache_</code>。</td>
+  </tr>
+  <tr>
+    <td><code>plans_cached</code></td>
+    <td>物理优化结束后，<code>best_cache_</code> 中的唯一 <code>(RelSet, Property)</code> 条目数。</td>
+  </tr>
+  <tr>
+    <td><code>best_cost</code></td>
+    <td>最终被选中的 best physical plan cost。</td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>为什么 <code>partitions_explored</code> 是 0？</strong>
+  当前实现的 seed 阶段确实枚举了 partitions，但没有把这个过程计入
+  <code>partitions_explored</code>。这个字段主要由 <code>BottomUpDP</code> 和
+  <code>TopDownPartitioning</code> 使用。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="volcano-paper">7. 完整 on-demand Volcano 框架</h2>
+
+<p>
+  微软 <em>Extensible Query Optimizers in Practice</em> 对 Volcano/Cascades 类优化器的描述，
+  核心是一个按需递归的 <code>FindBestPlan</code>。它不会先完整展开逻辑 memo，
+  而是在优化某个 <code>(Group, PhysicalProperty)</code> 时，把 transformation rule、
+  implementation rule、enforcer 都作为 move 统一调度。
+</p>
+
+<pre><code>FindBestPlan(group, property, limit):
+  if BestPlan(group, property) is already memoized:
+    if cached_cost &lt;= limit:
+      return cached_plan
+    return null
+
+  MarkInProgress(group, property)
+
+  moves = GetAllMoves(group, property)
+  SortMovesByPromise(moves)
+
+  best = null
+  best_cost = +infinity
+
+  for move in moves:
+    if move is transformation rule:
+      for neighbor_group in Transform(group, move):
+        if not InProgress(neighbor_group, property):
+          candidate = FindBestPlan(neighbor_group, property, limit)
+          best = min(best, candidate)
+
+    else if move is implementation rule:
+      local_cost = DeriveLocalCost(move)
+      child_requirements = DeriveChildProperties(move, property)
+
+      for child in move.children:
+        child_plan = FindBestPlan(child.group,
+                                  child.required_property,
+                                  limit - local_cost)
+        local_cost += child_plan.cost
+
+      best = min(best, CreatePhysicalPlan(move, child_plans))
+
+    else if move is enforcer:
+      local_cost = DeriveEnforcerCost(move)
+      weaker_property = GetInputProperty(move, property)
+      child_plan = FindBestPlan(group, weaker_property, limit - local_cost)
+      best = min(best, Enforce(move, child_plan))
+
+    limit = min(limit, best_cost)
+
+  MemoizeBestPlan(group, property, best)
+  return best</code></pre>
+
+<p>
+  这个框架的几个关键点：
+</p>
+
+<ul>
+  <li><strong>按需展开：</strong>只在某个 group/property 被请求时才应用相关 rule。</li>
+  <li><strong>统一 move：</strong>逻辑变换、物理实现、enforcer 都是同一搜索循环里的候选动作。</li>
+  <li><strong>promise 排序：</strong>优先尝试更可能产生好计划的 move，以便更早降低 limit。</li>
+  <li><strong>limit 剪枝：</strong>已有更好上界时，子搜索可以提前失败返回。</li>
+  <li><strong>in-progress 标记：</strong>防止 transformation 递归导致循环。</li>
+  <li><strong>property-aware memo：</strong>best plan cache 以 <code>(Group, PhysicalProperty)</code> 为核心。</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="differences">8. 当前实现与 on-demand Volcano 的差异</h2>
+
+<table>
+  <tr><th>维度</th><th>当前 <code>Transformational</code></th><th>完整 on-demand Volcano</th><th>影响</th></tr>
+  <tr>
+    <td>搜索入口</td>
+    <td><code>Search</code> 先 <code>BuildMemo</code>，再 <code>OptimizeGroup</code>。</td>
+    <td><code>FindBestPlan(group, property, limit)</code> 是唯一递归入口。</td>
+    <td>当前实现更容易读；论文框架更适合剪枝与按需生成。</td>
+  </tr>
+  <tr>
+    <td>Memo 构建时机</td>
+    <td>物理优化之前批量构造。</td>
+    <td>优化过程中按需插入 group expression。</td>
+    <td>当前会预生成最终可能不用的逻辑表达式。</td>
+  </tr>
+  <tr>
+    <td>Transformation rule</td>
+    <td>只在 Phase 1 work queue 中运行。</td>
+    <td>是 <code>FindBestPlan</code> 循环里的一类 move。</td>
+    <td>当前不能用 property、limit、promise 影响变换顺序。</td>
+  </tr>
+  <tr>
+    <td>Implementation rule</td>
+    <td><code>HashJoin</code>、<code>NestedLoopJoin</code>、<code>MergeJoin</code> 硬编码在函数里。</td>
+    <td>通常注册为可匹配的 implementation rules。</td>
+    <td>当前扩展新物理算子需要改 C++ 控制流。</td>
+  </tr>
+  <tr>
+    <td>Enforcer</td>
+    <td><code>SortEnforcer</code> 是 <code>OptimizeSorted</code> 的 fallback。</td>
+    <td>enforcer 是独立 move，可参与 promise 排序和 limit 剪枝。</td>
+    <td>当前只有排序 enforcer，且调度位置固定。</td>
+  </tr>
+  <tr>
+    <td>Property</td>
+    <td>支持 <code>Any</code> 和 <code>Sorted(alias.column)</code>。</td>
+    <td>可扩展到 ordering、distribution、rewindability、parallelism 等。</td>
+    <td>当前足够展示 interesting order，但不是通用 property framework。</td>
+  </tr>
+  <tr>
+    <td>Cost limit</td>
+    <td>没有 <code>Limit</code> 参数。</td>
+    <td>递归调用携带剩余 cost budget。</td>
+    <td>当前不会 branch-and-bound；会完整比较 memo 中候选表达式。</td>
+  </tr>
+  <tr>
+    <td>Promise</td>
+    <td>没有 move priority。</td>
+    <td>moves 按 promise 排序。</td>
+    <td>当前搜索顺序基本由 vector/deque 顺序决定。</td>
+  </tr>
+  <tr>
+    <td>In-progress</td>
+    <td>Phase 1 用去重集合终止，Phase 2 cache 已完成结果。</td>
+    <td>对 <code>(Group, Property)</code> 标记 in-progress，避免递归环。</td>
+    <td>当前规则很少且简单；完整 rule set 下需要显式 cycle guard。</td>
+  </tr>
+  <tr>
+    <td>Group 表达能力</td>
+    <td>group key 是 <code>RelSet</code>。</td>
+    <td>group id + group expression，child 指向 child group。</td>
+    <td>当前适合 join reorder；完整优化器可表示 projection/filter/aggregate 等。</td>
+  </tr>
+  <tr>
+    <td>主要教学价值</td>
+    <td>直观看到 rule-driven duplicates 和 property cache。</td>
+    <td>展示 extensible optimizer 的统一搜索框架。</td>
+    <td>两者关注点不同；当前实现是更小、更透明的实验切片。</td>
+  </tr>
+</table>
+
+<div class="callout callout-ok">
+  <strong>一句话总结：</strong>
+  当前实现是 “eager logical memo + lazy physical optimization”；
+  完整 Volcano 是 “lazy logical transformation + lazy physical implementation + lazy enforcer”
+  的统一 top-down search。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="example">9. 例子：chain_3 流程模拟</h2>
+
+<h3>9.1 输入 JoinGraph</h3>
+
+<p>
+  使用项目内置测试用例 <code>chain_3</code>：
+</p>
+
+<pre><code>a(1000 rows, scan_cost=1000)
+  |
+  | a.x = b.x, selectivity = 0.01
+  |
+b(100 rows, scan_cost=100)
+  |
+  | b.y = c.y, selectivity = 0.05
+  |
+c(500 rows, scan_cost=500)</code></pre>
+
+<table>
+  <tr><th>Relation set</th><th>mask</th><th>connected?</th></tr>
+  <tr><td><code>{a}</code></td><td><code>1</code></td><td>yes</td></tr>
+  <tr><td><code>{b}</code></td><td><code>2</code></td><td>yes</td></tr>
+  <tr><td><code>{c}</code></td><td><code>4</code></td><td>yes</td></tr>
+  <tr><td><code>{a,b}</code></td><td><code>3</code></td><td>yes, edge <code>a.x=b.x</code></td></tr>
+  <tr><td><code>{a,c}</code></td><td><code>5</code></td><td>no, no edge between a and c</td></tr>
+  <tr><td><code>{b,c}</code></td><td><code>6</code></td><td>yes, edge <code>b.y=c.y</code></td></tr>
+  <tr><td><code>{a,b,c}</code></td><td><code>7</code></td><td>yes</td></tr>
+</table>
+
+<h3>9.2 Phase 1 seed</h3>
+
+<p>
+  Seed singleton gets：
+</p>
+
+<pre><code>Get(a)  -> group {a}
+Get(b)  -> group {b}
+Get(c)  -> group {c}</code></pre>
+
+<p>
+  然后枚举合法 ordered partitions：
+</p>
+
+<table>
+  <tr><th>set</th><th>candidate split</th><th>结果</th><th>原因</th></tr>
+  <tr>
+    <td><code>{a,b}</code></td>
+    <td><code>{a}|{b}</code>, <code>{b}|{a}</code></td>
+    <td>insert</td>
+    <td>左右连通，且有 <code>a.x=b.x</code></td>
+  </tr>
+  <tr>
+    <td><code>{a,c}</code></td>
+    <td><code>{a}|{c}</code>, <code>{c}|{a}</code></td>
+    <td>reject</td>
+    <td>左右之间没有 predicate</td>
+  </tr>
+  <tr>
+    <td><code>{b,c}</code></td>
+    <td><code>{b}|{c}</code>, <code>{c}|{b}</code></td>
+    <td>insert</td>
+    <td>左右连通，且有 <code>b.y=c.y</code></td>
+  </tr>
+  <tr>
+    <td><code>{a,b,c}</code></td>
+    <td><code>{a}|{b,c}</code>, <code>{a,b}|{c}</code>, <code>{c}|{a,b}</code>, <code>{b,c}|{a}</code></td>
+    <td>insert</td>
+    <td>每个 split 的左右两侧都连通，且 split 之间有 crossing predicate</td>
+  </tr>
+  <tr>
+    <td><code>{a,b,c}</code></td>
+    <td><code>{b}|{a,c}</code>, <code>{a,c}|{b}</code></td>
+    <td>reject</td>
+    <td><code>{a,c}</code> 不连通</td>
+  </tr>
+</table>
+
+<p>
+  seed 后 memo 中已经有 11 个 expression：
+</p>
+
+<table>
+  <tr><th>Group</th><th>Expressions</th></tr>
+  <tr><td><code>{a}</code></td><td><code>Get(a)</code></td></tr>
+  <tr><td><code>{b}</code></td><td><code>Get(b)</code></td></tr>
+  <tr><td><code>{c}</code></td><td><code>Get(c)</code></td></tr>
+  <tr><td><code>{a,b}</code></td><td><code>Join({a},{b})</code>, <code>Join({b},{a})</code></td></tr>
+  <tr><td><code>{b,c}</code></td><td><code>Join({b},{c})</code>, <code>Join({c},{b})</code></td></tr>
+  <tr>
+    <td><code>{a,b,c}</code></td>
+    <td>
+      <code>Join({a},{b,c})</code>,
+      <code>Join({a,b},{c})</code>,
+      <code>Join({c},{a,b})</code>,
+      <code>Join({b,c},{a})</code>
+    </td>
+  </tr>
+</table>
+
+<h3>9.3 Phase 1 transformation</h3>
+
+<p>
+  现在 work queue 依次弹出这些表达式应用规则。<code>Get</code> 不匹配 join rule，所以无动作。
+  二表 join 只会触发 commutativity，且目标方向已经由 seed 插入，所以都是 duplicate。
+</p>
+
+<table>
+  <tr><th>Expression</th><th>规则尝试</th><th>duplicate</th><th>说明</th></tr>
+  <tr><td><code>Join({a},{b})</code></td><td>1</td><td>1</td><td>生成 <code>Join({b},{a})</code>，已存在</td></tr>
+  <tr><td><code>Join({b},{a})</code></td><td>1</td><td>1</td><td>生成 <code>Join({a},{b})</code>，已存在</td></tr>
+  <tr><td><code>Join({b},{c})</code></td><td>1</td><td>1</td><td>生成 <code>Join({c},{b})</code>，已存在</td></tr>
+  <tr><td><code>Join({c},{b})</code></td><td>1</td><td>1</td><td>生成 <code>Join({b},{c})</code>，已存在</td></tr>
+</table>
+
+<p>
+  三表 join 会触发 commutativity 加上 associativity-like rewrite。
+  以 <code>Join({a},{b,c})</code> 为例：
+</p>
+
+<pre><code>expr = Join({a}, {b,c})
+
+Commutativity:
+  Join({b,c}, {a})                  // duplicate
+
+Right child group {b,c} has:
+  Join({b}, {c})
+  Join({c}, {b})
+
+From Join({b}, {c}):
+  Join({a,b}, {c})                  // duplicate
+  Join({a,c}, {b})                  // rejected: {a,c} disconnected
+
+From Join({c}, {b}):
+  Join({a,c}, {b})                  // rejected: {a,c} disconnected
+  Join({a,b}, {c})                  // duplicate</code></pre>
+
+<p>
+  四个三表 expression 的 pattern 对称，因此总计：
+</p>
+
+<table>
+  <tr><th>类别</th><th>rule attempts</th><th>duplicates</th></tr>
+  <tr><td>四个二表 join</td><td>4</td><td>4</td></tr>
+  <tr><td>四个三表 join</td><td>20</td><td>12</td></tr>
+  <tr><td><strong>合计</strong></td><td><strong>24</strong></td><td><strong>16</strong></td></tr>
+</table>
+
+<p>
+  这正好对应实际运行输出：
+</p>
+
+<pre><code>$ demos/demo/build/volcano_join_demo --strategy transform --test chain_3
+
+Strategy: Transformational
+Test: chain_3 (Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05))
+Relations: 3, Predicates: 2
+Required property: Any
+
+Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(a), SeqScan(b))), Sort[c.y](SeqScan(c)))
+Cost: 19651.6
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+Transformational    0             0             34            27            12            16            24            0             0             19651.56</code></pre>
+
+<h3>9.4 Phase 2 physical optimization</h3>
+
+<p>
+  root 调用是：
+</p>
+
+<pre><code>OptimizeGroup({a,b,c}, Any)</code></pre>
+
+<p>
+  它会遍历 group <code>{a,b,c}</code> 的四个 logical expression。
+  最终胜出的路径等价于：
+</p>
+
+<pre><code>MergeJoin(
+  Sort[b.y](
+    HashJoin(SeqScan(a), SeqScan(b))
+  ),
+  Sort[c.y](
+    SeqScan(c)
+  )
+)</code></pre>
+
+<p>
+  代价计算如下：
+</p>
+
+<table>
+  <tr><th>Plan</th><th>rows</th><th>cost</th><th>说明</th></tr>
+  <tr>
+    <td><code>SeqScan(a)</code></td>
+    <td>1000</td>
+    <td>1000</td>
+    <td>base scan</td>
+  </tr>
+  <tr>
+    <td><code>SeqScan(b)</code></td>
+    <td>100</td>
+    <td>100</td>
+    <td>base scan</td>
+  </tr>
+  <tr>
+    <td><code>SeqScan(c)</code></td>
+    <td>500</td>
+    <td>500</td>
+    <td>base scan</td>
+  </tr>
+  <tr>
+    <td><code>HashJoin(a,b)</code></td>
+    <td><code>1000 * 100 * 0.01 = 1000</code></td>
+    <td><code>1000 + 100 + 1000 + 100 + 1000 = 3200</code></td>
+    <td>child costs + input rows + output rows</td>
+  </tr>
+  <tr>
+    <td><code>Sort[b.y](HashJoin(a,b))</code></td>
+    <td>1000</td>
+    <td><code>3200 + 1000 * log2(1001) = 13167.23</code></td>
+    <td>为 merge join 左输入准备 <code>b.y</code> 排序</td>
+  </tr>
+  <tr>
+    <td><code>Sort[c.y](SeqScan(c))</code></td>
+    <td>500</td>
+    <td><code>500 + 500 * log2(501) = 4984.32</code></td>
+    <td>为 merge join 右输入准备 <code>c.y</code> 排序</td>
+  </tr>
+  <tr>
+    <td><code>MergeJoin((a,b),c)</code></td>
+    <td><code>1000 * 500 * 0.05 = 25000</code></td>
+    <td><code>13167.23 + 4984.32 + 1000 + 500 = 19651.56</code></td>
+    <td>merge join cost 不加 output rows</td>
+  </tr>
+</table>
+
+<p>
+  对比一个直接 <code>HashJoin((a,b),c)</code>：
+</p>
+
+<pre><code>HashJoin((a,b), c).cost
+  = cost(HashJoin(a,b)) + cost(SeqScan(c))
+    + rows(a,b) + rows(c) + rows((a,b),c)
+  = 3200 + 500 + 1000 + 500 + 25000
+  = 30200</code></pre>
+
+<p>
+  因此即使 merge join 需要两个 sort，仍然比最终 hash join 更便宜。
+</p>
+
+<h3>9.5 Root Sorted property</h3>
+
+<p>
+  如果要求 root 输出 <code>Sorted(c.y)</code>：
+</p>
+
+<pre><code>$ demos/demo/build/volcano_join_demo --strategy transform --test chain_3 --required sorted:c.y
+
+Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(a), SeqScan(b))), Sort[c.y](SeqScan(c)))
+Cost: 19651.6</code></pre>
+
+<p>
+  这个 plan 与 <code>Any</code> 场景相同，因为最后一层 merge join 使用
+  <code>b.y = c.y</code>，且右侧 key 是 <code>c.y</code>。
+  当前实现把该 merge join 的输出 property 标记为 <code>Sorted(c.y)</code>，
+  所以无需额外 root sort。
+</p>
+
+<h3>9.6 与三种策略对比</h3>
+
+<pre><code>$ demos/demo/build/volcano_join_demo --compare --test chain_3
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+BottomUpDP          4             2             37            0             20            0             0             20            0             19651.56
+Transformational    0             0             34            27            12            16            24            0             0             19651.56
+TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56</code></pre>
+
+<p>
+  这个对比很有代表性：
+</p>
+
+<ul>
+  <li>三种策略 cost 相同，说明都找到了同一个最优计划。</li>
+  <li><code>Transformational</code> 有 <code>duplicates=16</code> 和 <code>rules=24</code>，展示规则变换的重复工作。</li>
+  <li><code>Transformational</code> 的 <code>cache_hits=27</code>，说明物理优化阶段大量复用了 <code>(RelSet, Property)</code> 结果。</li>
+  <li><code>TopDown(Naive)</code> costed plans 更少，因为它不先构造完整逻辑 memo，而是直接递归划分。</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="next-step">10. 如何演进到更完整的 Volcano</h2>
+
+<p>
+  如果目标是让当前 <code>Transformational</code> 更接近
+  <em>Extensible Query Optimizers in Practice</em> 描述的 on-demand Volcano，
+  可以按下面几个步骤演进。
+</p>
+
+<h3>10.1 引入 GroupId / GroupExpr</h3>
+
+<p>
+  当前 group key 是 <code>RelSet</code>。下一步可以显式区分：
+</p>
+
+<pre><code>using GroupId = std::size_t;
+
+struct GroupExpr {
+  LogicalOp op;
+  std::vector&lt;GroupId&gt; children;
+  RelSet relset;
+};
+
+struct Group {
+  GroupId id;
+  RelSet relset;
+  std::vector&lt;GroupExpr&gt; expressions;
+};</code></pre>
+
+<p>
+  这样 memo 就能从 join reorder demo 扩展到 filter、project、aggregate 等更多 logical operator。
+</p>
+
+<h3>10.2 把规则抽象成 Move</h3>
+
+<pre><code>enum class MoveKind {
+  Transformation,
+  Implementation,
+  Enforcer
+};
+
+struct Move {
+  MoveKind kind;
+  double promise;
+  RuleId rule_id;
+};</code></pre>
+
+<p>
+  然后让 <code>FindBestPlan</code> 统一处理三类 move：
+</p>
+
+<ul>
+  <li>Transformation move：产生新的 group expression 或 neighbor group。</li>
+  <li>Implementation move：把 logical join 映射为 hash join、merge join、nested-loop join。</li>
+  <li>Enforcer move：添加 sort 等 property enforcer。</li>
+</ul>
+
+<h3>10.3 将 transformation 挪入 FindBestPlan</h3>
+
+<p>
+  当前是：
+</p>
+
+<pre><code>BuildMemo()
+OptimizeGroup()</code></pre>
+
+<p>
+  目标是：
+</p>
+
+<pre><code>FindBestPlan(group, property, limit):
+  for move in GetAllMoves(group, property):
+    if move is transformation:
+      Generate neighbor on demand
+      FindBestPlan(neighbor, property, limit)
+    if move is implementation:
+      Recursively optimize children
+    if move is enforcer:
+      Recursively optimize same group under weaker property</code></pre>
+
+<h3>10.4 加入 Limit 与 InProgress</h3>
+
+<p>
+  <code>Limit</code> 是论文框架中非常重要的剪枝入口。
+  它可以先从一个启发式 plan 获得上界，再在递归中逐步收紧：
+</p>
+
+<pre><code>FindBestPlan(group, property, limit):
+  if lower_bound(group, property) &gt;= limit:
+    return null
+
+  mark_in_progress(group, property)
+
+  for move in ordered_moves:
+    candidate = explore(move, limit)
+    if candidate.cost &lt; best.cost:
+      best = candidate
+      limit = best.cost
+
+  unmark_in_progress(group, property)
+  memoize(group, property, best)</code></pre>
+
+<p>
+  <code>InProgress</code> 用来避免 transformation cycle，例如 A 通过 commutativity 变成 B，
+  B 又通过 commutativity 变回 A。
+</p>
+
+<h3>10.5 保留当前实现作为对照组</h3>
+
+<p>
+  即使未来加入更完整的 on-demand Volcano，也建议保留当前
+  <code>Transformational</code>。它非常适合作为对照组：
+</p>
+
+<ul>
+  <li>它能稳定展示 transformation-based duplicate generation。</li>
+  <li>它和 BottomUpDP / TopDownPartitioning 的 trace 字段可以直接横向比较。</li>
+  <li>它的 two-phase 结构便于教学：先理解 memo，再理解 property-aware physical search。</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="references">11. 参考资料</h2>
+
+<ol>
+  <li>
+    <strong>Surajit Chaudhuri, Vivek Narasayya, Ravi Ramamurthy</strong> —
+    <em>Extensible Query Optimizers in Practice</em>.
+    <br>
+    <small>
+      本文中的 on-demand Volcano 伪代码对照来自该文描述的 extensible optimizer 框架。
+      本仓库也保存了本地副本：
+      <a href="../../book/Extensible-Query-Optimizers-in-Practice.pdf">book/Extensible-Query-Optimizers-in-Practice.pdf</a>。
+      Microsoft Research 页面：
+      <a href="https://www.microsoft.com/en-us/research/publication/extensible-query-optimizers-in-practice/">publication page</a>。
+    </small>
+  </li>
+  <li>
+    <strong>Goetz Graefe, William J. McKenna</strong> —
+    <em>The Volcano Optimizer Generator: Extensibility and Efficient Search</em>.
+    <br>
+    <small>
+      Volcano optimizer generator 的经典论文，介绍 rule-based extensible optimizer、memo 与 search control。
+      <a href="https://15721.courses.cs.cmu.edu/spring2020/papers/19-optimizer1/graefe-icde1993.pdf">PDF</a>
+    </small>
+  </li>
+  <li>
+    <strong>A. Pellenkoft, C. A. Galindo-Legaria, M. L. Kersten</strong> —
+    <em>The Complexity of Transformation-Based Join Enumeration</em>.
+    <br>
+    <small>
+      分析 transformation-based join enumeration 的重复推导复杂度。
+      本仓库有手工转换的阅读版：
+      <a href="../../manual-html-output/Transformative-vldb1997.html">manual-html-output/Transformative-vldb1997.html</a>。
+    </small>
+  </li>
+  <li>
+    <strong>本项目源码</strong> —
+    <code>demos/demo/src/transformational.cpp</code>,
+    <code>demos/demo/include/volcano/transformational.hpp</code>,
+    <code>demos/demo/src/cost_model.cpp</code>,
+    <code>demos/demo/examples/test_cases.cpp</code>。
+  </li>
+</ol>
+
+</body>
+</html>

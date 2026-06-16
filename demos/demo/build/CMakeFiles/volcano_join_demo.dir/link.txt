@@ -1,1 +1,0 @@
-/usr/bin/clang++-14 CMakeFiles/volcano_join_demo.dir/src/main.cpp.o -o volcano_join_demo  libvolcano_strategies.a libvolcano_test_cases.a libvolcano_core.a

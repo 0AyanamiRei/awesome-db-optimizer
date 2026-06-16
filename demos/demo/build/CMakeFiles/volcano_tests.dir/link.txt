@@ -1,1 +1,0 @@
-/usr/bin/clang++-14 CMakeFiles/volcano_tests.dir/tests/test_join_search.cpp.o -o volcano_tests  libvolcano_strategies.a libvolcano_test_cases.a libvolcano_core.a

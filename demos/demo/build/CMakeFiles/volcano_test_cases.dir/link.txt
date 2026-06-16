@@ -1,2 +1,0 @@
-/usr/bin/llvm-ar-14 qc libvolcano_test_cases.a CMakeFiles/volcano_test_cases.dir/examples/test_cases.cpp.o
-/usr/bin/llvm-ranlib-14 libvolcano_test_cases.a

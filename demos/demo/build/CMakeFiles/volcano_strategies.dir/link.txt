@@ -1,2 +1,0 @@
-/usr/bin/llvm-ar-14 qc libvolcano_strategies.a CMakeFiles/volcano_strategies.dir/src/bottom_up_dp.cpp.o CMakeFiles/volcano_strategies.dir/src/top_down_partitioning.cpp.o CMakeFiles/volcano_strategies.dir/src/transformational.cpp.o
-/usr/bin/llvm-ranlib-14 libvolcano_strategies.a

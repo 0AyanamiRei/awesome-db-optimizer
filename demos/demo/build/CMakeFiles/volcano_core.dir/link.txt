@@ -1,2 +1,0 @@
-/usr/bin/llvm-ar-14 qc libvolcano_core.a CMakeFiles/volcano_core.dir/src/cost_model.cpp.o CMakeFiles/volcano_core.dir/src/exporter.cpp.o CMakeFiles/volcano_core.dir/src/stats.cpp.o CMakeFiles/volcano_core.dir/src/types.cpp.o
-/usr/bin/llvm-ranlib-14 libvolcano_core.a

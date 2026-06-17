@@ -52,9 +52,14 @@ volcano::RequiredProperty ParseRequired(const std::string &text) {
 std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
   if (name == "dpsub") return std::make_unique<volcano::DPSub>();
   if (name == "transform") return std::make_unique<volcano::Transformational>();
-  if (name == "topdown") return std::make_unique<volcano::TopDownPartitioning>();
+  if (name == "topdown")
+    return std::make_unique<volcano::TopDownPartitioning>(
+        volcano::PartitionStrategy::Naive);
+  if (name == "topdown-mincut")
+    return std::make_unique<volcano::TopDownPartitioning>(
+        volcano::PartitionStrategy::Mincut);
   throw std::runtime_error("unknown strategy: " + name +
-                           " (choices: dpsub, transform, topdown)");
+                           " (choices: dpsub, transform, topdown, topdown-mincut)");
 }
 
 void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTrace>> &results) {

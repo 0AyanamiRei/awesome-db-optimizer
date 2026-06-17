@@ -1,5 +1,6 @@
 #include "volcano/dp_sub.hpp"
 #include "volcano/cost_model.hpp"
+#include "volcano/mincut.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
 #include "volcano/transformational.hpp"
@@ -177,9 +178,79 @@ int main() {
     std::cout << "  plans_costed: " << result.trace.plans_costed << "\n";
   }
 
-  // --- Test 9: RelSet connectivity functions ---
+  // --- Test 9: Mincut partitioner correctness ---
   {
-    std::cout << "Test 9: JoinGraph connectivity\n";
+    std::cout << "Test 9: Mincut partitioner correctness\n";
+    const auto &tc = volcano::test::TestCase::Lookup("chain_3");
+
+    // Mincut vs Naive: same best cost
+    volcano::TopDownPartitioning td_naive(volcano::PartitionStrategy::Naive);
+    volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
+
+    auto result_naive = td_naive.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mincut = td_mincut.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+
+    CheckNear(result_naive.best_plan.cost, result_mincut.best_plan.cost, 0.01,
+              "mincut: Mincut == Naive cost (chain_3)");
+
+    // Mincut should never reject partitions (generates CP-free directly)
+    Check(result_mincut.trace.partitions_rejected == 0,
+          "mincut: zero partitions rejected (generates CP-free directly)");
+
+    // Mincut should explore ≤ Naive partitions (better or equal)
+    Check(result_mincut.trace.partitions_explored <= result_naive.trace.partitions_explored,
+          "mincut: partitions_explored <= Naive");
+
+    std::cout << "  Naive:  explored=" << result_naive.trace.partitions_explored
+              << " rejected=" << result_naive.trace.partitions_rejected
+              << " cost=" << result_naive.best_plan.cost << "\n";
+    std::cout << "  Mincut: explored=" << result_mincut.trace.partitions_explored
+              << " rejected=" << result_mincut.trace.partitions_rejected
+              << " cost=" << result_mincut.best_plan.cost << "\n";
+  }
+
+  // --- Test 10: Mincut BC-tree structure ---
+  {
+    std::cout << "Test 10: Mincut BC-tree structure\n";
+
+    // Chain a-b-c-d: articulation points are b and c (edges are bicomponents)
+    {
+      const auto &tc = volcano::test::TestCase::Lookup("chain_4");
+      volcano::MincutPartitioner mp(tc.graph);
+      std::cout << "  chain_4: bicomponents=" << mp.BicomponentCount()
+                << " articulation_pts=" << mp.ArticulationPointCount() << "\n";
+      Check(mp.BicomponentCount() >= 3,
+            "mincut bc-tree: chain_4 has >= 3 bicomponents (3 edges)");
+      Check(mp.ArticulationPointCount() == 2,
+            "mincut bc-tree: chain_4 has 2 articulation points (b, c)");
+    }
+
+    // Star: center is the articulation point
+    {
+      const auto &tc = volcano::test::TestCase::Lookup("star_4");
+      volcano::MincutPartitioner mp(tc.graph);
+      std::cout << "  star_4: bicomponents=" << mp.BicomponentCount()
+                << " articulation_pts=" << mp.ArticulationPointCount() << "\n";
+      Check(mp.BicomponentCount() >= 3,
+            "mincut bc-tree: star_4 has >= 3 bicomponents (3 edges)");
+      Check(mp.ArticulationPointCount() == 1,
+            "mincut bc-tree: star_4 has 1 articulation point (center)");
+    }
+
+    // Cycle and Clique: no articulation points (biconnected)
+    for (const auto &name : {"cycle_4", "clique_4"}) {
+      const auto &tc = volcano::test::TestCase::Lookup(name);
+      volcano::MincutPartitioner mp(tc.graph);
+      std::cout << "  " << name << ": bicomponents=" << mp.BicomponentCount()
+                << " articulation_pts=" << mp.ArticulationPointCount() << "\n";
+      Check(mp.ArticulationPointCount() == 0,
+            std::string("mincut bc-tree: ") + name + " has 0 articulation points (biconnected)");
+    }
+  }
+
+  // --- Test 11: RelSet connectivity functions ---
+  {
+    std::cout << "Test 11: JoinGraph connectivity\n";
     const auto &tc = volcano::test::TestCase::Lookup("chain_3");
     const auto &graph = tc.graph;
 
@@ -203,7 +274,7 @@ int main() {
 
   // --- Test 10: All test cases load ---
   {
-    std::cout << "Test 10: All test cases load\n";
+    std::cout << "Test 12: All test cases load\n";
     for (const auto &name : volcano::test::TestCase::AllNames()) {
       const auto &tc = volcano::test::TestCase::Lookup(name);
       Check(tc.graph.RelationCount() >= 2, name + ": has >= 2 relations");

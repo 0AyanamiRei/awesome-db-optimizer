@@ -1,4 +1,4 @@
-#include "volcano/bottom_up_dp.hpp"
+#include "volcano/dp_sub.hpp"
 #include "volcano/exporter.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
@@ -21,7 +21,7 @@ void PrintUsage() {
   std::cout << "Usage: volcano_join_demo [OPTIONS]\n"
             << "\n"
             << "  --strategy <name>   Run a single strategy\n"
-            << "                      Choices: bottomup, transform, topdown\n"
+            << "                      Choices: dpsub, transform, topdown\n"
             << "  --test <name>       Test case to run\n"
             << "  --compare           Run all strategies and output comparison\n"
             << "  --out <dir>         Output directory for DOT/JSON exports\n"
@@ -50,11 +50,11 @@ volcano::RequiredProperty ParseRequired(const std::string &text) {
 }
 
 std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
-  if (name == "bottomup") return std::make_unique<volcano::BottomUpDP>();
+  if (name == "dpsub") return std::make_unique<volcano::DPSub>();
   if (name == "transform") return std::make_unique<volcano::Transformational>();
   if (name == "topdown") return std::make_unique<volcano::TopDownPartitioning>();
   throw std::runtime_error("unknown strategy: " + name +
-                           " (choices: bottomup, transform, topdown)");
+                           " (choices: dpsub, transform, topdown)");
 }
 
 void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTrace>> &results) {
@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
 
     if (compare) {
       // Run all strategies and compare
-      std::vector<std::string> strategy_names = {"bottomup", "transform", "topdown"};
+      std::vector<std::string> strategy_names = {"dpsub", "transform", "topdown"};
       std::vector<std::pair<std::string, volcano::SearchTrace>> results;
 
       std::cout << "Test: " << test_name << " (" << tc.description << ")\n";

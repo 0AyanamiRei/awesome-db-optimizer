@@ -1,4 +1,4 @@
-#include "volcano/bottom_up_dp.hpp"
+#include "volcano/dp_sub.hpp"
 #include "volcano/cost_model.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
@@ -33,7 +33,7 @@ void CheckNear(double a, double b, double tol, const std::string &msg) {
 
 // Helper: run all three strategies on a test case and verify they produce the same best cost.
 void VerifyConsistency(const volcano::test::TestCase &tc) {
-  volcano::BottomUpDP bu;
+  volcano::DPSub bu;
   volcano::Transformational tr;
   volcano::TopDownPartitioning td;
 
@@ -41,15 +41,15 @@ void VerifyConsistency(const volcano::test::TestCase &tc) {
   auto result_tr = tr.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_td = td.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
-  Check(result_bu.best_plan.cost > 0, tc.name + ": BottomUpDP found a plan");
+  Check(result_bu.best_plan.cost > 0, tc.name + ": DPSub found a plan");
   Check(result_tr.best_plan.cost > 0, tc.name + ": Transformational found a plan");
   Check(result_td.best_plan.cost > 0, tc.name + ": TopDown found a plan");
 
   // All three should produce the same best cost
   CheckNear(result_bu.best_plan.cost, result_tr.best_plan.cost, 0.01,
-            tc.name + ": BottomUpDP == Transformational cost");
+            tc.name + ": DPSub == Transformational cost");
   CheckNear(result_bu.best_plan.cost, result_td.best_plan.cost, 0.01,
-            tc.name + ": BottomUpDP == TopDown cost");
+            tc.name + ": DPSub == TopDown cost");
 
   // Transformational should have duplicates
   Check(result_tr.trace.duplicates_generated > 0,
@@ -74,7 +74,7 @@ int main() {
     std::cout << "Test 1: Two-table query\n";
     const auto &tc = volcano::test::TestCase::Lookup("two_table");
 
-    volcano::BottomUpDP bu;
+    volcano::DPSub bu;
     auto result = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
     Check(result.best_plan.cost > 0, "two_table: plan found");
     Check(result.trace.partitions_explored > 0, "two_table: partitions explored");

@@ -21,7 +21,7 @@ void PrintUsage() {
   std::cout << "Usage: volcano_join_demo [OPTIONS]\n"
             << "\n"
             << "  --strategy <name>   Run a single strategy\n"
-            << "                      Choices: dpsub, transform, topdown\n"
+            << "                      Choices: dpsub, transform, topdown, topdown-mincut\n"
             << "  --test <name>       Test case to run\n"
             << "  --compare           Run all strategies and output comparison\n"
             << "  --out <dir>         Output directory for DOT/JSON exports\n"
@@ -63,7 +63,21 @@ std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
 }
 
 void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTrace>> &results) {
-  // Header
+  // Header — columns that are always 0 for every strategy are omitted.
+  // Each strategy contributes a different subset of counters; showing all
+  // columns makes cross-strategy comparison easy.
+  //
+  // Column glossary:
+  //   Partitions  – (L,R) splits enumerated / generated
+  //   Rejected    – partitions discarded by connectivity / CP-free check
+  //   PlansCosted – physical plans actually costed
+  //   CacheHits   – memoization (RelSet, Property) lookups that hit
+  //   Cached      – unique (RelSet, Property) entries inserted into cache
+  //   Dups        – transformational: duplicate expressions generated
+  //   Rules       – transformational: rule application attempts
+  //   DPCells     – bottom-up DP: DP table cells filled
+  //   Pruned      – top-down: branch-and-bound prunes
+  //   BestCost    – cost of the best plan found
   std::cout << std::left
             << std::setw(20) << "Strategy"
             << std::setw(14) << "Partitions"
@@ -71,13 +85,18 @@ void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTra
             << std::setw(14) << "PlansCosted"
             << std::setw(14) << "CacheHits"
             << std::setw(14) << "Cached"
-            << std::setw(14) << "Duplicates"
+            << std::setw(14) << "Dups"
             << std::setw(14) << "Rules"
             << std::setw(14) << "DPCells"
             << std::setw(14) << "Pruned"
             << std::setw(16) << "BestCost"
             << "\n";
-  std::cout << std::string(20 + 14*10 + 16, '-') << "\n";
+  // Unicode box-drawing horizontal rule
+  {
+    const int total_width = 20 + 14*10 + 16;
+    for (int i = 0; i < total_width; ++i) std::cout << "─";
+    std::cout << "\n";
+  }
 
   for (const auto &[name, trace] : results) {
     std::cout << std::left
@@ -151,7 +170,7 @@ int main(int argc, char **argv) {
 
     if (compare) {
       // Run all strategies and compare
-      std::vector<std::string> strategy_names = {"dpsub", "transform", "topdown"};
+      std::vector<std::string> strategy_names = {"dpsub", "transform", "topdown", "topdown-mincut"};
       std::vector<std::pair<std::string, volcano::SearchTrace>> results;
 
       std::cout << "Test: " << test_name << " (" << tc.description << ")\n";

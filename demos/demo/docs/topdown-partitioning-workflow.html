@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top-Down Partitioning Search — 工作流文档</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --border: #e5e7eb;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+    --ok-bg: #ecfdf5;
+    --ok-border: #6ee7b7;
+    --red-bg: #fef2f2;
+    --red-border: #fca5a5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --border: #334155; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+      --ok-bg: #064e3b; --ok-border: #059669;
+      --red-bg: #450a0a; --red-border: #991b1b;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 980px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.15rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.45rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+  .callout-red { background: var(--red-bg); border-color: var(--red-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: left; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+  .diagram-svg { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+                 padding: 0.6rem; margin: 1.2rem 0; text-align: center; overflow-x: auto; }
+  .diagram-svg svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  .diagram-svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; }
+  .diagram-caption { color: var(--subtle); font-size: .88rem; margin-top: .5rem; text-align: center; }
+
+  .pseudocode { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                padding: 1rem 1.4rem; margin: 1rem 0; }
+  .pseudocode pre { background: none; border: none; padding: 0; margin: 0; }
+  .pseudocode .kw { color: #7c3aed; font-weight: 600; }
+  .pseudocode .fn { color: #2563eb; font-weight: 600; }
+  .pseudocode .cm { color: #6b7280; font-style: italic; }
+
+  small { color: var(--subtle); font-size: .9rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Top-Down Partitioning Search — 工作流文档</h1>
+<p>
+  理解 <code>demos/demo/src/top_down_partitioning.cpp</code> 的完整算法逻辑—
+  从 DeHaan &amp; Tompa (SIGMOD 2007) 的论文公式到 C++ 实现，用 <strong>chain_3</strong> 逐步推演。
+</p>
+
+<div class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#core-idea">核心直觉：从全集向下划分</a></li>
+  <li><a href="#paper-algorithm">论文算法 → 代码映射</a></li>
+  <li><a href="#chain3-walkthrough">chain_3 完整推演</a></li>
+  <li><a href="#design-decisions">关键设计决策</a></li>
+  <li><a href="#vs-paper">与论文的差异</a></li>
+  <li><a href="#vs-transformational">与 Transformational 的本质对比</a></li>
+  <li><a href="#empirical">实验数据</a></li>
+  <li><a href="#references">参考资料</a></li>
+</ol>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="core-idea">1. 核心直觉：从全集向下划分</h2>
+
+<p>
+  传统的 bottom-up join 枚举（System R, DPccp）从单表开始，逐层往上拼出更大的 join tree。
+  Top-down partitioning 则<strong>反过来</strong>：
+</p>
+
+<div class="callout callout-info">
+  <strong>核心思想：</strong>给定目标关系集 \(S\) 和所需物理属性（如"有序"），
+  把 \(S\) 划分成两个连通子集 \(L\) 和 \(R\)，递归求解 \(L\) 和 \(R\)，
+  然后用一个物理 join 把它们拼起来。从全集开始，层层向下直到单表。
+</div>
+
+<p>
+  这个想法来自 <strong>DeHaan &amp; Tompa (SIGMOD 2007)</strong>。
+  论文的 key insight 是把 "CP-free bushy join 枚举" 规约为 <strong>minimal cut 问题</strong>：
+  在 join graph 中，删除一组 minimal cut 边后图恰好分成两个连通分量——这两个分量就是一个合法的 CP-free join 划分。
+</p>
+
+<p>Top-down 方向带来了三个 bottom-up DP 没有的优势：</p>
+
+<table>
+  <tr><th>优势</th><th>含义</th></tr>
+  <tr>
+    <td><strong>按需计算</strong></td>
+    <td>只递归到 join path 实际需要的子问题。不连通的关系集（如 chain_3 中的 {a,c}）永远不会被计算。</td>
+  </tr>
+  <tr>
+    <td><strong>Branch-and-Bound 剪枝</strong></td>
+    <td>一旦发现某个分支的下界已经 ≥ 已知最优计划，立即停止该分支的递归。</td>
+  </tr>
+  <tr>
+    <td><strong>自然 property 传播</strong></td>
+    <td>父节点的物理属性需求（如"有序"）自然推导出子节点需求，不需要预计算所有 property 变体。</td>
+  </tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="paper-algorithm">2. 论文算法 → 代码映射</h2>
+
+<p>
+  下面是 DeHaan &amp; Tompa 论文的核心算法，用伪代码表示。理解这个伪代码就是理解整个策略。
+</p>
+
+<h3>2.1 论文伪代码</h3>
+
+<div class="pseudocode">
+<pre><span class="fn">BestPlan</span>(G, required_property):
+    <span class="cm">// Step 1: Memoization</span>
+    <span class="kw">if</span> memo[G, required_property] exists:
+        <span class="kw">return</span> memo[G, required_property]
+
+    <span class="cm">// Step 2: Base case — 单表</span>
+    <span class="kw">if</span> |V(G)| == 1:
+        <span class="kw">return</span> best scan satisfying required_property
+
+    <span class="cm">// Step 3: 枚举划分 & 递归</span>
+    best = ∞
+    <span class="kw">for each</span> valid CP-free partition (G_left, G_right) <span class="kw">of</span> G:
+        <span class="kw">for each</span> physical join operator:
+            (left_prop, right_prop) = derive_child_properties(operator, required_property)
+
+            <span class="cm">// Predicted-cost branch-and-bound</span>
+            <span class="kw">if</span> lower_bound(G_left) + lower_bound(G_right) + min_join_cost ≥ best.cost:
+                <span class="kw">continue</span>  <span class="cm">// 剪枝</span>
+
+            left  = <span class="fn">BestPlan</span>(G_left,  left_prop)
+            right = <span class="fn">BestPlan</span>(G_right, right_prop)
+            plan  = MakeJoin(left, right, operator)
+            best  = min(best, plan)
+
+    <span class="cm">// Step 4: SortEnforcer fallback</span>
+    <span class="kw">if</span> required_property is Sorted:
+        any_plan = <span class="fn">BestPlan</span>(G, Any)
+        best = min(best, Sort(any_plan, sort_key))
+
+    <span class="cm">// Step 5: 缓存 & 返回</span>
+    memo[G, required_property] = best
+    <span class="kw">return</span> best</pre>
+</div>
+
+<p>
+  这个算法的本质是<strong>带 memoization 的递归划分</strong>。它不是"先生成所有逻辑等价表达式再优化"，
+  而是"每次划分直接尝试物理 join，递归求解子问题"。
+</p>
+
+<h3>2.2 C++ 代码映射</h3>
+
+<p>伪代码的每一行在 C++ 中都有直接对应：</p>
+
+<table>
+  <tr><th>伪代码</th><th>C++ (<code>top_down_partitioning.cpp</code>)</th></tr>
+  <tr>
+    <td><code>memo[G, required_property]</code></td>
+    <td><code>cache_: unordered_map&lt;string, PlanPtr&gt;</code>，key = <code>"RelSet|Property"</code></td>
+  </tr>
+  <tr>
+    <td><code>if memo[...] exists</code></td>
+    <td><code>cache_.find(key) != cache_.end()</code> → <code>cache_hits++</code> → return</td>
+  </tr>
+  <tr>
+    <td><code>|V(G)| == 1</code></td>
+    <td><code>PopCount(relset) == 1</code> → <code>MakeScan(relation)</code>，若需排序则 <code>MakeSort(scan, key)</code></td>
+  </tr>
+  <tr>
+    <td><code>for each valid CP-free partition</code></td>
+    <td><code>EnumeratePartitions(graph, relset, trace)</code> — Naive: 枚举子集 + <code>IsValidJoinSplit()</code> 过滤</td>
+  </tr>
+  <tr>
+    <td><code>for each physical join operator</code></td>
+    <td><code>TryJoinMethods()</code> — 试 HashJoin → NLJoin → MergeJoin</td>
+  </tr>
+  <tr>
+    <td><code>lower_bound(L)+lower_bound(R)+1 ≥ best</code></td>
+    <td><code>LowerBound() = sum(scan_costs)</code>，在 <code>TryJoinMethods</code> 入口检查 → <code>branches_pruned++</code></td>
+  </tr>
+  <tr>
+    <td><code>Sort(fallback)</code></td>
+    <td><code>BestPlan(S, Any) + MakeSort(result, sort_key)</code></td>
+  </tr>
+  <tr>
+    <td><code>memo[G, p] = best</code></td>
+    <td><code>cache_[key] = best</code>，在函数末尾写入</td>
+  </tr>
+</table>
+
+<h3>2.3 架构全景</h3>
+
+<p>
+  下图将上述映射关系画成数据流图。注意它<strong>不包含</strong> LogicalExpr、MemoStore、规则引擎—
+  TopDown 只有一种中间表示：物理计划。
+</p>
+
+<div class="diagram-svg">
+<svg viewBox="0 0 780 370" width="780" height="370" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#64748b"/>
+    </marker>
+  </defs>
+  <style>
+    .bx { fill: #f8f9fc; stroke: #64748b; stroke-width: 1.2; rx: 5; }
+    .bx-dash { fill: #f8f9fc; stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 4 3; rx: 4; }
+    .th { font-size: 13px; font-weight: 600; fill: #1e293b; }
+    .t { font-size: 11px; fill: #334155; }
+    .ts { font-size: 10px; fill: #64748b; }
+    .tm { font-size: 10px; font-family: "JetBrains Mono","Fira Code",monospace; fill: #475569; }
+    .ed { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 5 4; fill: none; }
+    .es { stroke: #94a3b8; stroke-width: 1.1; fill: none; }
+    @media (prefers-color-scheme: dark) {
+      .bx { fill: #1e293b; stroke: #94a3b8; } .bx-dash { fill: #1e293b; stroke: #64748b; }
+      .th { fill: #e2e8f0; } .t { fill: #cbd5e1; } .ts { fill: #94a3b8; } .tm { fill: #94a3b8; }
+      .ed { stroke: #64748b; } .es { stroke: #64748b; }
+    }
+  </style>
+
+  <!-- Input -->
+  <rect x="240" y="8" width="300" height="32" rx="5" class="bx"/>
+  <text x="390" y="29" text-anchor="middle" class="t">JoinGraph + StatsCatalog + RequiredProperty</text>
+
+  <line x1="390" y1="40" x2="390" y2="56" class="es" marker-end="url(#arrow)"/>
+
+  <!-- Search() -->
+  <rect x="270" y="58" width="240" height="28" rx="5" class="bx"/>
+  <text x="390" y="77" text-anchor="middle" class="ts">Search(): cache_.clear() → BestPlan(FullSet)</text>
+
+  <line x1="390" y1="86" x2="390" y2="104" class="es" marker-end="url(#arrow)"/>
+
+  <!-- BestPlan main box -->
+  <rect x="30" y="106" width="720" height="170" rx="6" class="bx"/>
+  <text x="390" y="130" text-anchor="middle" class="th">BestPlan(RelSet S, RequiredProperty property)</text>
+  <line x1="50" y1="138" x2="730" y2="138" stroke="#e2e8f0" stroke-width="0.6"/>
+
+  <!-- 4 internal boxes -->
+  <rect x="46" y="148" width="160" height="52" rx="4" class="bx-dash"/>
+  <text x="126" y="168" text-anchor="middle" class="t" font-weight="600">① Memoization</text>
+  <text x="56" y="184" class="tm">key = "S|prop"</text>
+  <text x="56" y="197" class="tm">if in cache_: return</text>
+
+  <rect x="222" y="148" width="160" height="52" rx="4" class="bx-dash"/>
+  <text x="302" y="168" text-anchor="middle" class="t" font-weight="600">② Base Case</text>
+  <text x="232" y="184" class="tm">PopCount(S)==1</text>
+  <text x="232" y="197" class="tm">MakeScan ± Sort</text>
+
+  <rect x="398" y="148" width="160" height="52" rx="4" class="bx-dash"/>
+  <text x="478" y="168" text-anchor="middle" class="t" font-weight="600">③ Recursive</text>
+  <text x="408" y="184" class="tm">EnumeratePartitions</text>
+  <text x="408" y="197" class="tm">TryJoinMethods (+B&B)</text>
+
+  <rect x="574" y="148" width="160" height="52" rx="4" class="bx-dash"/>
+  <text x="654" y="168" text-anchor="middle" class="t" font-weight="600">④ SortEnforcer</text>
+  <text x="584" y="184" class="tm">BestPlan(S, Any)</text>
+  <text x="584" y="197" class="tm">+ MakeSort(result)</text>
+
+  <!-- Cache side -->
+  <rect x="758" y="120" width="10" height="140" rx="3" class="bx-dash"/>
+  <text x="763" y="160" text-anchor="middle" class="ts" font-size="8" transform="rotate(90,763,160)">cache_: unordered_map&lt;string, PlanPtr&gt;</text>
+
+  <!-- Arrow to cache -->
+  <line x1="126" y1="200" x2="126" y2="212" class="ed"/>
+  <line x1="126" y1="212" x2="755" y2="218" class="ed" marker-end="url(#arrow)"/>
+  <text x="440" y="258" text-anchor="middle" class="ts">read / write</text>
+
+  <!-- cache_[key] = best -->
+  <rect x="140" y="266" width="500" height="22" rx="4" fill="none" stroke="#94a3b8" stroke-width="0.8"/>
+  <text x="390" y="282" text-anchor="middle" class="ts">cache_[key] = best; return best</text>
+
+  <!-- Output -->
+  <line x1="390" y1="288" x2="390" y2="314" class="es" marker-end="url(#arrow)"/>
+
+  <rect x="230" y="316" width="320" height="28" rx="5" class="bx"/>
+  <text x="390" y="335" text-anchor="middle" class="th" font-size="12">SearchResult { best_plan, trace }</text>
+
+  <text x="390" y="362" text-anchor="middle" class="ts">图 1 — TopDownPartitioning 架构 (伪代码四步法 + 缓存)</text>
+</svg>
+</div>
+
+<p>
+  <strong>与 Transformational 的关键区别：</strong>没有 Phase 1 BuildMemo，没有 LogicalExpr，没有规则引擎。
+  整个搜索就是<strong>一个递归函数 + 一张缓存表</strong>。
+  这是因为在 join reorder 的语境下，<code>(L, R)</code> 划分天然就是 plan 生成器—不需要 commutativity/associativity 规则来发现等价关系。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="chain3-walkthrough">3. chain_3 完整推演</h2>
+
+<p>
+  这是理解 TopDown 如何工作的核心章节。我们用 <code>chain_3</code> (<code>a-b-c</code>) 逐步推演
+  从 <code>Search()</code> 到最终计划的完整递归过程。
+</p>
+
+<h3>3.1 输入数据</h3>
+
+<pre><code>Tables:   a (1000 rows, scan_cost=1000)    alias="a", bit=1
+          b ( 100 rows, scan_cost=100 )     alias="b", bit=2
+          c ( 500 rows, scan_cost=500 )     alias="c", bit=4
+
+Predicates: a.x = b.x  (sel=0.01)
+            b.y = c.y  (sel=0.05)
+
+FullSet = 1|2|4 = 7</code></pre>
+
+<h3>3.2 入口：Search()</h3>
+
+<pre><code>Search(graph, stats, <strong>Any</strong>):
+  cache_.clear()
+  return BestPlan(graph, /*relset=*/7, /*property=*/Any, trace)</code></pre>
+
+<p>
+  根调用是 <code>BestPlan(7, Any)</code>——从全关系集 {a,b,c} 开始，需要输出任意物理属性即可。
+</p>
+
+<h3>3.3 根调用：BestPlan(7, Any)</h3>
+
+<p><strong>Step 1 — Memoization:</strong> key = <code>"7|Any"</code>。cache_ 为空，miss。</p>
+<p><strong>Step 2 — Base case:</strong> PopCount(7) = 3 ≠ 1。不是单表，跳过。</p>
+<p><strong>Step 3 — 枚举划分:</strong></p>
+
+<pre><code>EnumeratePartitions(graph, /*S=*/7):
+  遍历所有 S 的非空真子集作为 left：
+
+  left=1 ({a})  → right=6 ({b,c})  left < right?  1<6 YES
+    IsValidJoinSplit({a}, {b,c})?
+      {a} 连通? YES (单节点)   {b,c} 连通? YES (有 predicate b.y=c.y)
+      跨边存在? YES (a.x=b.x 连接 left 和 right)
+    → <strong>YIELD (1, 6)</strong>  ✅
+
+  left=2 ({b})  → right=5 ({a,c})  left < right?  2<5 YES
+    IsValidJoinSplit({b}, {a,c})?
+      {b} 连通? YES   {a,c} 连通? <strong>NO</strong> (a 和 c 之间没有 predicate)
+    → <strong>REJECTED</strong>  ❌  partitions_rejected++
+
+  left=3 ({a,b}) → right=4 ({c})   left < right?  3<4 YES
+    IsValidJoinSplit({a,b}, {c})?
+      {a,b} 连通? YES   {c} 连通? YES
+      跨边存在? YES (b.y=c.y)
+    → <strong>YIELD (3, 4)</strong>  ✅
+
+  left=4 ({c})   → right=3 ({a,b})  left < right?  4<3 NO → skip (避免对称重复)
+
+  结果: 2 个 valid partitions, 1 个 rejected</code></pre>
+
+<p>现在对两个 valid partition 分别调用 TryJoinMethods：</p>
+
+<pre><code><strong>Partition 1: (L={a}, R={b,c})</strong>
+
+TryJoinMethods({a}, {b,c}, Any, best=null):
+  predicate = a.x=b.x (跨越 {a} 和 {b,c})
+  B&B: best==null → skip prune
+
+  HashJoin:  BestPlan({a}, Any) + BestPlan({b,c}, Any)  → cost 30200
+  NLJoin:    BestPlan({a}, Any) + BestPlan({b,c}, Any)  → cost > Hash
+  MergeJoin: BestPlan({a}, Sorted(a.x)) + BestPlan({b,c}, Sorted(b.x))
+             → cost ≈ 14000+
+  → best = HashJoin(a, b⋈c), cost=30200
+
+
+<strong>Partition 2: (L={a,b}, R={c})</strong>
+
+TryJoinMethods({a,b}, {c}, Any, best=HashJoin(30200)):
+  predicate = b.y=c.y (跨越 {a,b} 和 {c})
+  B&B: LowerBound({a,b}) + LowerBound({c}) + 1 = (1000+100) + 500 + 1 = 1601 < 30200
+       → 不剪枝
+
+  HashJoin:  BestPlan({a,b}, Any) + BestPlan({c}, Any)    → cost 30200
+  NLJoin:    BestPlan({a,b}, Any) + BestPlan({c}, Any)    → cost > Hash
+  MergeJoin: BestPlan({a,b}, Sorted(b.y)) + BestPlan({c}, Sorted(c.y))
+             → cost 19651.6  ← <strong>WINNER!</strong>
+  → best = MergeJoin(HJ(a,b)▸Sort(b.y), Sort(Scan(c),c.y)), cost=19651.6</code></pre>
+
+<p><strong>Step 4 — SortEnforcer:</strong> property=Any，跳过。</p>
+<p><strong>Step 5 — 缓存:</strong> <code>cache_["7|Any"] = MergeJoin(…)</code>，返回。</p>
+
+<h3>3.4 子树展开</h3>
+
+<p>根调用触发了多个子问题。下面展开关键的几个。</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>BestPlan({b,c}=6, Any)</h4>
+    <pre style="font-size:.78rem;line-height:1.4;background:none;border:none;padding:0;margin:0;">
+Partition: ({b}=2, {c}=4) ← 唯一有效划分
+
+HashJoin(b,c):
+  BestPlan(2, Any) → Scan(b)      c=100
+  BestPlan(4, Any) → Scan(c)      c=500
+  cost = 100+500+100+500+2500 = 3700
+
+MergeJoin 尝试:
+  BestPlan(2, Sorted(b.y)) → Sort(Scan(b),b.y)  c=764
+  BestPlan(4, Sorted(c.y)) → Sort(Scan(c),c.y)  c=4984
+  cost = 764+4984+100+500 = 6348 (>3700)
+
+→ cache_["6|Any"] = HashJoin(b,c), cost=3700</pre>
+  </div>
+  <div class="card">
+    <h4>BestPlan({a,b}=3, Sorted(b.y))</h4>
+    <pre style="font-size:.78rem;line-height:1.4;background:none;border:none;padding:0;margin:0;">
+Partition: ({a}=1, {b}=2)
+
+TryJoinMethods(1, 2, Sorted(b.y)):
+  predicate = a.x=b.x
+  sort_key = b.y, 但 predicate 列是 a.x 和 b.x
+  → 没有 predicate 匹配 sort key → MergeJoin 不可能
+  → best = null
+
+SortEnforcer fallback:
+  any = BestPlan(3, Any)
+    → HashJoin(a,b): cost=3200
+  sorted = Sort(any, b.y)
+    cost = 3200 + 1000×log₂(1001) = 13167
+
+→ cache_["3|Sorted(b.y)"] = Sort(HJ(a,b), b.y)</pre>
+  </div>
+</div>
+
+<h3>3.5 完整递归树</h3>
+
+<p>下面是 chain_3 的完整调用树。标记 <code>[HIT]</code> 的调用直接命中缓存，不需要重新计算。</p>
+
+<div class="diagram">
+BestPlan(7, Any)
+├── BestPlan(1, Any)              → Scan(a)            c=1000     [cache]
+├── BestPlan(6, Any)
+│   ├── BestPlan(2, Any)          → Scan(b)            c=100      [cache]
+│   ├── BestPlan(4, Any)          → Scan(c)            c=500      [cache]
+│   ├── BestPlan(2, Sorted(b.y))  → Sort(Scan(b),b.y)  c=764      [cache]
+│   ├── BestPlan(4, Sorted(c.y))  → Sort(Scan(c),c.y)  c=4984     [cache]
+│   └── → HashJoin(b,c)                                c=3700     [cache: 6|Any]
+├── BestPlan(1, Sorted(a.x))      → Sort(Scan(a),a.x)  c=10965    [cache]
+├── BestPlan(6, Sorted(b.x))
+│   ├── BestPlan(2, Sorted(b.x))  → Sort(Scan(b),b.x)  c=764      [cache]
+│   └── BestPlan(4, Sorted(b.x))  → nullptr             [cache]
+│   └── SortEnforcer → BestPlan(6, Any) [HIT] c=3700
+│       └── Sort(..., b.x)                             c=13657    [cache: 6|Sorted(b.x)]
+│   → (1,6) HashJoin/MergeJoin → costs >14000
+├── BestPlan(3, Any)
+│   ├── BestPlan(1, Any)          → Scan(a)            c=1000     [HIT]
+│   ├── BestPlan(2, Any)          → Scan(b)            c=100      [HIT]
+│   └── → HashJoin(a,b)                                c=3200     [cache: 3|Any]
+├── BestPlan(4, Sorted(c.y))      → Sort(Scan(c),c.y)  c=4984     [HIT]
+├── BestPlan(3, Sorted(b.y))                                   [cache]
+│   ├── TryJoinMethods(1,2,Sorted(b.y)) → 无匹配 predicate
+│   └── SortEnforcer: BestPlan(3,Any) [HIT] + Sort → c=13167 [cache: 3|Sorted(b.y)]
+└── → MergeJoin(Sort(HJ(a,b),b.y), Sort(Scan(c),c.y))  c=19651.6  [cache: 7|Any]
+</div>
+
+<h3>3.6 最终缓存状态</h3>
+
+<p>搜索结束后，<code>cache_</code> 中包含 <strong>14 个条目</strong>（含 nullptr）：</p>
+
+<table>
+  <tr><th>RelSet</th><th>Property</th><th>Plan</th><th>Cost</th><th>说明</th></tr>
+  <tr><td>1 {a}</td><td>Any</td><td>SeqScan(a)</td><td>1000</td><td>单表基案</td></tr>
+  <tr><td>1 {a}</td><td>Sorted(a.x)</td><td>Sort(Scan(a), a.x)</td><td>10965</td><td>MergeJoin 子需求</td></tr>
+  <tr><td>2 {b}</td><td>Any</td><td>SeqScan(b)</td><td>100</td><td>单表基案</td></tr>
+  <tr><td>2 {b}</td><td>Sorted(a.x)</td><td>nullptr</td><td>—</td><td>b 不能产生 a.x 排序</td></tr>
+  <tr><td>2 {b}</td><td>Sorted(b.x)</td><td>Sort(Scan(b), b.x)</td><td>764</td><td>MergeJoin 子需求</td></tr>
+  <tr><td>2 {b}</td><td>Sorted(b.y)</td><td>Sort(Scan(b), b.y)</td><td>764</td><td>MergeJoin 子需求</td></tr>
+  <tr><td>3 {a,b}</td><td>Any</td><td>HashJoin(a,b)</td><td>3200</td><td>二表最优</td></tr>
+  <tr><td>3 {a,b}</td><td>Sorted(b.y)</td><td>Sort(HJ(a,b), b.y)</td><td>13167</td><td>SortEnforcer fallback</td></tr>
+  <tr><td>4 {c}</td><td>Any</td><td>SeqScan(c)</td><td>500</td><td>单表基案</td></tr>
+  <tr><td>4 {c}</td><td>Sorted(b.x)</td><td>nullptr</td><td>—</td><td>c 不能产生 b.x 排序</td></tr>
+  <tr><td>4 {c}</td><td>Sorted(c.y)</td><td>Sort(Scan(c), c.y)</td><td>4984</td><td>MergeJoin 子需求</td></tr>
+  <tr><td>6 {b,c}</td><td>Any</td><td>HashJoin(b,c)</td><td>3700</td><td>二表最优</td></tr>
+  <tr><td>6 {b,c}</td><td>Sorted(b.x)</td><td>Sort(HJ(b,c), b.x)</td><td>13657</td><td>SortEnforcer fallback</td></tr>
+  <tr><td>7 {a,b,c}</td><td>Any</td><td>MergeJoin(…)</td><td>19651.6</td><td>最终答案</td></tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>注意什么不在缓存里：</strong>RelSet 5 ({a,c}) 从未被计算—因为它不连通，
+  永远不会作为子问题出现。这就是"按需计算"：不相关的子集连进入缓存的机会都没有。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="design-decisions">4. 关键设计决策</h2>
+
+<h3>4.1 为什么 Memo Key 是 (RelSet, Property) 而不是 (RelSet, Property, Budget)？</h3>
+
+<p>
+  DeHaan &amp; Tompa 论文的一个重要发现是：<strong>accumulated-cost bounding 与 memoization 有根本冲突</strong>。
+</p>
+
+<div class="callout callout-red">
+  <strong>核心矛盾：</strong>如果把"当前已使用的预算"放进 memo key，同一个逻辑子图 (S, property) 会因为不同预算而被多次重新优化。
+  memoization 的复用能力被破坏——这正是论文实验中 TBNmcA（accumulated-cost）比穷举 TBNmc <strong>慢 10–100 倍</strong>的原因。
+</div>
+
+<p>TopDown 采用 <strong>predicted-cost bounding</strong>——基于关系集本身的统计属性（scan_cost 之和）做下界估计，不与调用路径的预算耦合。因此 memo key 只需要 <code>(RelSet, Property)</code>，不同调用路径可以安全共享缓存。</p>
+
+<h3>4.2 为什么用 Naive Partition（而不是论文的 MincutLazy）？</h3>
+
+<p>
+  并非不想实现 MincutLazy，而是分两期演进有教学价值：
+</p>
+
+<table>
+  <tr><th>Phase</th><th>策略</th><th>方法</th><th>教学重点</th></tr>
+  <tr>
+    <td><span class="badge badge-green">当前</span></td>
+    <td><code>Naive</code></td>
+    <td>Gosper's hack 枚举所有子集 → IsValidJoinSplit() 过滤</td>
+    <td>理解 generate-and-test 的浪费，为 Mincut 做铺垫</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-amber">第二期</span></td>
+    <td><code>Mincut</code></td>
+    <td>Biconnection tree → 桥边 → minimal cut 直接生成 CP-free 划分</td>
+    <td>理解论文的 minimal cut 规约和 enumeration optimality</td>
+  </tr>
+</table>
+
+<p>
+  Naive 策略虽然在最坏情况下浪费（O(2<sup>n</sup>) per set），但它清晰地展示了"为什么需要 minimal cut"：
+  在 chain_3 中 3 个 raw partition 只有 2 个有效；在 cycle_4 中这个比例更差。
+  trace 中的 <code>partitions_rejected</code> 直观量化了这种浪费。
+</p>
+
+<h3>4.3 LowerBound 为什么这么简单（也太弱）？</h3>
+
+<p>
+  当前 <code>LowerBound = sum(scan_costs)</code> 是一个<strong>故意简化</strong>的设计：
+</p>
+
+<pre><code>double LowerBound(graph, relset, property) {
+  double lb = 0.0;
+  for (auto &r : graph.Relations())
+    if (relset & (1&lt;&lt;r.id)) lb += r.scan_cost;
+  return lb;
+}</code></pre>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>优点：安全 (admissible)</h4>
+    <p>任何计划至少要扫描所有涉及的表，所以 <code>LowerBound(S) ≤ true_optimal_cost(S)</code> 恒成立。剪枝永远不会漏掉更好的计划。</p>
+  </div>
+  <div class="card">
+    <h4>缺点：太保守</h4>
+    <p>在 toy 数据上，下界与实际 cost 差距可达 <strong>16×</strong>。导致 <code>branches_pruned</code> 在所有测试中都为 0——剪枝从未触发。</p>
+  </div>
+</div>
+
+<p>
+  <strong>教学意图：</strong>这恰好展示了 branch-and-bound 的核心权衡——下界越紧，剪枝越强。
+  改进方向（加入 selectivity-weighted row estimates、predicate-dependent join cost lower bounds）
+  是理解 advanced top-down optimization 的自然下一步。
+</p>
+
+<h3>4.4 三策略在搜索方向上的根本差异</h3>
+
+<div class="diagram-svg">
+<svg viewBox="0 0 810 280" width="810" height="280" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .c3-h { font-size: 13px; font-weight: 600; fill: #1e293b; }
+    .c3-t { font-size: 10.5px; fill: #334155; }
+    .c3-m { font-size: 9.5px; font-family: "JetBrains Mono","Fira Code",monospace; fill: #475569; }
+    .c3-s { font-size: 10px; fill: #64748b; }
+    .c3-box { fill: #f8f9fc; stroke: #94a3b8; stroke-width: 1; rx: 4; }
+    .c3-sep { stroke: #cbd5e1; stroke-width: 0.6; }
+    @media (prefers-color-scheme: dark) {
+      .c3-h { fill: #e2e8f0; } .c3-t { fill: #cbd5e1; } .c3-m { fill: #94a3b8; } .c3-s { fill: #94a3b8; }
+      .c3-box { fill: #1e293b; stroke: #64748b; } .c3-sep { stroke: #334155; }
+    }
+  </style>
+
+  <line x1="270" y1="8" x2="270" y2="260" class="c3-sep"/>
+  <line x1="540" y1="8" x2="540" y2="260" class="c3-sep"/>
+
+  <text x="135" y="22" text-anchor="middle" class="c3-h">BottomUpDP</text>
+  <text x="405" y="22" text-anchor="middle" class="c3-h">Transformational</text>
+  <text x="675" y="22" text-anchor="middle" class="c3-h">TopDown</text>
+
+  <text x="135" y="40" text-anchor="middle" class="c3-s">Bottom-up 填表</text>
+  <text x="405" y="40" text-anchor="middle" class="c3-s">两阶段 (逻辑+物理)</text>
+  <text x="675" y="40" text-anchor="middle" class="c3-s">Top-down 递归划分</text>
+
+  <rect x="18" y="52" width="234" height="44" rx="4" class="c3-box"/>
+  <text x="135" y="70" text-anchor="middle" class="c3-m">for size = 2..n:</text>
+  <text x="135" y="86" text-anchor="middle" class="c3-m">  for S: for (L,R) of S</text>
+
+  <rect x="288" y="52" width="234" height="44" rx="4" class="c3-box"/>
+  <text x="405" y="70" text-anchor="middle" class="c3-m">Seed → Explore(work-queue)</text>
+  <text x="405" y="86" text-anchor="middle" class="c3-m">Commutativity + Associativity</text>
+
+  <rect x="558" y="52" width="234" height="44" rx="4" class="c3-box"/>
+  <text x="675" y="70" text-anchor="middle" class="c3-m">BestPlan(FullSet, prop)</text>
+  <text x="675" y="86" text-anchor="middle" class="c3-m">EnumeratePartitions → recurse</text>
+
+  <rect x="18" y="104" width="234" height="36" rx="4" class="c3-box"/>
+  <text x="135" y="120" text-anchor="middle" class="c3-m">dp[(RelSet,Property)] = PlanPtr</text>
+  <text x="135" y="135" text-anchor="middle" class="c3-s">预计算所有子问题</text>
+
+  <rect x="288" y="104" width="234" height="36" rx="4" class="c3-box"/>
+  <text x="405" y="120" text-anchor="middle" class="c3-m">MemoStore + OptimizeGroup</text>
+  <text x="405" y="135" text-anchor="middle" class="c3-s">两层: expression_keys_ + best_cache_</text>
+
+  <rect x="558" y="104" width="234" height="36" rx="4" class="c3-box"/>
+  <text x="675" y="120" text-anchor="middle" class="c3-m">cache_: (S,Prop) → PlanPtr</text>
+  <text x="675" y="135" text-anchor="middle" class="c3-s">单层: 无 LogicalExpr/MemoStore</text>
+
+  <rect x="18" y="148" width="234" height="20" rx="4" class="c3-box"/>
+  <text x="135" y="162" text-anchor="middle" class="c3-s">零重复 · 无剪枝 · 全部计算</text>
+
+  <rect x="288" y="148" width="234" height="20" rx="4" class="c3-box"/>
+  <text x="405" y="162" text-anchor="middle" class="c3-s">duplicates ≥ 0 · rule_applications 记录</text>
+
+  <rect x="558" y="148" width="234" height="20" rx="4" class="c3-box"/>
+  <text x="675" y="162" text-anchor="middle" class="c3-s">零重复 · B&amp;B 剪枝 · 按需计算</text>
+
+  <rect x="36" y="184" width="738" height="24" rx="4" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="135" y="200" text-anchor="middle" class="c3-s">Direction: ↑ (singleton → full)</text>
+  <text x="405" y="200" text-anchor="middle" class="c3-s">Direction: ↑ logic, ↓ physics</text>
+  <text x="675" y="200" text-anchor="middle" class="c3-s">Direction: ↓ (full → singleton)</text>
+
+  <text x="135" y="228" text-anchor="middle" class="c3-s">O(3ⁿ) · 经典 DP</text>
+  <text x="405" y="228" text-anchor="middle" class="c3-s">O(4ⁿ) 含重复 · Volcano/Cascades 风格</text>
+  <text x="675" y="228" text-anchor="middle" class="c3-s">O(3ⁿ) · DeHaan &amp; Tompa 风格</text>
+
+  <text x="405" y="265" text-anchor="middle" class="c3-s">图 2 — 三种策略架构对比</text>
+</svg>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="vs-paper">5. 与论文的差异</h2>
+
+<p>当前实现与 DeHaan &amp; Tompa (SIGMOD 2007) 的对应关系：</p>
+
+<table>
+  <tr><th>论文</th><th>当前实现</th><th>匹配度</th></tr>
+  <tr>
+    <td>递归 BestPlan(G, prop) + memoization</td>
+    <td><code>BestPlan(RelSet, Property)</code> + <code>cache_</code></td>
+    <td><span class="badge badge-green">完全一致</span></td>
+  </tr>
+  <tr>
+    <td>CP-free partition = minimal cut</td>
+    <td>Naive: 枚举子集 + IsValidJoinSplit() 过滤</td>
+    <td><span class="badge badge-amber">简化版</span></td>
+  </tr>
+  <tr>
+    <td>MincutLazy: biconnection tree + lazy rebuild</td>
+    <td>尚未实现</td>
+    <td><span class="badge badge-amber">待实现</span></td>
+  </tr>
+  <tr>
+    <td>Predicted-cost bounding (TBNmcP)</td>
+    <td><code>LowerBound = sum(scan_costs)</code> + B&amp;B</td>
+    <td><span class="badge badge-green">架构一致，下界偏弱</span></td>
+  </tr>
+  <tr>
+    <td>Accumulated-cost bounding (TBNmcA)</td>
+    <td>未实现</td>
+    <td><span class="badge badge-green">刻意避免</span></td>
+  </tr>
+  <tr>
+    <td>Memo key = (G, property)</td>
+    <td><code>MakeKey(RelSet, Property)</code></td>
+    <td><span class="badge badge-green">完全一致</span></td>
+  </tr>
+  <tr>
+    <td>Interesting orders via enforcer</td>
+    <td>SortEnforcer fallback in BestPlan</td>
+    <td><span class="badge badge-green">一致</span></td>
+  </tr>
+</table>
+
+<div class="callout callout-ok">
+  <strong>总的来说：</strong>当前实现是论文框架的<strong>忠实简化版</strong>。算法骨架（递归划分 + memoization + predicted-cost B&B + SortEnforcer）与论文完全对齐，
+  但在 partition 生成（Naive vs MincutLazy）和 lower bound 质量上做了教学性的简化。
+  这也是设计的初衷：先跑通框架，再做 Mincut 优化。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="vs-transformational">6. 与 Transformational 的本质对比</h2>
+
+<p>
+  TopDown 和 Transformational 代表了 join enumeration 问题的两种根本范式。
+  它们的差异不是"一个快一个慢"，而是<strong>对"如何生成 join tree"这个问题的两种完全不同的回答</strong>。
+</p>
+
+<h3>6.1 核心范式差异</h3>
+
+<div class="diagram-svg">
+<svg viewBox="0 0 780 400" width="780" height="400" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .v4-h { font-size: 14px; font-weight: 600; fill: #1e293b; }
+    .v4-t { font-size: 11px; fill: #334155; }
+    .v4-s { font-size: 10px; fill: #64748b; }
+    .v4-m { font-size: 10px; font-family: "JetBrains Mono","Fira Code",monospace; fill: #475569; }
+    .v4-box { fill: #f8f9fc; stroke: #94a3b8; stroke-width: 1; rx: 5; }
+    .v4-sep { stroke: #cbd5e1; stroke-width: 0.6; }
+    @media (prefers-color-scheme: dark) {
+      .v4-h { fill: #e2e8f0; } .v4-t { fill: #cbd5e1; } .v4-s { fill: #94a3b8; } .v4-m { fill: #94a3b8; }
+      .v4-box { fill: #1e293b; stroke: #64748b; } .v4-sep { stroke: #334155; }
+    }
+  </style>
+
+  <line x1="390" y1="8" x2="390" y2="380" class="v4-sep"/>
+
+  <text x="195" y="22" text-anchor="middle" class="v4-h">Transformational (Volcano/Cascades)</text>
+  <text x="585" y="22" text-anchor="middle" class="v4-h">TopDown Partitioning (DeHaan &amp; Tompa)</text>
+
+  <text x="195" y="42" text-anchor="middle" class="v4-s">"先生成逻辑空间，再做物理优化"</text>
+  <text x="585" y="42" text-anchor="middle" class="v4-s">"边划分边做物理优化，不分两层"</text>
+
+  <!-- Left -->
+  <rect x="16" y="56" width="358" height="90" rx="5" class="v4-box"/>
+  <text x="195" y="76" text-anchor="middle" class="v4-t" font-weight="600">Phase 1: BuildMemo</text>
+  <line x1="32" y1="84" x2="358" y2="84" stroke="#e2e8f0" stroke-width="0.6"/>
+  <text x="28" y="100" class="v4-m">SeedInitialExpressions: Get(r) + ValidOrderedPartitions</text>
+  <text x="28" y="116" class="v4-m">ExploreTransformations (work-queue):</text>
+  <text x="38" y="132" class="v4-m">Commutativity: J(L,R) → J(R,L)   |   Associativity: (A⋈B)⋈C → A⋈(B⋈C)</text>
+
+  <line x1="195" y1="146" x2="195" y2="162" stroke="#94a3b8" stroke-width="1"/>
+
+  <rect x="16" y="164" width="358" height="72" rx="5" class="v4-box"/>
+  <text x="195" y="184" text-anchor="middle" class="v4-t" font-weight="600">Phase 2: Physical Optimization</text>
+  <line x1="32" y1="192" x2="358" y2="192" stroke="#e2e8f0" stroke-width="0.6"/>
+  <text x="28" y="208" class="v4-m">OptimizeGroup(full, prop) → for each LogicalExpr in group</text>
+  <text x="28" y="224" class="v4-m">→ HashJoin / NLJoin / MergeJoin → recurse on children</text>
+
+  <rect x="16" y="246" width="358" height="48" rx="5" class="v4-box"/>
+  <text x="195" y="264" text-anchor="middle" class="v4-s" font-weight="600">数据结构 (两层)</text>
+  <text x="28" y="280" class="v4-m">MemoStore: RelSet → vector&lt;LogicalExpr&gt;  (逻辑层)</text>
+  <text x="28" y="296" class="v4-m">best_cache_: map&lt;"S|prop", PlanPtr&gt;         (物理层)</text>
+
+  <rect x="40" y="304" width="310" height="22" rx="4" fill="none" stroke="#94a3b8" stroke-width="0.8"/>
+  <text x="195" y="320" text-anchor="middle" class="v4-s">问题: duplicates_generated = O(4ⁿ)</text>
+
+  <!-- Right -->
+  <rect x="406" y="56" width="358" height="90" rx="5" class="v4-box"/>
+  <text x="585" y="76" text-anchor="middle" class="v4-t" font-weight="600">Single Phase: BestPlan</text>
+  <line x1="422" y1="84" x2="748" y2="84" stroke="#e2e8f0" stroke-width="0.6"/>
+  <text x="418" y="100" class="v4-m">BestPlan(S, property):</text>
+  <text x="428" y="116" class="v4-m">① Memoization check  →  cache hit? return</text>
+  <text x="428" y="132" class="v4-m">② Base case (|S|=1)  →  MakeScan ± SortEnforcer</text>
+  <text x="428" y="148" class="v4-m">③ Recursive: EnumeratePartitions → TryJoinMethods → B&amp;B</text>
+
+  <line x1="585" y1="156" x2="585" y2="172" stroke="#94a3b8" stroke-width="1"/>
+
+  <rect x="406" y="174" width="358" height="62" rx="5" class="v4-box"/>
+  <text x="585" y="194" text-anchor="middle" class="v4-t" font-weight="600">Branch-and-Bound (predicted-cost)</text>
+  <line x1="422" y1="202" x2="748" y2="202" stroke="#e2e8f0" stroke-width="0.6"/>
+  <text x="418" y="218" class="v4-m">lb = LowerBound(L) + LowerBound(R) + 1</text>
+  <text x="418" y="234" class="v4-m">if lb ≥ current_best.cost → branches_pruned++; continue</text>
+
+  <rect x="406" y="246" width="358" height="48" rx="5" class="v4-box"/>
+  <text x="585" y="264" text-anchor="middle" class="v4-s" font-weight="600">数据结构 (单层)</text>
+  <text x="418" y="280" class="v4-m">cache_: unordered_map&lt;"RelSet|Property", PlanPtr&gt;</text>
+  <text x="418" y="296" class="v4-m">无 MemoStore / LogicalExpr / expression_keys_</text>
+
+  <rect x="430" y="304" width="310" height="22" rx="4" fill="none" stroke="#94a3b8" stroke-width="0.8"/>
+  <text x="585" y="320" text-anchor="middle" class="v4-s">优势: duplicates_generated ≡ 0, plans_costed 更少</text>
+
+  <text x="390" y="360" text-anchor="middle" class="v4-s">图 3 — Transformational vs TopDown 范式对比</text>
+</svg>
+</div>
+
+<h3>6.2 逐维度对比</h3>
+
+<table>
+  <tr><th>维度</th><th>Transformational</th><th>TopDown</th></tr>
+  <tr>
+    <td><strong>搜索空间生成</strong></td>
+    <td>用 <strong>transformation rules</strong> (commutativity, associativity) 在已有表达式上派生出新等价表达式</td>
+    <td>用 <strong>关系集划分</strong> (L, R) 直接生成 join 候选—划分即 plan</td>
+  </tr>
+  <tr>
+    <td><strong>为什么有/无重复？</strong></td>
+    <td>同一个 LogicalExpr 可通过多条规则序列到达 → expression_keys_ 去重 → duplicate 计数器</td>
+    <td>每个 (RelSet, Property) 只有一个最优计划 → cache key 天然唯一 → 零重复</td>
+  </tr>
+  <tr>
+    <td><strong>搜索阶段</strong></td>
+    <td><strong>两阶段</strong>: BuildMemo (逻辑枚举) → OptimizeGroup (物理优化)</td>
+    <td><strong>单阶段</strong>: BestPlan 同时做枚举 + 代价计算 + 缓存</td>
+  </tr>
+  <tr>
+    <td><strong>逻辑层</strong></td>
+    <td>LogicalExpr (Get/Join) + MemoGroup + MemoStore</td>
+    <td><strong>无</strong>—划分直接映射到物理 join</td>
+  </tr>
+  <tr>
+    <td><strong>缓存结构</strong></td>
+    <td>两层: expression_keys_ (逻辑去重) + best_cache_ (物理缓存)</td>
+    <td>单层: cache_ (RelSet, Property) → PlanPtr</td>
+  </tr>
+  <tr>
+    <td><strong>Interesting Order</strong></td>
+    <td>OptimizeSorted 遍历 expr + SortEnforcer fallback</td>
+    <td>递归中自然产生 (MergeJoin 需要 Sorted child) + SortEnforcer fallback</td>
+  </tr>
+  <tr>
+    <td><strong>Branch-and-Bound</strong></td>
+    <td>无</td>
+    <td>Predicted-cost B&B (LowerBound + 1 ≥ best → prune)</td>
+  </tr>
+  <tr>
+    <td><strong>扩展方式</strong></td>
+    <td>加新 transformation rule</td>
+    <td>换 partition 策略 (Naive → Mincut)</td>
+  </tr>
+  <tr>
+    <td><strong>复杂度</strong></td>
+    <td>O(4ⁿ) 含重复 (Pellenkoft et al. 1997)</td>
+    <td>O(3ⁿ) 枚举 (同 DP 下界)</td>
+  </tr>
+</table>
+
+<div class="callout callout-ok">
+  <strong>一句话总结：</strong>Transformational 是"用规则变换表达式来探索 join order"；
+  TopDown 是"用集合划分来直接生成 join order"。前者因为规则路径的重复而浪费 O(4ⁿ)；后者因为每个划分唯一地确定一个 join tree 结构而自然无重复。
+  这不是"TopDown 更快"，而是<strong>在 join reorder 这个问题上，集合划分比规则变换更直达本质</strong>。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="empirical">7. 实验数据</h2>
+
+<p>
+  以下是三种策略在同一 Join Graph 上的 trace 输出对比。
+  关键看三个数字：<strong>best_cost</strong>（三者应一致，验证正确性）、
+  <strong>duplicates</strong>（Transformational 独有，展示 O(4ⁿ) 浪费）、
+  <strong>plans_costed</strong>（TopDown 应最少，展示按需计算的优势）。
+</p>
+
+<h3>7.1 chain_3</h3>
+
+<pre><code>$ volcano_join_demo --compare --test chain_3
+
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+BottomUpDP          4           2         37            0          20       0      0      0       19651.56
+Transformational    0           0         34           27          12      16     24      0       19651.56
+TopDown(Naive)      7           1         25            7          12       0      0      0       19651.56</code></pre>
+
+<ul>
+  <li>✅ best_cost 三者一致</li>
+  <li>Transformational: 16 duplicates + 24 rule attempts — 变换开销</li>
+  <li>TopDown: plans_costed=25 (最少)，duplicates=0，cache_hits=7 (跨分支复用)</li>
+  <li>TopDown partitions_explored=7 较大 — Naive 枚举从 3 表全集开始</li>
+</ul>
+
+<h3>7.2 cycle_4</h3>
+
+<pre><code>$ volcano_join_demo --compare --test cycle_4
+
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+BottomUpDP          18          7         162           0          69       0      0      0       14800.00
+Transformational    0           0         136         132          68     164    196      0       14800.00
+TopDown(Naive)      43          9          86          52          56       0      0      0       14800.00</code></pre>
+
+<ul>
+  <li>✅ best_cost 三者一致</li>
+  <li>Transformational duplicates=164 (vs chain_3 的 16!)— 4 表极大放大了规则重复</li>
+  <li>TopDown plans_costed=86 (Transformational 的 <strong>63%</strong>)</li>
+  <li>TopDown branches_pruned 仍为 0 — LowerBound 太弱</li>
+</ul>
+
+<h3>7.3 clique_4</h3>
+
+<pre><code>$ volcano_join_demo --compare --test clique_4
+
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+BottomUpDP          36          28        439           0         119       0      0      0       2471.34
+Transformational    0           0        340          340        120     300    392      0       2471.34
+TopDown(Naive)      49          27         84           60         65       0      0      0       2471.34</code></pre>
+
+<ul>
+  <li>Transformational duplicates=300 — O(4ⁿ) 趋势明显</li>
+  <li>TopDown plans_costed=84 — 只有 Transformational (340) 的 <strong>25%</strong></li>
+  <li>在所有测试中 TopDown 的 duplicates 和 rule_applications 始终为 0</li>
+</ul>
+
+<h3>7.4 数据说明</h3>
+
+<p>
+  三个数据点清晰地展示了：
+</p>
+<ol>
+  <li><strong>TopDown vs Transformational 的 plans_costed 差距随 n 增长而扩大</strong> —
+    前者不预计算逻辑层，工作量随"实际需要的子问题"增长；后者先构造完整逻辑空间。</li>
+  <li><strong>branches_pruned 在所有测试中为 0</strong> —
+    当前 LowerBound = sum(scan_costs) 太弱。这是教学的下一步：改进下界，观察剪枝效果。</li>
+  <li><strong>partitions_explored 在 TopDown 中最大</strong> —
+    Naive 枚举从大集合开始，子集候选更多。这也正是 Mincut 策略要解决的问题。</li>
+</ol>
+
+<!-- ================================================================== -->
+<h2 id="references">8. 参考资料</h2>
+
+<ol>
+  <li>
+    <strong>D. DeHaan, F. W. Tompa</strong> —
+    <em>"Optimal Top-Down Join Enumeration."</em> SIGMOD 2007.
+    <br><small>
+      TopDown 策略的理论来源。提出 minimal cut 规约、MincutLazy 算法、predicted-cost vs accumulated-cost bounding 分析。
+    </small>
+  </li>
+  <li>
+    <strong>A. Pellenkoft, C. A. Galindo-Legaria, M. L. Kersten</strong> —
+    <em>"The Complexity of Transformation-Based Join Enumeration."</em> VLDB 1997.
+    <br><small>
+      证明 transformation-based join enumeration 产生 O(4ⁿ) duplicates。TopDown 对比 Transformational 的理论基础。
+    </small>
+  </li>
+  <li>
+    <strong>G. Graefe, W. J. McKenna</strong> —
+    <em>"The Volcano Optimizer Generator."</em> ICDE 1993.
+    <br><small>Volcano/Cascades 变换式搜索架构。Transformational 策略的灵感来源。</small>
+  </li>
+  <li>
+    <strong>G. Moerkotte, T. Neumann</strong> —
+    <em>"Analysis of Two Existing and One New Dynamic Programming Algorithm…"</em> VLDB 2006.
+    <br><small>DPccp/DPsub — 目前最快的 bottom-up CP-free bushy join 枚举算法。</small>
+  </li>
+  <li>
+    <strong>本项目</strong> —
+    <a href="transformational-search.html">Transformational Search Workflow</a> (姊妹篇)
+    | <a href="index.html">Join Order Algorithm Laboratory</a> (总览)
+  </li>
+</ol>
+
+<hr>
+
+<p style="text-align:center; color:var(--subtle); font-size:.9rem;">
+  <strong>Top-Down Partitioning Search Workflow</strong> —
+  <code>demos/demo/docs/topdown-partitioning-workflow.html</code>
+  <br>
+  <a href="index.html">← Back to Lab Index</a>
+  &nbsp;|&nbsp;
+  <a href="transformational-search.html">Transformational Search Workflow</a>
+</p>
+
+</body>
+</html>

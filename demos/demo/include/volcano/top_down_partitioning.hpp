@@ -2,10 +2,13 @@
 
 #include "volcano/search_strategy.hpp"
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 
 namespace volcano {
+
+class MincutPartitioner;
 
 // DeHaan & Tompa (SIGMOD 2007) style top-down partitioning search.
 //
@@ -26,6 +29,8 @@ class TopDownPartitioning : public SearchStrategy {
 public:
   explicit TopDownPartitioning(PartitionStrategy partition_strategy = PartitionStrategy::Naive,
                                bool allow_cross_products = false);
+
+  ~TopDownPartitioning() override;  // defined in .cpp (needed for unique_ptr<MincutPartitioner>)
 
   std::string Name() const override;
   SearchResult Search(const JoinGraph &graph,
@@ -65,6 +70,11 @@ private:
   PartitionStrategy partition_strategy_;
   bool allow_cross_products_;
   std::unordered_map<std::string, PlanPtr> cache_;
+
+  // Mincut partitioner — built once per Search() invocation.
+  // Mutable to allow lazy construction inside const EnumeratePartitions().
+  mutable std::unique_ptr<MincutPartitioner> mincut_partitioner_;
+  mutable const JoinGraph *mincut_graph_ = nullptr;
 };
 
 } // namespace volcano

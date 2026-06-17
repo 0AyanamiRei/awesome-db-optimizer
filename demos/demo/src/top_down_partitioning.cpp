@@ -1,5 +1,6 @@
 #include "volcano/top_down_partitioning.hpp"
 #include "volcano/cost_model.hpp"
+#include "volcano/mincut.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,8 @@ TopDownPartitioning::TopDownPartitioning(PartitionStrategy partition_strategy,
     : partition_strategy_(partition_strategy)
     , allow_cross_products_(allow_cross_products) {
 }
+
+TopDownPartitioning::~TopDownPartitioning() = default;
 
 std::string TopDownPartitioning::Name() const {
   switch (partition_strategy_) {
@@ -155,16 +158,18 @@ TopDownPartitioning::EnumeratePartitions(const JoinGraph &graph, RelSet relset,
     break;
   }
   case PartitionStrategy::Mincut: {
-    // TODO: Implement DeHaan & Tompa 2007 MincutLazy enumeration
-    // For now, fall back to naive.
-    for (RelSet left = (relset - 1) & relset; left != 0; left = (left - 1) & relset) {
-      const RelSet right = relset ^ left;
-      if (left >= right) continue;
-      ++trace.partitions_explored;
-      if (!graph.IsValidJoinSplit(left, right, allow_cross_products_)) {
-        ++trace.partitions_rejected;
-        continue;
-      }
+    // Lazy-initialize the MincutPartitioner (once per graph).
+    if (!mincut_partitioner_ || mincut_graph_ != &graph) {
+      mincut_partitioner_ = std::make_unique<MincutPartitioner>(graph);
+      mincut_graph_ = &graph;
+    }
+
+    // MincutLazy generates only CP-free partitions directly — no
+    // generate-and-test.  Each returned pair already satisfies:
+    //   both sides connected, left < right, crossing predicate exists.
+    const auto partitions = mincut_partitioner_->EnumeratePartitions(relset);
+    trace.partitions_explored += partitions.size();
+    for (const auto &[left, right] : partitions) {
       result.push_back({left, right});
     }
     break;

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Query Simplification — Graceful Degradation for Join-Order Optimization · 论文笔记</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #ecfdf5;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.95rem;
+  }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.info { border-left-color: #2563eb; background: #eef2ff; }
+  .callout.red { border-left-color: #ef4444; background: #fef2f2; }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--th-bg); font-weight: 600; }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; }
+  .toc li { margin: 0.15rem 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .tag {
+    display: inline-block;
+    background: var(--accent-soft);
+    color: #115e59;
+    font-size: 0.78rem;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    margin-right: 0.3rem;
+    font-family: sans-serif;
+  }
+  .tag.alt { background: #dbeafe; color: #1e40af; }
+  .tag.warn { background: #fef3c7; color: #92400e; }
+  .key-term {
+    background: var(--highlight);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+  .diagram {
+    margin: 1.4rem 0;
+    padding: 1rem 1rem 0.6rem;
+    background: var(--fig-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    font-style: italic;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+  .footnotes {
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Query Simplification 论文笔记</h1>
+<p class="meta">
+  <strong>论文：</strong>Thomas Neumann — <em>Query Simplification: Graceful Degradation for Join-Order Optimization</em>, SIGMOD 2009.<br>
+  <strong>主题：</strong>当 join-order optimization 过大而无法精确求解时，如何逐步收紧 join graph，让 DP 在预算内仍能给出受控质量的计划。<br>
+  <strong>日期：</strong>2026-06-18
+</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#s1">一句话定位</a></li>
+  <li><a href="#s2">为什么 join graph 形状决定难度</a></li>
+  <li><a href="#s3">Query simplification 到底简化什么</a></li>
+  <li><a href="#s4">单步简化：给 join 加前后约束</a></li>
+  <li><a href="#s5">完整算法：按预算收缩后再精确 DP</a></li>
+  <li><a href="#s6">如何选择先简化哪一对 join</a></li>
+  <li><a href="#s7">规则正确性的边界</a></li>
+  <li><a href="#s8">outer join、视图与谓词/约束推理</a></li>
+  <li><a href="#s9">实验结论与失败模式</a></li>
+  <li><a href="#s10">对优化器实现的启发</a></li>
+  <li><a href="#s11">读完应记住的结论</a></li>
+</ol>
+</nav>
+
+<hr>
+
+<h2 id="s1">1. 一句话定位</h2>
+
+<div class="callout info">
+<strong>核心想法：</strong>不要在超大 join 查询上直接从“精确 DP”跳到“贪心构造计划”。先把 join graph 加上一些较可信的顺序约束，缩小搜索空间；只缩到 DP 能在预算内跑完为止，然后对这个<strong>受限后的问题</strong>做精确优化。
+</div>
+
+<p>这篇论文里的 <span class="key-term">query simplification</span> 容易被误解。它不是传统意义上的 SQL simplification，例如常量折叠、谓词化简、删除冗余子查询。这里的“简化”指的是：<strong>简化优化问题</strong>，也就是让 join-order search space 变小。</p>
+
+<p>作者的对比对象是两类常见退化策略：</p>
+
+<table>
+  <thead>
+    <tr><th>策略</th><th>做法</th><th>论文认为的问题</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>直接精确 DP</td>
+      <td>在原始 join graph 上枚举 connected subgraph / complement pair。</td>
+      <td>查询一大，尤其是 star、grid、clique 这类图，DP 表和候选 join 数会指数增长。</td>
+    </tr>
+    <tr>
+      <td>贪心/随机计划搜索</td>
+      <td>直接选择下一步 join，或在搜索空间里随机游走。</td>
+      <td>早期决策很可能需要全局上下文才能判断，错误会让执行计划慢几个数量级。</td>
+    </tr>
+    <tr>
+      <td>Graph simplification</td>
+      <td>先选择“哪些 join 顺序应当避免”，把图变得更受限，再交给 DP。</td>
+      <td>仍可能出错，但错误从最有把握的低风险约束之后才逐渐出现，退化更平滑。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>我的理解是：这篇论文把“优化器超时后怎么办”从一个开关问题，改成了连续调节问题。预算足够时，原图不变，得到精确最优；预算变紧时，只增加必要的约束，保留尽量多的搜索空间。</p>
+
+<hr>
+
+<h2 id="s2">2. 为什么 join graph 形状决定难度</h2>
+
+<p>论文基于 graph-based join ordering：查询中的关系是点，join predicate 是边；如果 predicate 涉及多于两个关系，或带有 non-inner join 的重排序限制，则用 <span class="key-term">hyperedge</span> 表达。</p>
+
+<p>对于不允许 Cartesian product 的 bushy join order，一个 relation set 能作为子计划出现，当且仅当它在 query graph 中连通。DPhyp/DPccp 一类算法的工作量因此与 connected subgraphs、以及可 join 的 connected-subgraph complement pairs 密切相关。</p>
+
+<table>
+  <thead>
+    <tr><th>图形态</th><th>优化难度</th><th>直觉</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Chain</td>
+      <td>相对容易，论文给出的空间复杂度量级为 O(n²)，时间为 O(n³)。</td>
+      <td>可行子图基本是连续子链。</td>
+    </tr>
+    <tr>
+      <td>Cycle</td>
+      <td>渐近上接近 chain，但某些算法处理 cycle 会更麻烦。</td>
+      <td>局部选择开始互相影响，但结构仍很稀疏。</td>
+    </tr>
+    <tr>
+      <td>Star</td>
+      <td>空间 O(2ⁿ)，时间 O(n2ⁿ) 量级。</td>
+      <td>中心 fact table 可以和许多维表以任意顺序连接，常见于数据仓库。</td>
+    </tr>
+    <tr>
+      <td>Grid</td>
+      <td>很难，实验中是 simplification 的主要压力点。</td>
+      <td>大量 cycle 让局部 join 顺序影响后续输入基数。</td>
+    </tr>
+    <tr>
+      <td>Clique</td>
+      <td>最坏情况，论文提到空间 O(2ⁿ)，时间 O(4ⁿ) 量级。</td>
+      <td>任意 relation set 都可能 join，真实大查询里少见。</td>
+    </tr>
+  </tbody>
+</table>
+
+<figure class="diagram">
+<svg width="720" height="180" viewBox="0 0 720 180" role="img" aria-label="不同 join graph 形态的示意图">
+  <defs>
+    <style>
+      .node { fill: #ccfbf1; stroke: #0f766e; stroke-width: 2; }
+      .edge { stroke: #0f766e; stroke-width: 2; }
+      .label { font: 13px sans-serif; fill: #333; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <text class="label" x="80" y="22">chain</text>
+  <circle class="node" cx="35" cy="90" r="15"/><circle class="node" cx="65" cy="90" r="15"/>
+  <circle class="node" cx="95" cy="90" r="15"/><circle class="node" cx="125" cy="90" r="15"/>
+  <line class="edge" x1="50" y1="90" x2="50" y2="90"/>
+  <line class="edge" x1="50" y1="90" x2="80" y2="90"/>
+  <line class="edge" x1="80" y1="90" x2="110" y2="90"/>
+
+  <text class="label" x="230" y="22">star</text>
+  <circle class="node" cx="230" cy="90" r="16"/>
+  <circle class="node" cx="190" cy="55" r="14"/><circle class="node" cx="270" cy="55" r="14"/>
+  <circle class="node" cx="190" cy="125" r="14"/><circle class="node" cx="270" cy="125" r="14"/>
+  <line class="edge" x1="218" y1="80" x2="202" y2="65"/>
+  <line class="edge" x1="242" y1="80" x2="258" y2="65"/>
+  <line class="edge" x1="218" y1="100" x2="202" y2="115"/>
+  <line class="edge" x1="242" y1="100" x2="258" y2="115"/>
+
+  <text class="label" x="385" y="22">cycle</text>
+  <circle class="node" cx="345" cy="70" r="14"/><circle class="node" cx="425" cy="70" r="14"/>
+  <circle class="node" cx="425" cy="125" r="14"/><circle class="node" cx="345" cy="125" r="14"/>
+  <line class="edge" x1="359" y1="70" x2="411" y2="70"/>
+  <line class="edge" x1="425" y1="84" x2="425" y2="111"/>
+  <line class="edge" x1="411" y1="125" x2="359" y2="125"/>
+  <line class="edge" x1="345" y1="111" x2="345" y2="84"/>
+
+  <text class="label" x="560" y="22">grid / clique 更难</text>
+  <circle class="node" cx="515" cy="65" r="12"/><circle class="node" cx="560" cy="65" r="12"/><circle class="node" cx="605" cy="65" r="12"/>
+  <circle class="node" cx="515" cy="115" r="12"/><circle class="node" cx="560" cy="115" r="12"/><circle class="node" cx="605" cy="115" r="12"/>
+  <line class="edge" x1="527" y1="65" x2="548" y2="65"/><line class="edge" x1="572" y1="65" x2="593" y2="65"/>
+  <line class="edge" x1="527" y1="115" x2="548" y2="115"/><line class="edge" x1="572" y1="115" x2="593" y2="115"/>
+  <line class="edge" x1="515" y1="77" x2="515" y2="103"/><line class="edge" x1="560" y1="77" x2="560" y2="103"/><line class="edge" x1="605" y1="77" x2="605" y2="103"/>
+</svg>
+<figcaption>图形态越允许“许多 relation set 都连通”，DP 必须考虑的子问题就越多。</figcaption>
+</figure>
+
+<div class="callout">
+这篇论文不是要替代 graph-based DP，而是把它当作最后阶段的精确求解器。simplification 的目标是把输入图改造成一个 DPccp/DPhyp 能在预算内处理的图。
+</div>
+
+<hr>
+
+<h2 id="s3">3. Query simplification 到底简化什么</h2>
+
+<p>论文里的 simplification 并不减少查询语义，也不删除 join predicate。它做的是给 join graph 增加重排序约束：如果启发式认为 join <code>j2</code> 应该早于 join <code>j1</code>，就把 <code>j1</code> 改写成一个需要 <code>j2</code> 相关关系已经在同一侧的 hyperedge。</p>
+
+<p>以 star query 为例，原始图可能允许 <code>R0</code> 先连 <code>R1</code>、<code>R2</code>、<code>R3</code> 的任意顺序。如果我们判断 <code>R0 ⋈ R1</code> 应当先于 <code>R0 ⋈ R2</code>，则把后者从：</p>
+
+<pre><code>R0 ⋈ R2</code></pre>
+
+<p>收紧为：</p>
+
+<pre><code>{R0, R1} ⋈ R2</code></pre>
+
+<p>这句话的含义是：只有当某个子计划已经包含 <code>R0</code> 和 <code>R1</code> 时，才允许它再与 <code>R2</code> join。于是所有 <code>R2</code> 早于 <code>R1</code> 的 join order 都被排除了。</p>
+
+<table>
+  <thead>
+    <tr><th>看起来像</th><th>实际含义</th><th>优化器效果</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>把普通边变成 hyperedge</td>
+      <td>不是改变查询结果，而是改变允许的 join order 集合。</td>
+      <td>DP 可枚举的 connected subgraphs 变少。</td>
+    </tr>
+    <tr>
+      <td>给 join 建 partial order</td>
+      <td><code>j2 → j1</code> 表示 <code>j2</code> 必须早于 <code>j1</code>。</td>
+      <td>可以用 cycle detection 防止约束互相矛盾。</td>
+    </tr>
+    <tr>
+      <td>风险逐步增加</td>
+      <td>先加启发式最有把握的约束，后加不那么确定的约束。</td>
+      <td>预算越紧，越依赖 heuristic；预算越宽，越接近原始最优。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+这也是“graceful degradation”的来源：不是突然放弃 DP，而是把 DP 的问题逐步约束到可处理大小。每一步简化都可能排除真实最优计划，但算法试图先排除最不可能有用的计划。
+</div>
+
+<hr>
+
+<h2 id="s4">4. 单步简化：给 join 加前后约束</h2>
+
+<p>单步算法 <code>SimplifyGraph</code> 的输入是 query hypergraph <code>G = (V, E)</code>。它遍历相邻的 join hyperedges，寻找一个最值得加入的顺序约束。</p>
+
+<pre><code>SimplifyGraph(G = (V, E)):
+  best = none
+
+  for each join j1 = SL1 ⋈ SR1 in E:
+    for each join j2 = SL2 ⋈ SR2 in E, j2 != j1:
+      if j1 and j2 are neighboring:
+        if adding order j2 before j1 does not violate constraints:
+          benefit = orderingBenefit(j1, j2)
+          remember the pair with maximum benefit
+
+  if best is none:
+    return G
+
+  add the order "j2 before j1":
+    if j2 touches the left side of j1:
+      replace j1 = SL1 ⋈ SR1 with (SL1 ∪ SL2 ∪ SR2) ⋈ SR1
+    else:
+      replace j1 = SL1 ⋈ SR1 with SL1 ⋈ (SR1 ∪ SL2 ∪ SR2)
+
+  return the modified hypergraph</code></pre>
+
+<p>这里有几个细节值得记住：</p>
+
+<ul>
+  <li><strong>只考虑 neighboring joins。</strong> 两个 join 至少要通过某些 relation 集合相接，算法才尝试预测相对顺序。完全无关的 join 很难局部判断。</li>
+  <li><strong>hyperedge 会越来越大。</strong> 每次把某个 join 的一侧扩张为更大的 relation set，就在图里编码了“必须先包含这些关系”。</li>
+  <li><strong>约束会传播。</strong> 论文中维护 join 间的 partial order；如果新增 <code>j2 → j1</code> 会形成 cycle，则不能加。</li>
+  <li><strong>non-inner join 约束从一开始就在图里。</strong> 对 outer join、anti join、semi join 等，不合法的重排序已经被 hypergraph 编码出来，simplification 不应破坏这些语义限制。</li>
+</ul>
+
+<h3>4.1 为什么这是“避免 join”而不是“选择 join”</h3>
+
+<p>经典 greedy plan building 会直接决定下一步 join，例如“先 join <code>R1</code> 和 <code>R2</code>”。这很危险，因为一个局部便宜的 join 可能让后续输入变大，或者破坏重要的物理性质。</p>
+
+<p>Query simplification 的动作更保守：它不直接生成计划片段，而是说“某个相对顺序大概率不要反过来”。这仍然是启发式，但它把完整 plan construction 留给 DP，在剩余空间里继续全局比较。</p>
+
+<figure class="diagram">
+<svg width="720" height="220" viewBox="0 0 720 220" role="img" aria-label="star query simplification 示意">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .n { fill: #ccfbf1; stroke: #0f766e; stroke-width: 2; }
+      .e { stroke: #0f766e; stroke-width: 2; }
+      .t { font: 13px sans-serif; fill: #333; text-anchor: middle; }
+      .small { font: 12px sans-serif; fill: #555; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <text class="t" x="170" y="25">原始 star：R1/R2/R3 顺序自由</text>
+  <circle class="n" cx="170" cy="105" r="18"/><text class="t" x="170" y="110">R0</text>
+  <circle class="n" cx="105" cy="65" r="16"/><text class="t" x="105" y="70">R1</text>
+  <circle class="n" cx="235" cy="65" r="16"/><text class="t" x="235" y="70">R2</text>
+  <circle class="n" cx="170" cy="165" r="16"/><text class="t" x="170" y="170">R3</text>
+  <line class="e" x1="155" y1="95" x2="119" y2="75"/>
+  <line class="e" x1="185" y1="95" x2="221" y2="75"/>
+  <line class="e" x1="170" y1="123" x2="170" y2="149"/>
+
+  <line class="e" x1="340" y1="110" x2="395" y2="110" marker-end="url(#arrow)"/>
+  <text class="small" x="367" y="94">加约束</text>
+  <text class="small" x="367" y="130">R1 before R2</text>
+
+  <text class="t" x="550" y="25">简化后：R2 要等 {R0,R1}</text>
+  <circle class="n" cx="500" cy="105" r="18"/><text class="t" x="500" y="110">R0</text>
+  <circle class="n" cx="440" cy="65" r="16"/><text class="t" x="440" y="70">R1</text>
+  <circle class="n" cx="625" cy="105" r="16"/><text class="t" x="625" y="110">R2</text>
+  <circle class="n" cx="500" cy="165" r="16"/><text class="t" x="500" y="170">R3</text>
+  <line class="e" x1="485" y1="95" x2="454" y2="75"/>
+  <line class="e" x1="500" y1="123" x2="500" y2="149"/>
+  <path d="M500 105 C535 70, 590 70, 625 105" fill="none" stroke="#0f766e" stroke-width="2"/>
+  <text class="small" x="566" y="68">{R0,R1} ⋈ R2</text>
+</svg>
+<figcaption>示意：simplification 通过 hyperedge 把“R1 应先于 R2”的判断写进 join graph。</figcaption>
+</figure>
+
+<hr>
+
+<h2 id="s5">5. 完整算法：按预算收缩后再精确 DP</h2>
+
+<p>完整优化器分两阶段：</p>
+
+<ol>
+  <li>不断调用 <code>SimplifyGraph</code>，形成一串越来越受限的 query graph。</li>
+  <li>在这串图里找到“最少简化但复杂度不超过预算”的那一个，然后调用 <code>DPhyp</code> 精确求解。</li>
+</ol>
+
+<pre><code>GraphSimplificationOptimizer(G, budget b):
+  graphs = []
+  Gcur = G
+
+  repeat:
+    append Gcur to graphs
+    Gnext = SimplifyGraph(Gcur)
+    if Gnext == Gcur:
+      break
+    Gcur = Gnext
+
+  choose the earliest graph Gb whose
+  number_of_connected_subgraphs(Gb) <= b
+  using binary search over the simplification sequence
+
+  return DPhyp(Gb)</code></pre>
+
+<h3>5.1 为什么预算用 connected subgraphs 衡量</h3>
+
+<p>图上 DP 的表项大小与 connected subgraphs 数量直接相关。论文因此不把预算设成“最多多少 relation”或“最多多少 join”，而是设成“DP 最多处理多少 connected subgraphs”。这比单纯看 relation 数更贴近实际优化时间。</p>
+
+<div class="callout">
+论文中的实验预算示例是 10,000 个 connected subgraphs。在这个预算下，作者报告 50 个 relation 的 star query 可以在不到一秒内完成完整算法，包括 simplification 和最终 DPhyp。
+</div>
+
+<h3>5.2 为什么用二分查找</h3>
+
+<p>每一步 simplification 都只会增加约束，所以搜索空间整体单调缩小。它未必严格单调，因为某些新约束可能已经被旧约束隐含，但足够支持在简化序列上做二分式检查。</p>
+
+<p>计算 connected subgraphs 不免费。论文指出可以基于 DPhyp 的枚举过程去数 connected subgraphs，并在超过预算 <code>b + 1</code> 时提前停止；但如果每次简化后都数一次，仍然会浪费。因此先生成简化序列，再少量检查候选点。</p>
+
+<h3>5.3 工程上不必真的保存每张图</h3>
+
+<p>伪代码保存了一串 graph，但论文也说明真实实现更适合只记录每次选择的 join pair <code>(j1, j2)</code>。二分查找需要某个中间图时，再从最近的已物化图 replay 这些简化步骤。</p>
+
+<hr>
+
+<h2 id="s6">6. 如何选择先简化哪一对 join</h2>
+
+<p>Simplification 框架本身和 heuristic 是解耦的：只要能给“把 <code>j2</code> 放在 <code>j1</code> 之前”估计一个 benefit，就能插入不同策略。论文实现使用一个相对代价比：</p>
+
+<pre><code>orderingBenefit(X ⋈1 R1, X ⋈2 R2)
+  = C((X ⋈1 R1) ⋈2 R2)
+    / C((X ⋈2 R2) ⋈1 R1)</code></pre>
+
+<p>如果这个比值很大，说明“先 <code>⋈2</code> 再 <code>⋈1</code>”比反过来便宜很多，于是算法优先加入 <code>⋈2</code> before <code>⋈1</code> 的约束。直觉是：代价差几个数量级的局部顺序更可能在全局最优里也成立。</p>
+
+<h3>6.1 真实 cost function 不一定能早期使用</h3>
+
+<p>论文提醒：在还没有完整物理计划时，很多 cost function 需要的 physical properties 不存在。例如 sort order、partitioning、访问路径等信息都还没确定。为了解耦，论文建议 benefit estimation 可以使用 <code>Cout</code>，也就是中间结果大小：</p>
+
+<pre><code>Cout(T) =
+  0                                  if T is a base relation Ri
+  |T| + Cout(T1) + Cout(T2)          if T = T1 ⋈ T2</code></pre>
+
+<p><code>Cout</code> 的好处是只依赖 cardinality 估计，不依赖具体物理性质。它不等于真实执行代价，但“减少中间结果”通常是合理的启发式。</p>
+
+<h3>6.2 hyperedge 场景下的 X、R1、R2 怎么来</h3>
+
+<p>实际图里比较的是两个 neighboring hyperedges，例如 <code>SL1 ⋈ SR1</code> 与 <code>SL2 ⋈ SR2</code>，不一定是简单的 <code>X ⋈ R</code>。论文的处理思路是用 relation set 的估计输出基数来近似：</p>
+
+<pre><code>|S|join = product(|R| for R in S)
+          * product(selectivity(predicate) for predicate inside S)</code></pre>
+
+<p>如果 <code>SL2</code> 包含在 <code>SL1</code> 中，就可以把共享侧近似为 <code>X</code>，把两个外侧分别近似为 <code>R1</code> 和 <code>R2</code>。论文中可理解为：simplification 越往后走，hyperedge 包含的信息越多，局部比较越接近真实输入。</p>
+
+<div class="callout warn">
+这个 heuristic 不是万无一失。尤其在 cycle 丰富的图里，某个 join 的输入基数可能强烈依赖已经经过哪些边，局部二选一比较会低估这种相互作用。
+</div>
+
+<hr>
+
+<h2 id="s7">7. 规则正确性的边界</h2>
+
+<p>论文很清楚地区分了两件事：</p>
+
+<ul>
+  <li><strong>语义正确性：</strong>加约束后的图仍然描述原查询的一部分合法 join order，不产生语义错误。</li>
+  <li><strong>最优性保持：</strong>被排除的 join order 是否一定不包含原问题最优计划。</li>
+</ul>
+
+<p>第一点由 hypergraph encoding、partial order、cycle detection 等机制维护。第二点一般不能保证，因为 simplification 是启发式。论文只在特定条件下证明了较强性质。</p>
+
+<h3>7.1 Relative order preserving cost function</h3>
+
+<p>论文定义了一类 <span class="key-term">relative order preserving</span> cost function。粗略地说，如果在公共输入 <code>R0</code> 后，<code>⋈2</code> 应该早于 <code>⋈1</code>，那么把 <code>R0</code> 的基数按独立 join 改变后，这个相对顺序仍不变。</p>
+
+<pre><code>If:
+  C(R0 ⋈1 R1 ⋈2 R2) >= C(R0 ⋈2 R2 ⋈1 R1)
+
+Then, after an independent join with R3 before both:
+  C(R0 ⋈3 R3 ⋈1 R1 ⋈2 R2)
+    >=
+  C(R0 ⋈3 R3 ⋈2 R2 ⋈1 R1)</code></pre>
+
+<p>它和 IKKBZ 里的 ASI property 有关系：论文指出 ASI cost function 都满足 relative order preserving，但后者更宽。例如论文认为一个简单 sort-merge join cost function 不满足 ASI，却可以满足 relative order preserving。</p>
+
+<h3>7.2 Star query 上的最优性</h3>
+
+<p>对于 star query，所有合法计划都是围绕中心关系的线性顺序。若 join predicate 独立，且 cost function 满足更强的 fully relative order preserving，论文证明反复应用 GraphSimplificationOptimizer 会得到最优执行计划。</p>
+
+<div class="callout info">
+这解释了实验里 star query 的好表现：对符合这些假设的代价模型，局部顺序比较可以被提升为全局顺序约束。但这个证明不要外推到 clique、grid 或任意真实成本模型。
+</div>
+
+<h3>7.3 哪些地方不能保证</h3>
+
+<table>
+  <thead>
+    <tr><th>场景</th><th>风险</th><th>论文中的观察</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Grid / cyclic query</td>
+      <td>cycle 让局部顺序对后续基数有复杂影响。</td>
+      <td>simplification 早期通常安全，后期可能阶梯式增加代价。</td>
+    </tr>
+    <tr>
+      <td>Clique query</td>
+      <td>搜索空间太大，算法几乎退化成依赖 heuristic 排序。</td>
+      <td>50 relation clique 上表现不如主要实验中的其他图形态。</td>
+    </tr>
+    <tr>
+      <td>非 relative-order-preserving cost</td>
+      <td>局部相对顺序可能随上下文变化。</td>
+      <td>Grace hash join 实验中，star/grid 上误差更明显。</td>
+    </tr>
+    <tr>
+      <td>cardinality 估计错误</td>
+      <td>benefit 估计直接依赖输出基数和 selectivity。</td>
+      <td>论文未来工作建议利用 query graph 更精确预测 cycle 中的输入基数。</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2 id="s8">8. outer join、视图与谓词/约束推理</h2>
+
+<p>这篇论文对 outer join、anti join、semi join 的处理重点不在“为每种 join 写特殊规则”，而在统一编码：把 non-inner joins 的重排序限制放进 query hypergraph。然后 simplification 只在这个已经带约束的 hypergraph 上工作。</p>
+
+<h3>8.1 non-inner join 的关键点</h3>
+
+<table>
+  <thead>
+    <tr><th>问题</th><th>论文中的处理</th><th>学习笔记解读</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>outer/anti/semi join 不可任意交换结合</td>
+      <td>使用已有工作中的 hypergraph encoding 表达 reordering restrictions。</td>
+      <td>先把语义限制变成图约束，再让 DP 和 simplification 共同遵守。</td>
+    </tr>
+    <tr>
+      <td>贪心算法可能构造无效 partial plan</td>
+      <td>论文指出其他 greedy 方法一旦提前合并了不该在同一子树的关系，后续可能无法补成完整合法计划。</td>
+      <td>这正是“先构造计划”比“先约束搜索空间”更危险的地方。</td>
+    </tr>
+    <tr>
+      <td>如何避免新增约束与原约束冲突</td>
+      <td>维护 join partial order，新增 <code>j2 → j1</code> 前检查是否形成 cycle。</td>
+      <td>这是规则正确性的最低边界：可以错过最优，但不能产生非法语义。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>8.2 谓词推理：论文使用得很克制</h3>
+
+<p>论文中的 predicate reasoning 主要体现在三处：</p>
+
+<ol>
+  <li><strong>join predicate 诱导图结构。</strong> 二元 predicate 形成普通边，复杂 predicate 可能形成 hyperedge，例如一个表达式同时涉及多个 relation。</li>
+  <li><strong>selectivity/cardinality 参与 benefit estimation。</strong> heuristic 需要估计 relation set 的输出基数和两种局部顺序的相对代价。</li>
+  <li><strong>non-inner join 的语义约束被编码为 hyperedge。</strong> 这属于约束推理，而不是传统等值类推导。</li>
+</ol>
+
+<p>论文没有展开常见的 equivalence class 推理、传递闭包谓词生成、null-rejecting predicate 下推等规则。因此在实现上应把本文的 simplification 放在“已有逻辑 rewrite 与 predicate normalization 之后”的阶段理解：先把查询规整成带语义约束的 join hypergraph，再做图简化。</p>
+
+<h3>8.3 视图、子查询和关系代数重写</h3>
+
+<p>论文在引言里提到，数据库大量使用 views 会隐式增加 join 数量。除此之外，它没有给出专门的 view expansion 或 subquery unnesting 算法。我的理解是：</p>
+
+<ul>
+  <li><strong>视图：</strong>如果 view 已经展开成同一个 join graph，simplification 可以处理展开后的大图；但它不负责决定 view merge 是否语义安全。</li>
+  <li><strong>子查询：</strong>如果相关子查询、半连接、反连接等已经被 rewrite 成 join/semijoin/antijoin hypergraph，则本文方法可在该图上运行；论文没有讨论 unnesting 的前置条件。</li>
+  <li><strong>关系代数 rewrite：</strong>本文的核心 rewrite 不是生成等价关系代数表达式，而是在等价表达式集合上加入顺序约束，删除一部分候选 join tree。</li>
+</ul>
+
+<div class="callout warn">
+所以不要把 query simplification 当成“万能 SQL 简化器”。它更像 join-order optimizer 前的一层搜索空间节流阀，前提是查询已经被正确翻译成带语义约束的 hypergraph。
+</div>
+
+<hr>
+
+<h2 id="s9">9. 实验结论与失败模式</h2>
+
+<p>论文比较了 min-sel、Greedy Operator Ordering、Iterative DP、QuickPick+Simulated Annealing 和 GraphSimplification。实验主要使用 20/50 relation 的大查询，因为小查询通常原始 DP 就能处理。</p>
+
+<h3>9.1 主要结论</h3>
+
+<table>
+  <thead>
+    <tr><th>实验类型</th><th>GraphSimplification 表现</th><th>值得注意的点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>随机 chain / cycle / star，sort-merge cost</td>
+      <td>多数情况下 scaled cost 为 1，即找到所有算法中的最好计划。</td>
+      <td>star query 的好表现与理论分析一致。</td>
+    </tr>
+    <tr>
+      <td>随机 grid，sort-merge cost</td>
+      <td>仍优于其他方法，但不再总是最优。</td>
+      <td>grid 的 cycle 效应是当前 heuristic 的弱点。</td>
+    </tr>
+    <tr>
+      <td>key/foreign-key query</td>
+      <td>整体仍非常强，50 relation grid 上表现下降但平均仍明显优于对照方法。</td>
+      <td>这类生成方式更贴近真实大查询。</td>
+    </tr>
+    <tr>
+      <td>grace-hash join cost</td>
+      <td>chain/cycle 好，star/grid 出现更多误差；grid 上可输给 QuickPick+SA。</td>
+      <td>cost function 不满足相对顺序保持时，heuristic 可靠性下降。</td>
+    </tr>
+    <tr>
+      <td>clique query</td>
+      <td>支持不好，50 relation 时表现一般。</td>
+      <td>论文认为大 clique 无实际意义，但理论上是最坏情况。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>9.2 时间/质量折中</h3>
+
+<p>论文的 Figure 17 和 Figure 18 很重要：随着 simplification steps 增加，connected subgraphs 数量和优化时间下降。star query 中 scaled cost 始终保持 1；grid query 中，早期 cost 不变，后期当 heuristic 开始犯错时，cost 阶梯式上升。</p>
+
+<div class="callout">
+这给了一个实践判断：如果预算只要求少量 simplification，大概率还在“安全区”；如果必须把图压到很小，计划质量就越来越接近 heuristic 本身的质量。
+</div>
+
+<hr>
+
+<h2 id="s10">10. 对优化器实现的启发</h2>
+
+<p>这篇论文的价值不只是一种算法，也是一种工程姿态：优化器可以承认预算有限，但不要立刻放弃全局优化。</p>
+
+<table>
+  <thead>
+    <tr><th>实现点</th><th>建议</th><th>原因</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>复杂度预算</td>
+      <td>用 connected-subgraph count 或类似的枚举工作量指标，而不是 relation 数。</td>
+      <td>同样 30 张表，chain 和 star 的难度完全不同。</td>
+    </tr>
+    <tr>
+      <td>语义约束表示</td>
+      <td>把 outer/semi/anti join restriction、复杂 predicate 都落到 hypergraph。</td>
+      <td>统一后，简化和 DP 都只面对图约束。</td>
+    </tr>
+    <tr>
+      <td>heuristic 插拔</td>
+      <td>把 <code>orderingBenefit</code> 做成可替换模块。</td>
+      <td>不同 cost model、不同 workload 下，最佳启发式可能不同。</td>
+    </tr>
+    <tr>
+      <td>约束一致性</td>
+      <td>维护 join partial order，并用在线 cycle detection 检查新约束。</td>
+      <td>简化可以有损最优性，但不能有损语义正确性。</td>
+    </tr>
+    <tr>
+      <td>增量数据结构</td>
+      <td>维护 join neighbors、benefit cache 和 priority queue。</td>
+      <td>朴素双重循环会在多次 simplification 中重复计算。</td>
+    </tr>
+    <tr>
+      <td>最终求解器</td>
+      <td>保留一个 exact DP，如 DPhyp，求解受限后的图。</td>
+      <td>这样 simplification 只负责裁剪搜索空间，不负责完整计划选择。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>10.1 和 cost-based join order 优化的关系</h3>
+
+<p>Graph simplification 不是 cost-based optimizer 的替代品。它依赖 cardinality/selectivity/cost estimates 来排序简化步骤，也依赖 DPhyp 这样的 cost-based DP 在受限空间内找最优计划。</p>
+
+<p>更准确地说，它给 cost-based join order optimization 增加了一个<strong>预算感知的前处理层</strong>：</p>
+
+<pre><code>normalized SQL / relational algebra
+  -> constrained query hypergraph
+  -> graph simplification under budget
+  -> exact DP on simplified graph
+  -> best physical/logical join plan within remaining search space</code></pre>
+
+<p>当预算足够大时，中间的 simplification 层什么也不用做；当预算不足时，它承担“按风险从低到高裁剪候选计划”的责任。</p>
+
+<h3>10.2 与本仓库 demo / 学习路线的关系</h3>
+
+<p>放到本仓库的 join order 学习路线里，这篇论文适合接在 DPccp/DPhyp 之后阅读：前者解释“如何精确枚举 connected subgraph 和 csg-cmp-pair”，本文解释“当这些枚举量超过预算时，如何先约束图再把问题交回精确 DP”。</p>
+
+<p>如果未来在教学 demo 里模拟这个思路，可以把 simplification 做成一个独立阶段：输入同一套 <code>StatsCatalog</code> 和 join graph，输出带额外 hyperedge/partial-order constraint 的受限图；再用现有 DP 枚举器求解，并通过 trace counters 展示 connected subgraphs、candidate joins、优化时间和最终 plan cost 如何随预算变化。</p>
+
+<h3>10.3 一个实现提醒</h3>
+
+<p>如果优化器已有 Cascades/Volcano 风格 memo，本文方法未必需要原样实现为独立 graph pass。也可以把“加入 join ordering constraint”看成 memo search 前的 workload shaping，或者作为大 join group 进入 DP 枚举器前的降维步骤。关键是保持两个边界：</p>
+
+<ul>
+  <li>语义 rewrite 与 join-order restriction 要分层，避免把启发式约束误标为等价规则。</li>
+  <li>最终 plan 仍应由 cost model 在剩余候选里选择，而不是由 simplification heuristic 直接输出。</li>
+</ul>
+
+<hr>
+
+<h2 id="s11">11. 读完应记住的结论</h2>
+
+<ol>
+  <li><strong>Query simplification 简化的是 join-order 优化问题，不是 SQL 语义。</strong> 它通过 hyperedge/partial order 删除一部分 join order。</li>
+  <li><strong>核心策略是先做低风险裁剪，再做精确 DP。</strong> 预算足够时保持原图最优；预算不足时逐步退化。</li>
+  <li><strong>复杂度应按 query graph 结构衡量。</strong> relation 数相同，chain、star、grid、clique 的 DP 难度可以差很多。</li>
+  <li><strong>orderingBenefit 是可替换 heuristic。</strong> 论文用两种局部 join 顺序的相对代价，常用 <code>Cout</code> 避免过早依赖物理属性。</li>
+  <li><strong>outer/semi/anti join 的关键是先编码成 hypergraph 约束。</strong> simplification 不能越过这些语义限制。</li>
+  <li><strong>最优性证明只覆盖特定场景。</strong> star query、独立 predicate、relative-order-preserving cost function 下有强保证；grid、clique、复杂 cost model 不能照搬。</li>
+  <li><strong>工程启发比单个公式更重要。</strong> 一个成熟优化器应该把“超预算时怎么平滑退化”设计成可控机制，而不是突然切到粗糙贪心。</li>
+</ol>
+
+<div class="callout info">
+一句话带走：Neumann 的 query simplification 把“找不到完整最优”变成“在尽量少删候选计划的前提下，让精确 DP 仍能完成”，这是 join-order optimizer 面对大查询时非常实用的 graceful degradation 思路。
+</div>
+
+<div class="footnotes">
+  <p>备注：本文笔记基于本地 PDF 文本提取整理。论文没有详细展开 view expansion、subquery unnesting 或一般关系代数等价规则；相关部分按“展开为 join hypergraph 后如何理解”来说明。</p>
+</div>
+
+</body>
+</html>

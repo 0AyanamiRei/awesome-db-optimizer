@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heuristic Search for Join Orders (SIGMOD/PACMMOD 2023) · 中文学习笔记</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #7c3aed;
+    --accent-2: #2563eb;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #f5f3ff;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.95rem;
+  }
+  .callout.info { border-left-color: #10b981; background: #ecfdf5; }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.red { border-left-color: #ef4444; background: #fef2f2; }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--th-bg); font-weight: 600; }
+
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.55rem 1rem;
+    border-left: 4px solid var(--border);
+    color: #333;
+    background: #fffdf7;
+  }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; }
+  .toc li { margin: 0.15rem 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .tag {
+    display: inline-block;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-size: 0.78rem;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    margin-right: 0.3rem;
+    font-family: sans-serif;
+  }
+  .tag.blue { background: #dbeafe; color: #1e40af; }
+  .tag.green { background: #d1fae5; color: #065f46; }
+  .key-term {
+    background: var(--highlight);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+
+  .math-display {
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+
+  .diagram {
+    margin: 1.4rem 0;
+    padding: 1rem 1rem 0.6rem;
+    background: var(--fig-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    font-style: italic;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+
+  .footnotes {
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+  }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+
+<h1>Heuristic Search 计算 Join Order：论文学习笔记</h1>
+<p class="meta">
+  <strong>论文：</strong> Immanuel Haffner &amp; Jens Dittrich — <em>Efficiently Computing Join Orders with Heuristic Search</em>, Proc. ACM Manag. Data 1(1), Article 73, 2023.<br>
+  <strong>定位：</strong> 把 join order optimization 形式化为 shortest path，并用 Dijkstra / A* 这类 heuristic search 做最优或近似最优 join 枚举。<br>
+  <strong>阅读日期：</strong> 2026-06-18
+</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#s0">读这篇论文前要带着的问题</a></li>
+  <li><a href="#s1">从 JOOP 到 shortest path</a></li>
+  <li><a href="#s2">Bottom-up 与 top-down 的对偶</a></li>
+  <li><a href="#s3">A* 为什么能用于 join order</a></li>
+  <li><a href="#s4">搜索空间表示与 vertex expansion</a></li>
+  <li><a href="#s5">DeDup 与 PreDup：两个关键工程优化</a></li>
+  <li><a href="#s6">代价模型与启发函数</a></li>
+  <li><a href="#s7">实验结论怎么读</a></li>
+  <li><a href="#s8">与 DP / top-down / IKKBZ 的关系</a></li>
+  <li><a href="#summary">读完应记住的结论</a></li>
+</ol>
+</nav>
+
+<hr>
+
+<h2 id="s0">0. 读这篇论文前要带着的问题</h2>
+
+<p><span class="tag">SIGMOD/PACMMOD 2023</span> <span class="tag blue">A*</span> <span class="tag green">Join Ordering</span></p>
+
+<p>传统 join order 枚举通常有两条路线：一条是 System R 以来的 bottom-up DP，另一条是 DeHaan/Tompa、Fender/Moerkotte 一类 top-down partitioning。它们的共同点是：若要保证最优，通常会系统性枚举 connected complement pairs（ccp），只是枚举顺序和去重方式不同。</p>
+
+<p>这篇论文问的是一个略微不同的问题：</p>
+
+<div class="callout info">
+<strong>如果我们把 join order optimization problem（JOOP）看成 shortest path problem，那么能不能用 AI planning 里成熟的 best-first / heuristic search，只探索“看起来最有希望”的一小部分搜索空间，同时仍然保留最优性条件？</strong>
+</div>
+
+<p>论文的答案是：可以。关键不在于“把 A* 套上去”这么简单，而在于三件事：</p>
+
+<ol>
+  <li>给 JOOP 一个严格的 shortest path 规约，使每条从起点到终点的路径对应一个可行 join plan。</li>
+  <li>把指数级搜索空间按需展开，而不是预先构造完整图。</li>
+  <li>解决 open list、duplicate、edge weight、heuristic function 与 DBMS cost model 之间的几个细节坑。</li>
+</ol>
+
+<blockquote>
+  <p>我的理解是：这篇论文不是要替代 DPCCP 的“枚举理论”，而是把枚举问题换了一个控制流。DPCCP 按结构把该枚举的 ccp 都枚举完；heuristic search 则按当前 \(g+h\) 的优先级推进，可能在看到全部 ccp 之前已经证明某条完整路径足够好。</p>
+</blockquote>
+
+<hr>
+
+<h2 id="s1">1. 从 JOOP 到 shortest path</h2>
+
+<h3>1.1 查询图、子问题与 join 操作</h3>
+
+<p>论文把一个查询块表示成 query graph：</p>
+
+<div class="math-display">
+\[
+G_Q=(R,J)
+\]
+</div>
+
+<p>其中 \(R\) 是 relations 集合，\(J\) 是 join predicates / join edges。一个 <span class="key-term">subproblem</span> 是关系集合 \(S \subseteq R\)。若 join \(j=\{r_1,r_2\}\) 的两个端点分别落在两个互不相交的子问题 \(S_1,S_2\) 中，就可以把它们 join 成 \(S_1 \cup S_2\)。</p>
+
+<p>论文为了把 plan 写成“join 序列”，定义了 hoisted join \(j^*\)：它不是直接接收 \(S_1,S_2\)，而是在当前 vertex 的一组 disjoint subproblems 中，自动找到能由 \(j\) 连接的那两个 subproblem，并把它们替换为并集。</p>
+
+<pre><code>当前 vertex: {{A}, {B,D}, {C}}
+应用 j_AB:
+  选择 {A} 与 {B,D}
+  生成 {{A,B,D}, {C}}</code></pre>
+
+<p>于是，一个 plan 就可以看成 join 的序列 \(p=j_1j_2...j_n\)。只要从所有单表集合出发，最后得到 \(\{R\}\)，这个 join 序列就是可行 plan。</p>
+
+<h3>1.2 Search vertex 是什么</h3>
+
+<p>在 shortest path 规约中，一个 vertex 不是 join tree 节点，而是一组“当前还没合并完”的 disjoint subproblems：</p>
+
+<table>
+  <thead><tr><th>对象</th><th>Bottom-up 视角</th><th>例子</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>start vertex \(n_0\)</td>
+      <td>所有关系都是单表子问题</td>
+      <td>\(\{\{A\},\{B\},\{C\},\{D\}\}\)</td>
+    </tr>
+    <tr>
+      <td>intermediate vertex</td>
+      <td>已有一些关系被 join 成较大的子问题</td>
+      <td>\(\{\{A,B\},\{C,D\}\}\)</td>
+    </tr>
+    <tr>
+      <td>goal vertex \(n^*\)</td>
+      <td>所有关系已经 join 成完整结果</td>
+      <td>\(\{\{A,B,C,D\}\}\)</td>
+    </tr>
+    <tr>
+      <td>edge</td>
+      <td>执行一次 join，把两个 subproblem 合并</td>
+      <td>\(\{\{A\},\{B\},\{C,D\}\}\rightarrow\{\{A,B\},\{C,D\}\}\)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>边权重来自 DBMS cost model \(C(S_1,S_2,j)\)：执行这一步 join 的代价。于是，路径权重就是所有 join 步骤的代价之和。</p>
+
+<div class="callout">
+<strong>核心规约：</strong>SPJOOP 中从 \(n_0\) 到 \(n^*\) 的每一条路径，对应一个可行 join order；这条路径的权重，对应这个 join plan 的 cost。求 shortest path 就是在求最优 join order。
+</div>
+
+<figure class="diagram">
+<svg width="690" height="270" viewBox="0 0 690 270" role="img" aria-label="bottom-up shortest path for join order">
+  <defs>
+    <marker id="arrow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+  <text x="345" y="24" text-anchor="middle" font-size="14" font-weight="600" fill="#333">Bottom-up SPJOOP：vertex 是“当前 partition”，edge 是“一次 join”</text>
+
+  <rect x="35" y="70" width="130" height="74" rx="8" fill="#ede9fe" stroke="#7c3aed"/>
+  <text x="100" y="98" text-anchor="middle" font-size="13" font-weight="600" fill="#5b21b6">n0</text>
+  <text x="100" y="124" text-anchor="middle" font-size="13" fill="#333">{A}{B}{C}{D}</text>
+
+  <rect x="235" y="40" width="150" height="74" rx="8" fill="#fffdf7" stroke="#e0dcd0"/>
+  <text x="310" y="70" text-anchor="middle" font-size="13" fill="#333">{A,B}{C}{D}</text>
+  <text x="310" y="93" text-anchor="middle" font-size="11" fill="#6b6b6b">apply jAB</text>
+
+  <rect x="235" y="155" width="150" height="74" rx="8" fill="#fffdf7" stroke="#e0dcd0"/>
+  <text x="310" y="185" text-anchor="middle" font-size="13" fill="#333">{A}{B}{C,D}</text>
+  <text x="310" y="208" text-anchor="middle" font-size="11" fill="#6b6b6b">apply jCD</text>
+
+  <rect x="455" y="70" width="150" height="74" rx="8" fill="#fffdf7" stroke="#e0dcd0"/>
+  <text x="530" y="100" text-anchor="middle" font-size="13" fill="#333">{A,B}{C,D}</text>
+  <text x="530" y="123" text-anchor="middle" font-size="11" fill="#6b6b6b">two partial joins</text>
+
+  <rect x="455" y="180" width="150" height="55" rx="8" fill="#ecfdf5" stroke="#10b981"/>
+  <text x="530" y="214" text-anchor="middle" font-size="13" font-weight="600" fill="#047857">n*: {A,B,C,D}</text>
+
+  <line x1="165" y1="92" x2="235" y2="72" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-a)"/>
+  <line x1="165" y1="122" x2="235" y2="180" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-a)"/>
+  <line x1="385" y1="75" x2="455" y2="95" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-a)"/>
+  <line x1="385" y1="190" x2="455" y2="122" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-a)"/>
+  <line x1="530" y1="144" x2="530" y2="180" stroke="#10b981" stroke-width="2" marker-end="url(#arrow-a)"/>
+
+  <text x="200" y="58" font-size="11" fill="#6b6b6b">w=C({A},{B},jAB)</text>
+  <text x="202" y="210" font-size="11" fill="#6b6b6b">w=C({C},{D},jCD)</text>
+</svg>
+<figcaption>图1：论文 Figure 1 的简化版。搜索路径的不同，就是 join order 的不同。</figcaption>
+</figure>
+
+<h3>1.3 搜索空间为什么仍然是指数级</h3>
+
+<p>把 NP-hard 的 JOOP 规约到 shortest path，并没有把问题变成多项式。原因是 SPJOOP 本身的图可能指数大。论文用 Ono &amp; Lohman 的 ccp 计数给出构造性论证：clique 查询有 \(\Theta(3^{|R|})\) 个 connected complement pairs；每个 ccp 至少对应 SPJOOP 中某个 vertex，因此 vertex / edge 数量在最坏情况下仍是指数级。</p>
+
+<div class="callout warn">
+<strong>重点：</strong>shortest path 规约的价值不是“复杂度魔法消失”，而是允许使用 informed search。A* 不需要提前构造完整搜索图，它可以按需展开，并用 heuristic function 把搜索集中到更可能通向低代价 plan 的区域。
+</div>
+
+<hr>
+
+<h2 id="s2">2. Bottom-up 与 top-down 的对偶</h2>
+
+<p>论文很漂亮的一点是把 bottom-up 和 top-down join ordering 放进同一个 search graph 里看。</p>
+
+<table>
+  <thead><tr><th>方向</th><th>起点</th><th>一次扩展</th><th>目标</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Bottom-up</strong></td>
+      <td>所有单表子问题</td>
+      <td>选两个可 join 的 subproblems，合并成一个更大的 subproblem</td>
+      <td>完整关系集合 \(\{R\}\)</td>
+    </tr>
+    <tr>
+      <td><strong>Top-down</strong></td>
+      <td>完整关系集合 \(\{R\}\)</td>
+      <td>把一个 subproblem 分割成两个由 join predicate 连接的子问题</td>
+      <td>所有单表子问题</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>在 Figure 1b 的搜索图里，top-down 就是沿着 bottom-up 的边反方向走。它不是另一个问题，而是同一个 shortest path 问题的 dual problem（对偶问题）。这也解释了为什么论文能比较 \(A^*_\uparrow\) 与 \(A^*_\downarrow\)：它们使用同一个规约，只是 start / goal 和 expand 方向不同。</p>
+
+<div class="callout info">
+论文中的实验结论也体现了这种对偶不是纯形式化游戏：chain / cycle 更适合 top-down 加 \(h_{sum}\)，star / clique 更适合 bottom-up 的 \(h_{zero}\) 版本。也就是说，搜索方向本身是一种优化器策略选择。
+</div>
+
+<hr>
+
+<h2 id="s3">3. A* 为什么能用于 join order</h2>
+
+<h3>3.1 Heuristic function 的性质</h3>
+
+<p>在 shortest path 里，heuristic function \(h(v)\) 估计的是：从当前 vertex \(v\) 到 goal 的最短剩余代价。论文沿用经典 A* 概念：</p>
+
+<table>
+  <thead><tr><th>术语</th><th>含义</th><th>对 join ordering 的影响</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>goal-aware</strong></td>
+      <td>若 \(v\) 是 goal，则 \(h(v)=0\)</td>
+      <td>SPJOOP 中 goal 很容易检查，论文默认 heuristic 都满足这一点。</td>
+    </tr>
+    <tr>
+      <td><strong>admissible</strong></td>
+      <td>从不高估到 goal 的真实最短剩余代价</td>
+      <td>A* 使用 admissible heuristic 时能保证找到 optimal plan。</td>
+    </tr>
+    <tr>
+      <td><strong>consistent</strong></td>
+      <td>对每条边 \((u,v,w)\)，有 \(h(u)\le h(v)+w\)</td>
+      <td>consistent 且 goal-aware 会推出 admissible；经典结果给出 A* 的 optimally efficient 性质。</td>
+    </tr>
+    <tr>
+      <td><strong>optimal heuristic \(h^*\)</strong></td>
+      <td>精确返回从 \(v\) 到 goal 的 shortest path 权重</td>
+      <td>最理想但不可指望高效计算。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.2 为什么最优 heuristic 不可能便宜</h3>
+
+<p>论文的 Theorem 1 说明：除非 P = NP，否则 SPJOOP 的 optimal heuristic \(h^*\) 不可能是 PTIME 可计算的。证明思路很直接：如果 \(h^*\) 能多项式时间算出来，搜索时每一步只要选使 \(w+h^*(v)\) 最小的后继，就能沿着一条最短路径走，等价于多项式时间解决 NP-hard 的 JOOP。</p>
+
+<div class="callout">
+这给 heuristic 设计定了一个现实边界：不要幻想有一个又准又便宜的完美估计器。工程上要找的是“足够便宜、足够有信息量”的 \(h\)，并清楚它是否 admissible。
+</div>
+
+<h3>3.3 按需搜索而不是提前建图</h3>
+
+<p>搜索空间指数大，所以论文的 BFS / A* 框架不会预先构造完整 SPJOOP，而是在每次从 open list 弹出当前最优 vertex 后才调用 <code>expand</code> 生成后继。</p>
+
+<pre><code>open_list = [start]
+while open_list 非空:
+    u, g_u = extract_best(open_list)
+    if u is goal:
+        return path
+
+    for each edge (u, v, w) in expand(u):
+        add(open_list, v, g_u + w)</code></pre>
+
+<p>对 A* 来说，<code>extract_best</code> 选择的是 \(g(v)+h(v)\) 最小的 vertex，其中 \(g(v)\) 是从 start 走到 \(v\) 已经付出的代价，\(h(v)\) 是估计剩余代价。</p>
+
+<div class="callout warn">
+论文特别提醒：A* 是在 goal 被 <em>extract</em> 出 open list 时终止，不是在 goal 第一次被 <em>generated</em> 时终止。因为同一个 goal 之后可能通过更便宜的路径再次生成。
+</div>
+
+<hr>
+
+<h2 id="s4">4. 搜索空间表示与 vertex expansion</h2>
+
+<h3>4.1 Vertex representation：bit vector 的集合</h3>
+
+<p>一个 vertex 是 set of sets，直接存很笨。论文使用 bit vector 表示 subproblem：给每个 relation 一个编号，subproblem 中包含某 relation 就把对应 bit 置 1。然后一个 vertex 就是按字典序排序的 bit vector 序列。</p>
+
+<pre><code>A -> 1, B -> 2, C -> 3, D -> 4
+{C,D}        -> 0011
+{{A},{B},{C,D}} -> [1000, 0100, 0011]  // 按论文示例的 bit 方向</code></pre>
+
+<p>字典序排序有两个作用：</p>
+<ul>
+  <li>方便 hash 与 equality testing，用于 open list / duplicate detection。</li>
+  <li>为后面的 PreDup 提供一个稳定的 canonical order。</li>
+</ul>
+
+<h3>4.2 Bottom-up expansion</h3>
+
+<p>Bottom-up expand 很直接：遍历当前 vertex 中的 subproblem pair \((S_1,S_2)\)，检查是否有 join \(j\) 能连接它们。若能，则生成后继 vertex：移除 \(S_1,S_2\)，插入 \(S_1\cup S_2\)，并保持字典序。</p>
+
+<pre><code>expandBottomUp(Vu):
+    for each pair (bi, bk) in Vu:
+        for each join j connecting bi and bk:
+            Vv = Vu - {bi, bk} + {(bi | bk)}
+            sort Vv lexicographically
+            yield Vv by j(bi, bk)</code></pre>
+
+<p>论文给出的粗略时间复杂度上界是 \(O(|R|^3\cdot |J|)\)。这个上界看着不轻，但实验剖析显示，expand 本身不是主要瓶颈。</p>
+
+<h3>4.3 Top-down expansion</h3>
+
+<p>Top-down expand 是反向操作：遍历当前 vertex 中每个 subproblem \(S\)，枚举把 \(S\) 切成两个 connected subgraphs 的 ccp partition。论文选择已有的 <code>PARTITIONMinCutAGaT</code> / MinCutAGaT 思路来做分割枚举。</p>
+
+<pre><code>expandTopDown(Vu):
+    for each subproblem S in Vu:
+        for each connected partition (b1, b2) of S:
+            Vv = Vu - {S} + {b1, b2}
+            sort Vv lexicographically
+            yield Vv by j(b1, b2)</code></pre>
+
+<p>论文采用 MinCutAGaT 是一个工程取舍：MinCutBranch 在某些拓扑上有更好渐近性质，但实现复杂；而该论文的 profile 结果显示 vertex expansion 只占总体时间的一小部分，所以选择较容易落地的分割算法。</p>
+
+<hr>
+
+<h2 id="s5">5. DeDup 与 PreDup：两个关键工程优化</h2>
+
+<h3>5.1 DeDup：open list 里的 duplicate handling</h3>
+
+<p>A* 的 open list 需要高效支持：</p>
+
+<ul>
+  <li>找到 \(g+h\) 最小的 vertex；</li>
+  <li>删除最小元素；</li>
+  <li>插入新生成的后继；</li>
+  <li>如果同一 vertex 以更小的 \(g\) 再次到达，则 decrease-key。</li>
+</ul>
+
+<p>论文用 heap + hash table：heap 管 <code>find-min/delete-min/insert/decrease-key</code>，hash table 管“这个 vertex 是否见过、当前最小 \(g\) 是多少、它是否还在 heap 里”。</p>
+
+<pre><code>add(L, v, g_new):
+    if v not seen:
+        insert heap with key g_new + h(v)
+        remember g_new and heap handle
+    else if g_new < remembered_g(v):
+        if v is still in heap:
+            decrease_key(v, g_new + h(v))
+        else:
+            insert v again with cheaper g
+        remember g_new
+    else:
+        discard duplicate</code></pre>
+
+<div class="callout info">
+论文 Table 2 的信息很强：如果 open list 允许 duplicate 而不做检测，同一个 duplicate 弹出后会继续 expand，它生成的后继又大多是 duplicate，于是 duplicate 会指数式膨胀。DeDup 不改变探索到的 unique vertices，但能显著减少无意义扩展。
+</div>
+
+<h3>5.2 Desired duplicate vs undesired duplicate</h3>
+
+<p>不是所有 duplicate 都该在生成前被禁止。论文区分了两类：</p>
+
+<table>
+  <thead><tr><th>类型</th><th>例子</th><th>是否应该保留机会</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Desired duplicate</strong></td>
+      <td>\((A\Join B)\Join C\) 与 \(A\Join(B\Join C)\) 到达同一个 relation set，但对应不同 partial plan。</td>
+      <td>应该生成，让 DeDup 比较 \(g\)，因为不同 partial plan 代价可能不同。</td>
+    </tr>
+    <tr>
+      <td><strong>Undesired duplicate</strong></td>
+      <td>先做 \(A\Join B\) 再做 \(C\Join D\)，或反过来先做 \(C\Join D\) 再做 \(A\Join B\)。两个 join 独立，partial plan 语义相同，总代价也相同。</td>
+      <td>可以在 expand 阶段直接禁止其中一条路径。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>论文把第二类称为 redundant path：若两个 join 作用在四个互不相交的 subproblems \(q,r,s,t\) 上，且 \(q\) 可与 \(r\) join，\(s\) 可与 \(t\) join，那么这两个 join 的顺序可以交换，得到同一个 vertex，且路径权重相同。</p>
+
+<h3>5.3 PreDup：用字典序禁止 redundant path</h3>
+
+<p>PreDup 的技巧很小但很有效：在 vertex representation 中标记“最近一次 join 产生的 subproblem”，记作 \(\nabla(V)\)。Bottom-up expand 时，如果当前候选 join 的结果 \((b_i|b_k)\) 在字典序上小于 \(\nabla(V_u)\)，就跳过。</p>
+
+<pre><code>expandBottomUp with PreDup:
+    for each pair (bi, bk):
+        joined = bi | bk
+        if joined &lt;lex marked_recent_join_result(Vu):
+            continue   // redundant path, suppress it
+        yield successor and mark joined as recent</code></pre>
+
+<p>直觉上，它给彼此独立的 join 排了一个 canonical order：最近生成的 subproblem 只能按字典序“变大”，从而避免同一批独立 join 被任意排列后反复到达同一 vertex。</p>
+
+<div class="callout">
+论文给出的正确性直觉是：PreDup 删掉的是“存在同权替代路径”的 redundant path。可达性仍在，soundness 不变；如果被删路径是最优路径，则保留下来的同权路径也是最优路径。
+</div>
+
+<p>PreDup 对 star topology 没有效果，因为 star 查询没有 bushy plans，也就没有这类 independent bushy joins 的排列冗余。对 chain、cycle、clique，论文 Table 3 显示 duplicate 和部分 new vertices 都会减少。</p>
+
+<hr>
+
+<h2 id="s6">6. 代价模型与启发函数</h2>
+
+<h3>6.1 Cout 与 edge weight 的坑</h3>
+
+<p>论文实验采用常见的 \(C_{out}\)：计划代价等于所有 intermediate results 的 cardinality 之和。递归写法是：</p>
+
+<div class="math-display">
+\[
+C_{out}(T)=
+\begin{cases}
+0, & T\in R \\
+|T| + C_{out}(T_1)+C_{out}(T_2), & T=T_1 \Join T_2
+\end{cases}
+\]
+</div>
+
+<p>最自然的 edge weight 定义是：</p>
+
+<div class="math-display">
+\[
+C(S_1,S_2,j)=|S_1\Join S_2|
+\]
+</div>
+
+<p>但是这会给 bottom-up search 带来一个很微妙的效率问题：最终结果 cardinality \(|R|\) 对所有完整 plan 都一样，比较完整 plan 时会抵消；可是在 open list 中，goal vertex 的 \(g\) 已经包含了这个最终结果基数，而 non-goal vertex 的 \(g\) 还没有包含。若 heuristic 经常低估，goal 会被不自然地推迟弹出。</p>
+
+<div class="callout warn">
+<strong>论文的修正（Def. 4）：</strong>若一次 join 的结果已经是完整 \(R\)，则该 edge weight 记为 0；否则仍记为 \(|S_1\Join S_2|\)。这样不改变 \(C_{out}\) 下的最优 plan，因为所有完整 plan 只差一个共同常数，却能让 bottom-up search 更快收敛到 goal。
+</div>
+
+<pre><code>C(S1, S2, j):
+    if j(S1, S2) == R:
+        return 0
+    return cardinality(S1 ⋈ S2)</code></pre>
+
+<p>论文说明：这个 pitfall 对 top-down search 不存在，因为 top-down 从完整 \(R\) 出发，结果基数会在初始扩展时被立即纳入所有候选。</p>
+
+<h3>6.2 四个简单 heuristic</h3>
+
+<table>
+  <thead><tr><th>Heuristic</th><th>方向</th><th>定义/直觉</th><th>最优性</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>\(h_{zero}\)</strong></td>
+      <td>Bottom-up / Top-down</td>
+      <td>恒为 0。A* 退化为 Dijkstra。</td>
+      <td>admissible，能求 optimal plan。</td>
+    </tr>
+    <tr>
+      <td><strong>\(h_{sum}\)</strong></td>
+      <td>Top-down</td>
+      <td>把当前 vertex 中所有非单表 subproblems 的 cardinality 相加，作为未来 partition 还必须支付的一部分下界。</td>
+      <td>admissible，能求 optimal plan。</td>
+    </tr>
+    <tr>
+      <td><strong>\(h_{GOO\uparrow}\)</strong></td>
+      <td>Bottom-up</td>
+      <td>从当前 vertex 开始跑 Greedy Operator Ordering：每次 join 产生最小结果的两个 subproblems，用这条实际路径估计剩余代价。</td>
+      <td>可能 overestimate，不保证 optimal。</td>
+    </tr>
+    <tr>
+      <td><strong>\(h_{GOO\downarrow}\)</strong></td>
+      <td>Top-down</td>
+      <td>top-down 版本的 GOO 式贪心 partition，论文描述为选择使子问题 cardinality 和较小的 partition。</td>
+      <td>可能 overestimate，不保证 optimal。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>\(h_{sum}\) 的公式是：</p>
+
+<div class="math-display">
+\[
+h_{sum}(v)=\sum_{S\in v\setminus R}|S|
+\]
+</div>
+
+<p>这里 \(v\setminus R\) 表示当前 vertex 中那些不是 base relation 的 subproblem。因为这些 subproblem 在 top-down 搜索中还要继续被 partition，它们的 cardinality 至少会作为 \(C_{out}\) 的一部分被计入，所以这是一个下界。</p>
+
+<h3>6.3 信息量：effective branching factor</h3>
+
+<p>论文用 effective branching factor \(b^*\) 衡量 heuristic 的信息量。给定 goal depth \(d=|R|-1\) 和 generated vertices 数 \(N\)，通过下式反推 \(b^*\)：</p>
+
+<div class="math-display">
+\[
+N=b^*+(b^*)^2+\cdots+(b^*)^d
+\]
+</div>
+
+<p>\(b^*\) 越接近 1，说明搜索越像沿着一条线直奔 goal；\(b^*\) 越大，说明 heuristic 越不确定，搜索分叉越多。</p>
+
+<div class="callout info">
+论文 Figure 5 的核心观察：不同 topology 适合不同方向和 heuristic。\(h_{GOO}\) 往往最能把搜索拉向 goal，但牺牲最优性；\(h_{sum}\) 对 top-down 很有帮助；bottom-up 的 \(h_{zero}\) 在 star / clique 上反而很强。
+</div>
+
+<hr>
+
+<h2 id="s7">7. 实验结论怎么读</h2>
+
+<h3>7.1 与 state of the art 比较</h3>
+
+<p>论文在 mutable 这个 main-memory DBMS 中实现 heuristic search，并与 DPCCP、TDMinCutAGaT、LinearizedDP、GOO 等算法比较。实验使用 \(C_{out}\)，并通过 cardinality file 给优化器精确 cardinality，以便控制选择率和 join selectivity。</p>
+
+<table>
+  <thead><tr><th>实验对象</th><th>主要结论</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Optimal algorithms</strong></td>
+      <td>chain / cycle 上，最快的 heuristic search 是 \(A^*_\downarrow+h_{sum}\)，但 DPCCP 与 TDMinCutAGaT 仍更强；star / clique 上，\(A^*_\uparrow+h_{zero}\) 最快，约比 DPCCP 或 TDMinCutAGaT 快 10 倍。</td>
+    </tr>
+    <tr>
+      <td><strong>Suboptimal algorithms</strong></td>
+      <td>GOO 最快，heuristic search 最慢，LinearizedDP 居中；但 \(A^*_\uparrow+h_{GOO\uparrow}\) 通常产生质量最好的 suboptimal plans，几乎总是优于 GOO。</td>
+    </tr>
+    <tr>
+      <td><strong>Plan quality</strong></td>
+      <td>LinearizedDP 在 star / clique 上可能产生成本很高的 plan。论文认为原因与其基于 IK/KBZ 的 greedy linearization 有关，而实验数据生成允许 correlated selectivities，不满足 IK/KBZ 假设。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>7.2 QGraEL benchmark</h3>
+
+<p>论文还提出 QGraEL（Query Graph Exploration Landscape）基准，用三维探索 query graph：</p>
+
+<ul>
+  <li><strong>number of relations</strong>：关系数量；</li>
+  <li><strong>density</strong>：实际 join edges 占最大可能 edges 的比例；</li>
+  <li><strong>edge skew</strong>：degree distribution 的偏斜程度，用 \(\chi^2\) test 的 \(p\)-value 表示；\(p\)-value 越低表示越偏离均匀分布，也就是 skew 越高。cycle / clique 的 degree 更均匀，star 的 skew 更高。</li>
+</ul>
+
+<p>论文指出，TPC-H 和 JOB 的查询图大多位于低 density、高 edge skew 的区域，留下大片传统 benchmark 不覆盖的空间。QGraEL 在这些区域比较 DPCCP 与 \(A^*_\uparrow+h_{zero}\)，发现不少未充分探索的 graph 区域由 heuristic search 明显占优，最高有超过 1000 倍的加速。</p>
+
+<h3>7.3 Profile：时间花在哪里</h3>
+
+<p>论文用 Linux <code>perf</code> profile 两个代表性场景：chain-40 上的 \(A^*_\downarrow+h_{sum}\)，以及 star-22 上的 \(A^*_\uparrow+h_{zero}\)。结论是：</p>
+
+<ul>
+  <li>expand 函数出现在调用栈中很显眼，但真正花在 expand 内部的时间只是一小部分。</li>
+  <li>chain-40 上，较多时间花在 heuristic evaluation 和 heap extract。</li>
+  <li>star-22 上，超过一半相对时间花在 cardinality estimation；论文解释这不是因为 star 上估计更慢，而是 open list 管理开销更少。</li>
+  <li>duplicate 会导致重复计算 heuristic，从而拖慢搜索。</li>
+</ul>
+
+<h3>7.4 Pareto frontier</h3>
+
+<p>最终，论文把结论放到 optimization time vs. plan cost 的 Pareto frontier 上：optimal 的 \(A^*_\uparrow+h_{zero}\) 在 star / clique 上能明显快于 state of the art；suboptimal 的 \(A^*_\uparrow+h_{GOO\uparrow}\) 位于 GOO 与 optimal search 之间，提供“比 GOO 贵一点但计划质量更稳”的中间选择。</p>
+
+<div class="callout">
+所以这篇论文的实践价值不是一句“A* 比 DP 快”，而是：它扩展了优化时间与 plan cost 之间的可选点。优化器可以把 heuristic search 当作一类新的 graceful degradation 策略。
+</div>
+
+<hr>
+
+<h2 id="s8">8. 与 DP / top-down / IKKBZ 的关系</h2>
+
+<h3>8.1 与 DPCCP</h3>
+
+<p>DPCCP 的核心目标是 duplicate-free 地枚举所有 ccp，以保证 bushy join tree 的最优性。heuristic search 则不是按“必须枚举完所有 ccp”的节奏走，而是按 open list 的 \(g+h\) 顺序走。</p>
+
+<table>
+  <thead><tr><th>维度</th><th>DPCCP</th><th>Heuristic search</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>控制流</td>
+      <td>系统枚举所有 relevant ccp</td>
+      <td>按当前最有希望的 vertex 展开</td>
+    </tr>
+    <tr>
+      <td>最优性来源</td>
+      <td>完整 DP 子问题覆盖</td>
+      <td>shortest path + admissible heuristic + 正确 open list</td>
+    </tr>
+    <tr>
+      <td>优势场景</td>
+      <td>chain / cycle 等传统枚举可控场景仍很强</td>
+      <td>star / clique 及 QGraEL 中部分高收益区域</td>
+    </tr>
+    <tr>
+      <td>风险</td>
+      <td>必须做完整枚举，难以提前收敛</td>
+      <td>heuristic 不够 informative 时会退化，duplicates 需要认真处理</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>8.2 与 top-down join enumeration</h3>
+
+<p>DeHaan &amp; Tompa、Fender &amp; Moerkotte 一类 top-down enumeration 把关系集合递归 partition 成左右子问题。论文直接复用了这个思想来实现 top-down vertex expansion：从当前 subproblem 中枚举 ccp partitions。</p>
+
+<p>差别是：传统 top-down enumeration 通常仍然是枚举算法；这篇论文中的 top-down search 是 A* / Dijkstra 的一个方向，具体 partition 只是 <code>expandTopDown</code> 的后继生成器。</p>
+
+<div class="callout info">
+可以把它理解为：top-down enumeration 给了“如何从一个 vertex 找后继”的局部算子；heuristic search 给了“下一步应该展开哪个 vertex”的全局调度策略。
+</div>
+
+<h3>8.3 与 IKKBZ / ASI</h3>
+
+<p>IKKBZ 依赖 ASI 性质和 rank 函数，在树查询及特定代价模型下给出多项式精确算法。这篇论文显式说：heuristic search 不要求 ASI。它只要求你能给每条 edge 算权重，并给 A* 一个合适的 heuristic。</p>
+
+<p>不过两者在工程哲学上有关联：</p>
+
+<ul>
+  <li>IKKBZ / LinearizedDP 可用来做 search space reduction，但若 selectivity 相关性不满足假设，可能锁死很多好 plan。</li>
+  <li>GOO heuristic 与 IKKBZ 都体现了“先做看起来能显著缩小中间结果的 join”的直觉，但 GOO 在这里是启发函数，不是完整枚举器。</li>
+  <li>对本仓库 demo 来说，IKKBZ 是“结构和代价满足强性质时如何精确求解”，这篇论文是“没有强性质时如何用搜索控制指数空间”。</li>
+</ul>
+
+<h3>8.4 对 demo / 学习路线的启发</h3>
+
+<p>如果把这篇论文放进 join order 学习路线，可以这样串起来：</p>
+
+<ol>
+  <li><strong>System R / DPsize：</strong>理解 join ordering 为什么能用 DP。</li>
+  <li><strong>DPsub / DPCCP：</strong>理解如何减少无效枚举和 duplicate。</li>
+  <li><strong>Top-down partitioning：</strong>理解如何从完整关系集合反向切分。</li>
+  <li><strong>IKKBZ / SWSP：</strong>理解在 ASI + 树结构下，为什么 rank 能给出多项式最优算法。</li>
+  <li><strong>本文：</strong>理解把 JOOP 变成 shortest path 后，如何用 A* 的 \(g+h\) 控制搜索顺序，并用 admissible / inadmissible heuristic 在最优性与速度之间切换。</li>
+</ol>
+
+<div class="callout">
+对 demo 实现而言，最适合先做的不是完整复刻论文，而是实现一个小型 SPJOOP 可视化：vertex 用 bitset partition 表示，支持 Dijkstra / A*，展示 DeDup 和 PreDup 打开/关闭时 generated vertices 的变化。这能把论文最核心的“搜索控制流”讲清楚。
+</div>
+
+<hr>
+
+<h2 id="summary">9. 读完应记住的结论</h2>
+
+<table>
+  <thead><tr><th>结论</th><th>一句话解释</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>JOOP 可以严格规约成 shortest path</strong></td>
+      <td>vertex 是 disjoint subproblems 的集合，edge 是一次 join 或一次 partition，path 是 join plan，path weight 是 plan cost。</td>
+    </tr>
+    <tr>
+      <td><strong>规约不消灭指数复杂度</strong></td>
+      <td>SPJOOP 最坏仍有指数多 vertex / edge；价值在于能按需展开并使用 heuristic search。</td>
+    </tr>
+    <tr>
+      <td><strong>A* 的最优性取决于 heuristic</strong></td>
+      <td>admissible heuristic 保证 optimal plan；GOO 这类可能高估的 heuristic 更快但可能 suboptimal。</td>
+    </tr>
+    <tr>
+      <td><strong>DeDup 是必要工程部件</strong></td>
+      <td>没有 duplicate handling，open list 中的重复 vertex 会被反复 expand，引发重复后继的连锁膨胀。</td>
+    </tr>
+    <tr>
+      <td><strong>PreDup 利用 canonical order 消掉无意义排列</strong></td>
+      <td>独立 join 的顺序交换不改变 partial plan 与 cost；用最近 join 结果的字典序标记可以提前剪掉 redundant paths。</td>
+    </tr>
+    <tr>
+      <td><strong>Cost model 细节会影响搜索效率</strong></td>
+      <td>在 \(C_{out}\) 下，最终结果基数是共同常数；bottom-up edge weight 要避免把 goal 不自然地推迟弹出。</td>
+    </tr>
+    <tr>
+      <td><strong>不同 query topology 适合不同方向</strong></td>
+      <td>论文实验中 chain / cycle 偏向 top-down + \(h_{sum}\)，star / clique 偏向 bottom-up + \(h_{zero}\)。</td>
+    </tr>
+    <tr>
+      <td><strong>本文提供的是新的 Pareto 选择</strong></td>
+      <td>optimal search 在某些拓扑上大幅快于 state of the art；suboptimal search 提供 GOO 与 optimal search 之间的中间点。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footnotes">
+  <p><strong>阅读范围说明：</strong>本文根据仓库本地 PDF <code>joinOrder/paper/Efficiently Computing Join Orders with Heuristic Search-sig2023.pdf</code> 提取文本后整理。对一些工程直觉使用“我的理解是/可以理解为”表述；算法名、定义号、实验结论均按论文正文记录。</p>
+</div>
+
+</body>
+</html>

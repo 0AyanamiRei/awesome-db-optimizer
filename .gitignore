@@ -1,3 +1,13 @@
+# Editor / IDE
+.vscode/
+
+# Claude / AI tooling
+.claude/
+.clangd/
+
+# Worktrees
 .worktrees/
+
+# Build artifacts
 build/
 demos/**/build/

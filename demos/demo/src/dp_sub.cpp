@@ -54,7 +54,7 @@ std::vector<std::vector<RelSet>> DPSub::CollectConnectedSubsets(
 }
 
 SearchResult DPSub::Search(const JoinGraph &graph,
-                           const StatsCatalog & /*stats*/,
+                           const StatsCatalog &stats,
                            const RequiredProperty &property) {
   SearchTrace trace;
   CacheTable cache;
@@ -71,7 +71,7 @@ SearchResult DPSub::Search(const JoinGraph &graph,
   // ──────────────────────────────────────────────
   for (const auto &relation : graph.Relations()) {
     const RelSet singleton = RelSet{1} << relation.id;
-    FillRelation(cache, graph, singleton, relation, trace);
+    FillRelation(cache, graph, singleton, relation, stats, trace);
   }
 
   // ──────────────────────────────────────────────
@@ -132,14 +132,14 @@ SearchResult DPSub::Search(const JoinGraph &graph,
             // Hash join
             auto hash_join = MakeJoin(PhysicalOp::HashJoin,
                                        left_plan->second, right_plan->second,
-                                       graph, predicate, RequiredProperty::Any());
+                                       graph, stats, predicate, RequiredProperty::Any());
             ++trace.plans_costed;
             TryUpdate(cache[MakeKey(S, RequiredProperty::Any())], hash_join);
 
             // Nested-loop join
             auto nested_loop = MakeJoin(PhysicalOp::NestedLoopJoin,
                                          left_plan->second, right_plan->second,
-                                         graph, predicate, RequiredProperty::Any());
+                                         graph, stats, predicate, RequiredProperty::Any());
             ++trace.plans_costed;
             TryUpdate(cache[MakeKey(S, RequiredProperty::Any())], nested_loop);
 
@@ -160,7 +160,7 @@ SearchResult DPSub::Search(const JoinGraph &graph,
                   sorted_right != cache.end() && sorted_right->second) {
                 auto merge_join = MakeJoin(PhysicalOp::MergeJoin,
                                             sorted_left->second, sorted_right->second,
-                                            graph, predicate, RequiredProperty::Any());
+                                            graph, stats, predicate, RequiredProperty::Any());
                 ++trace.plans_costed;
                 TryUpdate(cache[MakeKey(S, RequiredProperty::Any())], merge_join);
               }
@@ -190,7 +190,7 @@ SearchResult DPSub::Search(const JoinGraph &graph,
 
             auto merge_join = MakeJoin(PhysicalOp::MergeJoin,
                                         sorted_left->second, sorted_right->second,
-                                        graph, &pred, RequiredProperty::Sorted(sort_key));
+                                        graph, stats, &pred, RequiredProperty::Sorted(sort_key));
             ++trace.plans_costed;
             TryUpdate(cache[MakeKey(S, RequiredProperty::Sorted(sort_key))], merge_join);
           }
@@ -230,20 +230,41 @@ SearchResult DPSub::Search(const JoinGraph &graph,
   // ──────────────────────────────────────────────
   SearchResult result;
   const auto key = MakeKey(full, property);
+  PlanPtr best;
   auto it = cache.find(key);
   if (it != cache.end() && it->second) {
-    result.best_plan = *it->second;
-    result.trace = trace;
-    result.trace.best_cost = result.best_plan.cost;
-    result.trace.plans_cached = cache.size();
+    best = it->second;
   }
+
+  // A root Sorted property can request a column that is not an interesting
+  // join order. In that case, satisfy it by sorting the best Any plan.
+  if (!property.IsAny()) {
+    auto any_it = cache.find(MakeKey(full, RequiredProperty::Any()));
+    if (any_it != cache.end() && any_it->second) {
+      auto sorted = MakeSort(any_it->second, property.sort_key);
+      ++trace.plans_costed;
+      if (Better(sorted, best)) {
+        best = sorted;
+        cache[key] = sorted;
+      }
+    }
+  }
+
+  if (best) {
+    result.has_plan = true;
+    result.best_plan = *best;
+    trace.best_cost = result.best_plan.cost;
+  }
+  trace.plans_cached = cache.size();
+  result.trace = trace;
   return result;
 }
 
 void DPSub::FillRelation(CacheTable &cache, const JoinGraph &graph,
                           RelSet singleton, const Relation &relation,
+                          const StatsCatalog &stats,
                           SearchTrace &trace) {
-  auto scan = MakeScan(relation);
+  auto scan = MakeScan(relation, stats);
   ++trace.plans_costed;
   cache[MakeKey(singleton, RequiredProperty::Any())] = scan;
 

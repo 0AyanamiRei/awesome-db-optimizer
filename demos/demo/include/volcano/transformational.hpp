@@ -76,14 +76,17 @@ private:
                   SearchTrace &trace);
 
   // Physical optimization on the memo.
-  PlanPtr OptimizeGroup(const JoinGraph &graph, RelSet relset,
+  PlanPtr OptimizeGroup(const JoinGraph &graph, const StatsCatalog &stats, RelSet relset,
                         const RequiredProperty &property, SearchTrace &trace);
-  PlanPtr OptimizeAny(const JoinGraph &graph, RelSet relset, SearchTrace &trace);
-  PlanPtr OptimizeSorted(const JoinGraph &graph, RelSet relset,
+  PlanPtr OptimizeAny(const JoinGraph &graph, const StatsCatalog &stats,
+                      RelSet relset, SearchTrace &trace);
+  PlanPtr OptimizeSorted(const JoinGraph &graph, const StatsCatalog &stats, RelSet relset,
                          const ColumnRef &sort_key, SearchTrace &trace);
-  PlanPtr OptimizeAnyExpr(const JoinGraph &graph, const LogicalExpr &expr,
+  PlanPtr OptimizeAnyExpr(const JoinGraph &graph, const StatsCatalog &stats,
+                          const LogicalExpr &expr,
                           SearchTrace &trace);
-  PlanPtr OptimizeSortedExpr(const JoinGraph &graph, const LogicalExpr &expr,
+  PlanPtr OptimizeSortedExpr(const JoinGraph &graph, const StatsCatalog &stats,
+                             const LogicalExpr &expr,
                              const ColumnRef &sort_key, SearchTrace &trace);
 
   std::string CacheKey(RelSet relset, const RequiredProperty &property) const;

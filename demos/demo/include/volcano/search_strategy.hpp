@@ -29,6 +29,7 @@ struct SearchTrace {
 };
 
 struct SearchResult {
+  bool has_plan = false;
   PhysicalPlan best_plan;
   SearchTrace trace;
 };
@@ -38,7 +39,7 @@ class SearchStrategy {
 public:
   virtual ~SearchStrategy() = default;
 
-  // Human-readable name for reporting, e.g. "BottomUpDP", "Transformational", "TopDown(Naive)"
+  // Human-readable name for reporting, e.g. "DPSub", "Transformational", "TopDown(Naive)"
   virtual std::string Name() const = 0;
 
   // Run the search on a join graph with the given stats and required root property.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DB Optimizer Demo Review"
+  short_description: "Review generated changes to the database optimizer demo."
+  default_prompt: "Review the current database optimizer demo changes against the repo quality standard."

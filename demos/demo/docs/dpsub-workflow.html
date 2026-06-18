@@ -956,20 +956,20 @@ Test: chain_3 (Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05))
 Relations: 3, Predicates: 2
 Required property: Any
 
-Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(b), SeqScan(a))), Sort[c.y](SeqScan(c)))
+Best plan: MergeJoin(Sort[c.y](SeqScan(c)), Sort[b.y](HashJoin(SeqScan(b), SeqScan(a))))
 Cost: 19651.6
 
-Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
-DPSub               8             2             37            0             20            0             0             20            0             19651.56</code></pre>
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
+DPSub               10            2             57            0             20            0             0             20            0             19651.56</code></pre>
 
 <p>
   解读：
 </p>
 
 <ul>
-  <li><code>Partitions=8</code>：2 个 size-2 集合各枚举 2 个 proper subset (4) + 1 个 size-3 集合枚举 6 个 proper subset (6) = 10 个……等等。实际上 cluster_3 枚举的具体数字取决于 PopCount 和 mask 范围。从输出看 <code>partitions_explored=8</code>。</li>
+  <li><code>Partitions=10</code>：2 个 size-2 连通集合各枚举 2 个 proper subset (4)，1 个 size-3 连通集合枚举 6 个 proper subset (6)，合计 10 次。</li>
   <li><code>Rejected=2</code>：<code>{a,c}</code> 不连通导致的两次拒绝。</li>
-  <li><code>PlansCosted=37</code>：所有物理计划 + sort enforcer 的总创建次数。</li>
+  <li><code>PlansCosted=57</code>：所有物理计划 + sort enforcer 的总创建次数。</li>
   <li><code>CacheHits=0</code>：DPSub 没有 cache hit 概念。</li>
   <li><code>Cached=20</code>：DP 表中有 20 个唯一的 <code>(RelSet, Property)</code> 条目。</li>
   <li><code>DPCells=20</code>：与 Cached 相同，因为每次 DP cell 填充都产生一个持久化的 cache entry。</li>
@@ -981,21 +981,21 @@ DPSub               8             2             37            0             20  
 
 <pre><code>$ demos/demo/build/volcano_join_demo --compare --test chain_3
 
-Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
-DPSub               8             2             37            0             20            0             0             20            0             19651.56
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
+DPSub               10            2             57            0             20            0             0             20            0             19651.56
 Transformational    0             0             34            27            12            16            24            0             0             19651.56
 TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56
-TopDown(Mincut)     9             0             39            8             15            0             0             0             0             19651.56</code></pre>
+TopDown(Mincut)     6             0             25            7             12            0             0             0             0             19651.56</code></pre>
 
 <p>这个对比的几个观察：</p>
 
 <ul>
   <li>四种策略 <code>BestCost</code> 完全相同 (19651.56)，说明在 chain_3 上都找到了全局最优。</li>
-  <li><code>DPSub</code> 的 <code>Partitions=8</code> 多于 <code>TopDown(Naive)=7</code>，因为 DPSub 枚举了两个对称方向。</li>
-  <li><code>DPSub</code> 的 <code>PlansCosted=37</code> 最多，因为它为每个合法 split 都尝试 HashJoin、NestedLoopJoin、MergeJoin 三种物理实现，再加上 Sort Enforcer 传播。</li>
-  <li><code>DPSub</code> 和 <code>TopDown(Mincut)</code> 都用了 <code>dp_cells_filled</code>，而 <code>Transformational</code> 和 <code>TopDown(Naive)</code> 始终为 0。</li>
-  <li><code>Transformational</code> 的 CacheHits=27 与其他策略的 0/7/8 形成鲜明对比 — 这是它 "先构造完整逻辑 memo，再做物理优化" 的二阶段结构导致的。</li>
-  <li><code>TopDown(Mincut)</code> 有最多的 <code>Partitions=9</code> 但 0 拒绝 — Mincut 分区策略生成的都是合法 split。</li>
+  <li><code>DPSub</code> 的 <code>Partitions=10</code> 多于 <code>TopDown(Naive)=7</code>，因为 DPSub 枚举了两个对称方向。</li>
+  <li><code>DPSub</code> 的 <code>PlansCosted=57</code> 最多，因为它为每个合法 split 都尝试 HashJoin、NestedLoopJoin、MergeJoin 三种物理实现，再加上 Sort Enforcer 传播。</li>
+  <li><code>DPSub</code> 使用 <code>dp_cells_filled</code>，而 <code>Transformational</code> 与两种 TopDown 策略始终为 0。</li>
+  <li><code>Transformational</code> 的 CacheHits=27 与其他策略的 0/7/7 形成鲜明对比 — 这是它 "先构造完整逻辑 memo，再做物理优化" 的二阶段结构导致的。</li>
+  <li><code>TopDown(Mincut)</code> 的 <code>Partitions=6</code> 且 0 拒绝 — Mincut 分区策略生成的都是合法 split。</li>
 </ul>
 
 <!-- ================================================================== -->

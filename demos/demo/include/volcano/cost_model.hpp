@@ -1,5 +1,6 @@
 #pragma once
 
+#include "volcano/stats.hpp"
 #include "volcano/types.hpp"
 
 #include <memory>
@@ -10,7 +11,7 @@ namespace volcano {
 // All costs are deterministic, simple, teaching-oriented formulas.
 
 // Create a SeqScan plan for a single relation (Any property).
-PlanPtr MakeScan(const Relation &relation);
+PlanPtr MakeScan(const Relation &relation, const StatsCatalog &stats);
 
 // Create a Sort enforcer on top of a child plan.
 PlanPtr MakeSort(PlanPtr child, const ColumnRef &sort_key);
@@ -20,6 +21,7 @@ PlanPtr MakeSort(PlanPtr child, const ColumnRef &sort_key);
 // `predicate` may be nullptr for cross-product joins.
 PlanPtr MakeJoin(PhysicalOp op, PlanPtr left, PlanPtr right,
                  const JoinGraph &graph,
+                 const StatsCatalog &stats,
                  const JoinPredicate *predicate,
                  const RequiredProperty &property);
 

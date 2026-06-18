@@ -49,15 +49,16 @@ std::string TopDownPartitioning::MakeKey(RelSet relset,
 }
 
 SearchResult TopDownPartitioning::Search(const JoinGraph &graph,
-                                          const StatsCatalog & /*stats*/,
+                                          const StatsCatalog &stats,
                                           const RequiredProperty &property) {
   cache_.clear();
   SearchTrace trace;
 
-  auto plan = BestPlan(graph, graph.FullSet(), property, trace);
+  auto plan = BestPlan(graph, stats, graph.FullSet(), property, trace);
 
   SearchResult result;
   if (plan) {
+    result.has_plan = true;
     result.best_plan = *plan;
   }
   result.trace = trace;
@@ -67,6 +68,7 @@ SearchResult TopDownPartitioning::Search(const JoinGraph &graph,
 }
 
 PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
+                                       const StatsCatalog &stats,
                                        RelSet relset,
                                        const RequiredProperty &property,
                                        SearchTrace &trace) {
@@ -87,7 +89,7 @@ PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
     for (const auto &relation : graph.Relations()) {
       if ((relset & (RelSet{1} << relation.id)) == 0) continue;
 
-      auto scan = MakeScan(relation);
+      auto scan = MakeScan(relation, stats);
       ++trace.plans_costed;
 
       if (property.IsAny()) {
@@ -113,7 +115,7 @@ PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
 
   for (const auto &[left_set, right_set] : partitions) {
     // Try all physical join methods for this partition
-    auto candidate = TryJoinMethods(graph, left_set, right_set, property, best, trace);
+    auto candidate = TryJoinMethods(graph, stats, left_set, right_set, property, best, trace);
     if (Better(candidate, best)) {
       best = candidate;
     }
@@ -121,7 +123,7 @@ PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
 
   // SortEnforcer fallback for Sorted property: best Any plan + Sort
   if (!property.IsAny()) {
-    auto any_plan = BestPlan(graph, relset, RequiredProperty::Any(), trace);
+    auto any_plan = BestPlan(graph, stats, relset, RequiredProperty::Any(), trace);
     if (any_plan) {
       auto sorted = MakeSort(any_plan, property.sort_key);
       ++trace.plans_costed;
@@ -180,6 +182,7 @@ TopDownPartitioning::EnumeratePartitions(const JoinGraph &graph, RelSet relset,
 }
 
 PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
+                                             const StatsCatalog &stats,
                                              RelSet left_set, RelSet right_set,
                                              const RequiredProperty &required_prop,
                                              PlanPtr current_best,
@@ -189,11 +192,9 @@ PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
   PlanPtr best = current_best;
 
   // --- Predicted-cost branch-and-bound ---
-  // Use sum of child lower bounds + minimum join cost as a pruning threshold
-  auto lb_left = LowerBound(graph, left_set, RequiredProperty::Any());
-  auto lb_right = LowerBound(graph, right_set, RequiredProperty::Any());
-  double min_join_cost = std::min({lb_left + lb_right,  // reuse lower bounds as minimal join
-                                   0.0});  // cross product costs nothing extra
+  // Use sum of child lower bounds as a conservative pruning threshold.
+  auto lb_left = LowerBound(graph, stats, left_set, RequiredProperty::Any());
+  auto lb_right = LowerBound(graph, stats, right_set, RequiredProperty::Any());
   double predicted_lower = lb_left + lb_right + 1.0; // at least 1 unit for join
   if (best && predicted_lower >= best->cost) {
     ++trace.branches_pruned;
@@ -202,17 +203,17 @@ PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
 
   // --- Any property: try HashJoin, NestedLoop, MergeJoin ---
   if (required_prop.IsAny()) {
-    auto left_any = BestPlan(graph, left_set, RequiredProperty::Any(), trace);
-    auto right_any = BestPlan(graph, right_set, RequiredProperty::Any(), trace);
+    auto left_any = BestPlan(graph, stats, left_set, RequiredProperty::Any(), trace);
+    auto right_any = BestPlan(graph, stats, right_set, RequiredProperty::Any(), trace);
     if (!left_any || !right_any) return best;
 
     auto hash_join = MakeJoin(PhysicalOp::HashJoin, left_any, right_any,
-                               graph, predicate, RequiredProperty::Any());
+                               graph, stats, predicate, RequiredProperty::Any());
     ++trace.plans_costed;
     if (Better(hash_join, best)) best = hash_join;
 
     auto nested_loop = MakeJoin(PhysicalOp::NestedLoopJoin, left_any, right_any,
-                                 graph, predicate, RequiredProperty::Any());
+                                 graph, stats, predicate, RequiredProperty::Any());
     ++trace.plans_costed;
     if (Better(nested_loop, best)) best = nested_loop;
 
@@ -222,11 +223,11 @@ PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
       const auto left_key = left_has_pred_left ? predicate->left : predicate->right;
       const auto right_key = left_has_pred_left ? predicate->right : predicate->left;
 
-      auto sorted_left = BestPlan(graph, left_set, RequiredProperty::Sorted(left_key), trace);
-      auto sorted_right = BestPlan(graph, right_set, RequiredProperty::Sorted(right_key), trace);
+      auto sorted_left = BestPlan(graph, stats, left_set, RequiredProperty::Sorted(left_key), trace);
+      auto sorted_right = BestPlan(graph, stats, right_set, RequiredProperty::Sorted(right_key), trace);
       if (sorted_left && sorted_right) {
         auto merge_join = MakeJoin(PhysicalOp::MergeJoin, sorted_left, sorted_right,
-                                    graph, predicate, RequiredProperty::Any());
+                                    graph, stats, predicate, RequiredProperty::Any());
         ++trace.plans_costed;
         if (Better(merge_join, best)) best = merge_join;
       }
@@ -243,15 +244,15 @@ PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
 
     const bool key_from_left_input = (left_set & graph.MaskForAlias(sort_key.alias)) != 0;
     const auto other_key = sort_on_left ? pred.right : pred.left;
-    auto sorted_left = BestPlan(graph, left_set,
+    auto sorted_left = BestPlan(graph, stats, left_set,
                                  RequiredProperty::Sorted(key_from_left_input ? sort_key : other_key),
                                  trace);
-    auto sorted_right = BestPlan(graph, right_set,
+    auto sorted_right = BestPlan(graph, stats, right_set,
                                   RequiredProperty::Sorted(key_from_left_input ? other_key : sort_key),
                                   trace);
     if (sorted_left && sorted_right) {
       auto merge_join = MakeJoin(PhysicalOp::MergeJoin, sorted_left, sorted_right,
-                                  graph, &pred, RequiredProperty::Sorted(sort_key));
+                                  graph, stats, &pred, RequiredProperty::Sorted(sort_key));
       ++trace.plans_costed;
       if (Better(merge_join, best)) best = merge_join;
     }
@@ -260,14 +261,14 @@ PlanPtr TopDownPartitioning::TryJoinMethods(const JoinGraph &graph,
   return best;
 }
 
-double TopDownPartitioning::LowerBound(const JoinGraph &graph, RelSet relset,
+double TopDownPartitioning::LowerBound(const JoinGraph &graph, const StatsCatalog &stats, RelSet relset,
                                         const RequiredProperty &property) const {
   // Simple lower bound: sum of base scan costs for all relations in the set.
   // This is always ≤ actual best plan cost.
   double lb = 0.0;
   for (const auto &relation : graph.Relations()) {
     if ((relset & (RelSet{1} << relation.id)) != 0) {
-      lb += relation.scan_cost;
+      lb += stats.LookupRelation(relation.alias).scan_cost;
     }
   }
   (void)property; // property doesn't affect our simple lower bound

@@ -41,6 +41,7 @@ private:
   // The recursive heart of top-down search.
   // Returns nullopt if no plan can satisfy the property.
   PlanPtr BestPlan(const JoinGraph &graph,
+                   const StatsCatalog &stats,
                    RelSet relset,
                    const RequiredProperty &property,
                    SearchTrace &trace);
@@ -56,13 +57,14 @@ private:
 
   // Try all physical join methods for a given partition.
   PlanPtr TryJoinMethods(const JoinGraph &graph,
+                         const StatsCatalog &stats,
                          RelSet left_set, RelSet right_set,
                          const RequiredProperty &required_prop,
                          PlanPtr current_best,
                          SearchTrace &trace);
 
   // Predicted-cost lower bound for branch-and-bound.
-  double LowerBound(const JoinGraph &graph, RelSet relset,
+  double LowerBound(const JoinGraph &graph, const StatsCatalog &stats, RelSet relset,
                     const RequiredProperty &property) const;
 
   std::string MakeKey(RelSet relset, const RequiredProperty &property) const;

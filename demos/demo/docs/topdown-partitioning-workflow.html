@@ -194,9 +194,9 @@
 <div class="callout callout-info">
   <strong>核心思想：</strong>给定目标关系集 \(S\) 和所需物理属性（如"有序"），
   把 \(S\) 划分成两个连通子集 \(L\) 和 \(R\)
-  (<a href="../src/top_down_partitioning.cpp#L143"><code>EnumeratePartitions()</code></a>)，
-  递归求解 \(L\) 和 \(R\) (<a href="../src/top_down_partitioning.cpp#L69"><code>BestPlan()</code></a>)，
-  然后用一个物理 join 把它们拼起来 (<a href="../src/top_down_partitioning.cpp#L182"><code>TryJoinMethods()</code></a>)。
+  (<a href="../src/top_down_partitioning.cpp#L140"><code>EnumeratePartitions()</code></a>)，
+  递归求解 \(L\) 和 \(R\) (<a href="../src/top_down_partitioning.cpp#L70"><code>BestPlan()</code></a>)，
+  然后用一个物理 join 把它们拼起来 (<a href="../src/top_down_partitioning.cpp#L184"><code>TryJoinMethods()</code></a>)。
   从全集开始，层层向下直到单表。
   生成 CP-free 分区的具体方法由 <a href="../include/volcano/top_down_partitioning.hpp#L23"><code>PartitionStrategy</code></a> 枚举控制——
   <code>Naive</code>（枚举+过滤）或 <code>Mincut</code>（BC-tree 直接生成）。
@@ -284,27 +284,27 @@
 
 <p>
   <strong>入口：<code>Search()</code></strong>（
-  <a href="../src/top_down_partitioning.cpp#L54"><code>top_down_partitioning.cpp:54-67</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L51"><code>top_down_partitioning.cpp:51-67</code></a>）。
   搜索的唯一公开入口。清空 memoization 缓存，然后以<strong>全关系集</strong>和<strong>根需求属性</strong>调用
   <code>BestPlan(graph, graph.FullSet(), property, trace)</code>。
-  返回的 <code>SearchResult</code> 包含最优计划、trace 计数器、以及缓存条目总数。
+  返回的 <code>SearchResult</code> 用 <code>has_plan</code> 标记最优计划是否有效，并包含 trace 计数器与缓存条目总数。
   整个搜索的"主循环"就是这一个递归调用——Search 本身没有循环。
 </p>
 
 <div class="callout-ok">
   <strong>关键起点：</strong>TopDown 的入口函数 <code>Search()</code> 只有 13 行代码。
   真正的工作全部在 <code>BestPlan()</code> 的递归中完成。
-  这与 BottomUpDP（<code>for size=2..n</code> 的双重循环）和 Transformational（<code>while work_queue not empty</code> 的工作队列）形成鲜明对比。
+  这与 DPSub（<code>for size=2..n</code> 的双重循环）和 Transformational（<code>while work_queue not empty</code> 的工作队列）形成鲜明对比。
 </div>
 
 <p>
   <strong>Phase 1 — Memoization 查找</strong>（
-  <a href="../src/top_down_partitioning.cpp#L74"><code>top_down_partitioning.cpp:74-81</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L75"><code>top_down_partitioning.cpp:75-82</code></a>）。
   <code>BestPlan()</code> 被调用后，第一步是用 <code>MakeKey(relset, property)</code>（
   <a href="../src/top_down_partitioning.cpp#L44"><code>top_down_partitioning.cpp:44-48</code></a>）构造一个
   <code>"RelSet|Property"</code> 格式的字符串 key——例如 <code>"7|Any"</code> 或 <code>"3|Sorted(b.y)"</code>。
   然后在 <code>cache_</code>（类型 <code>unordered_map&lt;string, PlanPtr&gt;</code>，
-  <a href="../include/volcano/top_down_partitioning.hpp#L72"><code>top_down_partitioning.hpp:72</code></a>）中查找。
+  <a href="../include/volcano/top_down_partitioning.hpp#L74"><code>top_down_partitioning.hpp:74</code></a>）中查找。
   <strong>命中</strong>：<code>cache_hits++</code>，直接返回缓存的 <code>PlanPtr</code>——该子问题已被求解过。
   <strong>未命中</strong>：进入 Phase 2。
   这是 TopDown 避免重复计算的核心机制：每个 <code>(RelSet, Property)</code> 组合最多求解一次。
@@ -312,7 +312,7 @@
 
 <p>
   <strong>Phase 2 — 基础情况：单表</strong>（
-  <a href="../src/top_down_partitioning.cpp#L84"><code>top_down_partitioning.cpp:84-107</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L85"><code>top_down_partitioning.cpp:85-108</code></a>）。
   用 <code>PopCount(relset) == 1</code>（
   <a href="../src/top_down_partitioning.cpp#L16"><code>top_down_partitioning.cpp:16</code></a>）检测。
   遍历 <code>graph.Relations()</code> 找到属于该 <code>relset</code> 的那张表，调用
@@ -326,21 +326,21 @@
 
 <p>
   <strong>Phase 3 — 递归划分</strong>（
-  <a href="../src/top_down_partitioning.cpp#L110"><code>top_down_partitioning.cpp:110-132</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L111"><code>top_down_partitioning.cpp:111-134</code></a>）。
   对于多表集合，<code>BestPlan</code> 调用 <code>EnumeratePartitions(graph, relset, trace)</code>
-  （<a href="../src/top_down_partitioning.cpp#L138"><code>top_down_partitioning.cpp:138-180</code></a>）
+  （<a href="../src/top_down_partitioning.cpp#L140"><code>top_down_partitioning.cpp:140-181</code></a>）
   生成所有合法的 CP-free (L,R) 划分。
   划分策略由 <code>PartitionStrategy</code> 枚举决定（
   <a href="../include/volcano/top_down_partitioning.hpp#L23"><code>top_down_partitioning.hpp:23-26</code></a>）：
 </p>
 <ul>
-  <li><strong>Naive</strong>（<a href="../src/top_down_partitioning.cpp#L144"><code>:144-158</code></a>）：
+  <li><strong>Naive</strong>（<a href="../src/top_down_partitioning.cpp#L146"><code>:146-159</code></a>）：
     用 Gosper's hack 遍历 <code>relset</code> 的所有非空真子集，对每个候选 left 调用
     <code>graph.IsValidJoinSplit(left, right)</code>（<a href="../src/types.cpp"><code>types.cpp</code></a>）
     做连通性 + 跨边界谓词检查。对称对 (L,R)/(R,L) 通过 <code>left &gt;= right</code> 去重。
     不满足的候选计入 <code>partitions_rejected</code>。
   </li>
-  <li><strong>Mincut</strong>（<a href="../src/top_down_partitioning.cpp#L160"><code>:160-175</code></a>）：
+  <li><strong>Mincut</strong>（<a href="../src/top_down_partitioning.cpp#L162"><code>:162-177</code></a>）：
     懒初始化一个 <code>MincutPartitioner</code> 实例（<a href="../src/mincut.cpp"><code>mincut.cpp</code></a>），
     委托 <code>mincut_partitioner_-&gt;EnumeratePartitions(relset)</code>
     （<a href="../src/mincut.cpp#L267"><code>mincut.cpp:267-292</code></a>）直接生成 CP-free 划分。
@@ -350,7 +350,7 @@
 
 <p>
   <strong>Phase 3 续 — TryJoinMethods</strong>（
-  <a href="../src/top_down_partitioning.cpp#L182"><code>top_down_partitioning.cpp:182-261</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L184"><code>top_down_partitioning.cpp:184-262</code></a>）。
   对每个划分 <code>(left_set, right_set)</code>：
 </p>
 <ol>
@@ -363,13 +363,13 @@
     每种 join 类型递归调用 <code>BestPlan</code> 获取左/右子树（可能带 Sorted 属性需求）。</li>
   <li><strong>对于 Sorted 属性</strong>：只尝试 MergeJoin，且谓词的排序键必须匹配所需的排序键。</li>
   <li>所有 join 构造通过 <code>MakeJoin()</code>（<a href="../src/cost_model.cpp"><code>cost_model.cpp</code></a>）
-    计算 cost，用 <code>Better(candidate, best)</code>（<a href="../include/volcano/cost_model.hpp#L27"><code>cost_model.hpp:27</code></a>）
+    计算 cost，用 <code>Better(candidate, best)</code>（<a href="../include/volcano/cost_model.hpp#L29"><code>cost_model.hpp:29</code></a>）
     保持全局最优。</li>
 </ol>
 
 <p>
   <strong>Phase 4 — SortEnforcer 回退</strong>（
-  <a href="../src/top_down_partitioning.cpp#L123"><code>top_down_partitioning.cpp:123-132</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L124"><code>top_down_partitioning.cpp:124-134</code></a>）。
   当需要的属性是 <code>Sorted</code> 但没有一个划分的 MergeJoin 能直接产生时，
   先递归求 <code>BestPlan(S, Any)</code>，用 <code>MakeSort()</code> 包装。
   如果 Any 子计划已在前面的 Phase 3 中间接算出，这次递归会命中缓存（<code>cache_hits++</code>），几乎零开销。
@@ -377,7 +377,7 @@
 
 <p>
   <strong>Phase 5 — 缓存与返回</strong>（
-  <a href="../src/top_down_partitioning.cpp#L134"><code>top_down_partitioning.cpp:134</code></a>）。
+  <a href="../src/top_down_partitioning.cpp#L136"><code>top_down_partitioning.cpp:136</code></a>）。
   将最终最优计划（或 <code>nullptr</code>——表示无可行计划）写入 <code>cache_[key]</code>。
   <strong><code>nullptr</code> 也会被缓存</strong>——这避免了未来对同一不可满足子问题的重复探索。
 </p>
@@ -558,7 +558,7 @@ FullSet = 1|2|4|8 = 15  (由 JoinGraph::FullSet() 返回)</code></pre>
 
 <p>
   入口：<a href="../src/top_down_partitioning.cpp#L57"><code>Search()</code></a> 调用
-  <a href="../src/top_down_partitioning.cpp#L69"><code>BestPlan(graph, 15, Any, trace)</code></a>。
+  <a href="../src/top_down_partitioning.cpp#L70"><code>BestPlan(graph, stats, 15, Any, trace)</code></a>。
 </p>
 <p><strong>Step 1 — Memoization:</strong> key = <code>"15|Any"</code>。cache_ 为空，miss。</p>
 <p><strong>Step 2 — Base case:</strong> PopCount(15) = 4 ≠ 1。不是单表，跳过。</p>
@@ -705,7 +705,7 @@ SortEnforcer fallback:
 
 <p>
   §3.0 的搜索树全景图中，蓝色虚线边和 <code>cache hit / memo reuse</code> 标签表示命中缓存的路径。
-  这正是 TopDown 相比 BottomUpDP 的核心效率来源：子问题一旦求解就被缓存，后续任何路径需要同一
+  这正是 TopDown 相比 DPSub 的核心效率来源：子问题一旦求解就被缓存，后续任何路径需要同一
   <code>(RelSet, Property)</code> 组合时直接命中。
 </p>
 
@@ -720,7 +720,7 @@ SortEnforcer fallback:
 </ul>
 
 <p>
-  与之对比，BottomUpDP <strong>必须</strong>预计算所有子集的所有属性组合——即使某些组合在最终最优计划中根本不会被用到。
+  与之对比，DPSub <strong>必须</strong>预计算所有子集的所有属性组合——即使某些组合在最终最优计划中根本不会被用到。
   chain_4 上 DPSub 填了 42 个 DP 格子（<code>dp_cells_filled=42</code>），而 TopDown 只缓存了 22 个条目——只有 DPSub 的 52%。
   这些"省下"的 20 个格子就是按需计算 vs 全量预计算的差距。
 </p>
@@ -733,7 +733,7 @@ SortEnforcer fallback:
 </p>
 
 <p>
-  <strong>Naive 方法</strong>（<a href="../src/top_down_partitioning.cpp#L144"><code>top_down_partitioning.cpp:144-158</code></a>）
+  <strong>Naive 方法</strong>（<a href="../src/top_down_partitioning.cpp#L146"><code>top_down_partitioning.cpp:146-159</code></a>）
   是最直接的思路：用 bit-subset iteration（Gosper's hack）枚举 <code>relset</code> 的所有非空真子集作为 left，
   <code>right = relset ^ left</code>，通过 <code>left &gt;= right</code> 过滤对称对。
   对每个候选，调用 <code>graph.IsValidJoinSplit(left, right, allow_cross_products)</code>
@@ -745,7 +745,7 @@ SortEnforcer fallback:
 </p>
 
 <p>
-  <strong>Mincut 方法</strong>（<a href="../src/top_down_partitioning.cpp#L160"><code>top_down_partitioning.cpp:160-175</code></a>）
+  <strong>Mincut 方法</strong>（<a href="../src/top_down_partitioning.cpp#L162"><code>top_down_partitioning.cpp:162-177</code></a>）
   采用完全不同的思路：<strong>直接生成连通子集，永不产生无效候选</strong>。
   懒初始化的 <code>MincutPartitioner</code>（<a href="../src/mincut.cpp"><code>mincut.cpp</code></a>）
   在首次使用时运行 Tarjan DFS（<a href="../src/mincut.cpp#L121"><code>:121-172</code></a>）
@@ -913,8 +913,8 @@ SortEnforcer fallback:
   </tr>
   <tr>
     <td><strong>实现</strong></td>
-    <td><a href="../src/top_down_partitioning.cpp#L144"><code>top_down_partitioning.cpp:144-158</code></a></td>
-    <td><a href="../src/mincut.cpp"><code>mincut.cpp</code></a> + <a href="../src/top_down_partitioning.cpp#L160"><code>top_down_partitioning.cpp:160-175</code></a></td>
+    <td><a href="../src/top_down_partitioning.cpp#L146"><code>top_down_partitioning.cpp:146-159</code></a></td>
+    <td><a href="../src/mincut.cpp"><code>mincut.cpp</code></a> + <a href="../src/top_down_partitioning.cpp#L162"><code>top_down_partitioning.cpp:162-177</code></a></td>
   </tr>
   <tr>
     <td><strong>CP-free 保证</strong></td>
@@ -966,7 +966,7 @@ SortEnforcer fallback:
 </div>
 
 <p>
-  Mincut 策略内部使用 <strong>lazy 初始化</strong> (<a href="../src/top_down_partitioning.cpp#L162"><code>top_down_partitioning.cpp:162-165</code></a>)：
+  Mincut 策略内部使用 <strong>lazy 初始化</strong> (<a href="../src/top_down_partitioning.cpp#L163"><code>top_down_partitioning.cpp:163-166</code></a>)：
   <code>MincutPartitioner</code> 对象在第一次调用 <code>EnumeratePartitions()</code> 时才构建，
   之后同一个 <code>JoinGraph</code> 的后续查询直接复用，避免重复构建 BC-tree。
 </p>
@@ -983,7 +983,7 @@ SortEnforcer fallback:
 
 <p>
   当前 <code>LowerBound = sum(scan_costs)</code>
-  (<a href="../src/top_down_partitioning.cpp#L263"><code>top_down_partitioning.cpp:263-275</code></a>)：
+  (<a href="../src/top_down_partitioning.cpp#L264"><code>top_down_partitioning.cpp:264-276</code></a>)：
 </p>
 
 <pre><code>double LowerBound(const JoinGraph &graph, RelSet relset,
@@ -1101,13 +1101,13 @@ SortEnforcer fallback:
     <td>递归 BestPlan(G, prop) + memoization</td>
     <td><code>BestPlan(RelSet, Property)</code> + <code>cache_</code></td>
     <td><span class="badge badge-green">完全一致</span></td>
-    <td><a href="../src/top_down_partitioning.cpp#L69"><code>top_down_partitioning.cpp:69-136</code></a></td>
+    <td><a href="../src/top_down_partitioning.cpp#L70"><code>top_down_partitioning.cpp:70-137</code></a></td>
   </tr>
   <tr>
     <td>CP-free partition 概念</td>
     <td>两种实现：Naive (枚举+过滤) + Mincut (BC-tree 直接生成)</td>
     <td><span class="badge badge-green">完全实现</span></td>
-    <td><a href="../src/top_down_partitioning.cpp#L144"><code>top_down_partitioning.cpp:144-176</code></a><br>
+    <td><a href="../src/top_down_partitioning.cpp#L146"><code>top_down_partitioning.cpp:146-177</code></a><br>
         <a href="../src/mincut.cpp#L267"><code>mincut.cpp:267-292</code></a></td>
   </tr>
   <tr>
@@ -1121,7 +1121,7 @@ SortEnforcer fallback:
     <td>Predicted-cost bounding (TBNmcP)</td>
     <td><code>LowerBound = sum(scan_costs)</code> + B&amp;amp;B</td>
     <td><span class="badge badge-green">架构一致，下界偏弱</span></td>
-    <td><a href="../src/top_down_partitioning.cpp#L263"><code>top_down_partitioning.cpp:263-275</code></a></td>
+    <td><a href="../src/top_down_partitioning.cpp#L264"><code>top_down_partitioning.cpp:264-276</code></a></td>
   </tr>
   <tr>
     <td>Accumulated-cost bounding (TBNmcA)</td>
@@ -1139,7 +1139,7 @@ SortEnforcer fallback:
     <td>Interesting orders via enforcer</td>
     <td>SortEnforcer fallback in BestPlan</td>
     <td><span class="badge badge-green">一致</span></td>
-    <td><a href="../src/top_down_partitioning.cpp#L123"><code>top_down_partitioning.cpp:123-132</code></a></td>
+    <td><a href="../src/top_down_partitioning.cpp#L124"><code>top_down_partitioning.cpp:124-134</code></a></td>
   </tr>
 </table>
 
@@ -1295,12 +1295,12 @@ SortEnforcer fallback:
 
 <pre><code>$ volcano_join_demo --compare --test chain_3
 
-Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-BottomUpDP          4           2         37            0          20       0      0      0       19651.56
-Transformational    0           0         34           27          12      16     24      0       19651.56
-TopDown(Naive)      7           1         25            7          12       0      0      0       19651.56
-TopDown(Mincut)     6          <strong>0</strong>         25            7          12       0      0      0       19651.56</code></pre>
+DPSub               10          2         57            0          20       0      0     20       0       19651.56
+Transformational    0           0         34           27          12      16     24      0       0       19651.56
+TopDown(Naive)      7           1         25            7          12       0      0      0       0       19651.56
+TopDown(Mincut)     6          <strong>0</strong>         25            7          12       0      0      0       0       19651.56</code></pre>
 
 <ul>
   <li>✅ best_cost 所有策略一致 — 正确性验证</li>
@@ -1313,16 +1313,16 @@ TopDown(Mincut)     6          <strong>0</strong>         25            7       
 
 <pre><code>$ volcano_join_demo --compare --test chain_4
 
-Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-BottomUpDP          32          12        136           0          42       0      0      0       41500.24
-Transformational    0           0          78          71          22      60    100      0       41500.24
-TopDown(Naive)      26           8          52          25          22       0      0      0       41500.24
-TopDown(Mincut)     18          <strong>0</strong>          52          25          22       0      0      0       41500.24</code></pre>
+DPSub               32          12        136           0          42       0      0     42       0       41500.24
+Transformational    0           0          78          71          22      60    100      0       0       41500.24
+TopDown(Naive)      26           8          52          25          22       0      0      0       0       41500.24
+TopDown(Mincut)     18          <strong>0</strong>          52          25          22       0      0      0       0       41500.24</code></pre>
 
 <ul>
   <li><strong>4 表链的 Mincut 收益更大：</strong>partitions 26→18 (减少 31%)，rejected 8→<strong>0</strong></li>
-  <li>BottomUpDP 预先计算了 42 个 DP 格子，TopDown 只缓存了 22 个（52%）——按需计算 vs 全量预计算</li>
+  <li>DPSub 预先计算了 42 个 DP 格子，TopDown 只缓存了 22 个（52%）——按需计算 vs 全量预计算</li>
   <li>Transformational 产生 60 个重复表达式（2.7× Cached=22）——4 表时 duplicate 问题比 3 表更明显</li>
   <li>BestCost 一致（41500.24）——正确性验证</li>
 </ul>
@@ -1331,12 +1331,12 @@ TopDown(Mincut)     18          <strong>0</strong>          52          25      
 
 <pre><code>$ volcano_join_demo --compare --test star_4
 
-Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-BottomUpDP          12          5         114           0          50       0      0      0       24360.00
-Transformational    0           0         106         106          50      82    108      0       24360.00
-TopDown(Naive)      34         10          96          64          46       0      0      0       24360.00
-TopDown(Mincut)     24         <strong>0</strong>          96          64          46       0      0      0       24360.00</code></pre>
+DPSub               38         14         163           0          50       0      0     50       0       24360.00
+Transformational    0          0           93          86          26      72    120      0       0       24360.00
+TopDown(Naive)      34        10           61          32          26       0      0      0       0       24360.00
+TopDown(Mincut)     24        <strong>0</strong>           61          32          26       0      0      0       0       24360.00</code></pre>
 
 <ul>
   <li><strong>Mincut 效果显著：</strong>partitions_explored 从 34→<strong>24</strong> (减少 29%)，rejected 从 10→<strong>0</strong></li>
@@ -1348,12 +1348,12 @@ TopDown(Mincut)     24         <strong>0</strong>          96          64       
 
 <pre><code>$ volcano_join_demo --compare --test cycle_4
 
-Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-BottomUpDP          18          7         162           0          69       0      0      0       14800.00
-Transformational    0           0         136         132          68     164    196      0       14800.00
-TopDown(Naive)      43          9          86          52          56       0      0      0       14800.00
-TopDown(Mincut)     34         <strong>0</strong>          86          52          56       0      0      0       14800.00</code></pre>
+DPSub               46         10         264           0          69       0      0     69       0       14800.00
+Transformational    0          0          136         132          33     164    196      0       0       14800.00
+TopDown(Naive)      43          9          86          52          33       0      0      0       0       14800.00
+TopDown(Mincut)     34         <strong>0</strong>          86          52          33       0      0      0       0       14800.00</code></pre>
 
 <ul>
   <li>✅ best_cost 一致</li>
@@ -1366,22 +1366,22 @@ TopDown(Mincut)     34         <strong>0</strong>          86          52       
 
 <pre><code>$ volcano_join_demo --compare --test clique_4
 
-Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  Pruned  BestCost
+Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-BottomUpDP          36          28        439           0         119       0      0      0       2471.34
-Transformational    0           0        340          340        120     300    392      0       2471.34
-TopDown(Naive)      49          27         84           60         65       0      0      0       2471.34
-TopDown(Mincut)     49           0         84           60         65       0      0      0       2471.34</code></pre>
+DPSub               50           0        466           0         111       0      0    111       0       4900.00
+Transformational    0            0        190         186          43     290    290      0       0       4900.00
+TopDown(Naive)      49           0        119          74          43       0      0      0       0       4900.00
+TopDown(Mincut)     49           0        119          74          43       0      0      0       0       4900.00</code></pre>
 
 <ul>
   <li>Clique 是最坏情况：所有子集都连通，Mincut 与 Naive 渐近相同 (49 vs 49)</li>
   <li>但 Mincut 仍保证 <strong>rejected=0</strong>——每个生成的子集都是连通的，无需过滤</li>
-  <li>Transformational duplicates=300 展示了 dense graph 上规则重复的爆炸性增长</li>
+  <li>Transformational duplicates=290 展示了 dense graph 上规则重复的爆炸性增长</li>
 </ul>
 
 <h3>7.6 BC-tree 结构验证</h3>
 
-<p>以下数据来自 <a href="../tests/test_join_search.cpp#L212"><code>test_join_search.cpp</code> Test 10</a>，验证 BC-tree 构建的正确性：</p>
+<p>以下数据来自 <a href="../tests/test_join_search.cpp#L311"><code>test_join_search.cpp</code> Test 13</a>，验证 BC-tree 构建的正确性：</p>
 
 <table>
   <tr><th>测试图</th><th>双连通分量数</th><th>关节点数</th><th>理论预期</th></tr>
@@ -1400,7 +1400,7 @@ TopDown(Mincut)     49           0         84           60         65       0   
     star_4 (29% reduction) > cycle_4 (21%) > clique_4 (0%)。图越稀疏，关节点越多，BC-tree 的优化空间越大。</li>
   <li><strong>branches_pruned 仍为 0</strong> —
     当前 LowerBound = sum(scan_costs) 太弱，B&B 剪枝从未触发。改进下界（如利用缓存的子计划代价）是教学下一步。</li>
-  <li><strong>TopDown 的 plans_costed 始终 ≤ BottomUpDP</strong> —
+  <li><strong>TopDown 的 plans_costed 始终 ≤ DPSub</strong> —
     memoization + 按需计算避免了预填充所有 DP 单元格。</li>
 </ol>
 

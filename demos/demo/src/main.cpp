@@ -181,6 +181,9 @@ int main(int argc, char **argv) {
       for (const auto &name : strategy_names) {
         auto strategy = MakeStrategy(name);
         auto result = strategy->Search(tc.graph, tc.stats, property);
+        if (!result.has_plan) {
+          throw std::runtime_error(strategy->Name() + " produced no plan for " + test_name);
+        }
         results.emplace_back(strategy->Name(), result.trace);
 
         // Also export individual traces if --out is given
@@ -206,6 +209,9 @@ int main(int argc, char **argv) {
 
       auto strategy = MakeStrategy(strategy_name);
       auto result = strategy->Search(tc.graph, tc.stats, property);
+      if (!result.has_plan) {
+        throw std::runtime_error(strategy->Name() + " produced no plan for " + test_name);
+      }
 
       std::cout << "Strategy: " << strategy->Name() << "\n";
       std::cout << "Test: " << test_name << " (" << tc.description << ")\n";

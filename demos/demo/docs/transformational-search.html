@@ -128,8 +128,8 @@
 <h2 id="scope">1. 文档定位</h2>
 
 <p>
-  当前项目里有三种 join order search strategy：
-  <code>BottomUpDP</code>、<code>Transformational</code>、<code>TopDownPartitioning</code>。
+  当前项目里有四个可直接比较的 join order search 输出：
+  <code>DPSub</code>、<code>Transformational</code>、<code>TopDown(Naive)</code>、<code>TopDown(Mincut)</code>。
   本文只聚焦 <code>Transformational</code>。
 </p>
 
@@ -306,8 +306,10 @@ MemoStore::InsertExpression(expr):
   // Phase 2: 再在 memo 上做 property-aware physical optimization
   plan = OptimizeGroup(graph, full, required_property, trace)
 
-  result.best_plan = plan
-  result.trace.best_cost = plan.cost
+  if plan:
+    result.has_plan = true
+    result.best_plan = plan
+    result.trace.best_cost = plan.cost
   result.trace.plans_cached = best_cache.size()
   return result</code></pre>
 
@@ -618,7 +620,7 @@ MemoStore::InsertExpression(expr):
 <div class="callout callout-info">
   <strong>为什么 <code>partitions_explored</code> 是 0？</strong>
   当前实现的 seed 阶段确实枚举了 partitions，但没有把这个过程计入
-  <code>partitions_explored</code>。这个字段主要由 <code>BottomUpDP</code> 和
+  <code>partitions_explored</code>。这个字段主要由 <code>DPSub</code> 和
   <code>TopDownPartitioning</code> 使用。
 </div>
 
@@ -931,7 +933,7 @@ Required property: Any
 Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(a), SeqScan(b))), Sort[c.y](SeqScan(c)))
 Cost: 19651.6
 
-Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
 Transformational    0             0             34            27            12            16            24            0             0             19651.56</code></pre>
 
 <h3>9.4 Phase 2 physical optimization</h3>
@@ -1038,21 +1040,22 @@ Cost: 19651.6</code></pre>
   所以无需额外 root sort。
 </p>
 
-<h3>9.6 与三种策略对比</h3>
+<h3>9.6 与其他策略对比</h3>
 
 <pre><code>$ demos/demo/build/volcano_join_demo --compare --test chain_3
 
-Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
-BottomUpDP          4             2             37            0             20            0             0             20            0             19651.56
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
+DPSub               10            2             57            0             20            0             0             20            0             19651.56
 Transformational    0             0             34            27            12            16            24            0             0             19651.56
-TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56</code></pre>
+TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56
+TopDown(Mincut)     6             0             25            7             12            0             0             0             0             19651.56</code></pre>
 
 <p>
   这个对比很有代表性：
 </p>
 
 <ul>
-  <li>三种策略 cost 相同，说明都找到了同一个最优计划。</li>
+  <li>四种输出 cost 相同，说明都找到了同一个最优计划。</li>
   <li><code>Transformational</code> 有 <code>duplicates=16</code> 和 <code>rules=24</code>，展示规则变换的重复工作。</li>
   <li><code>Transformational</code> 的 <code>cache_hits=27</code>，说明物理优化阶段大量复用了 <code>(RelSet, Property)</code> 结果。</li>
   <li><code>TopDown(Naive)</code> costed plans 更少，因为它不先构造完整逻辑 memo，而是直接递归划分。</li>
@@ -1174,7 +1177,7 @@ OptimizeGroup()</code></pre>
 
 <ul>
   <li>它能稳定展示 transformation-based duplicate generation。</li>
-  <li>它和 BottomUpDP / TopDownPartitioning 的 trace 字段可以直接横向比较。</li>
+  <li>它和 DPSub / TopDownPartitioning 的 trace 字段可以直接横向比较。</li>
   <li>它的 two-phase 结构便于教学：先理解 memo，再理解 property-aware physical search。</li>
 </ul>
 
@@ -1189,7 +1192,7 @@ OptimizeGroup()</code></pre>
     <small>
       本文中的 on-demand Volcano 伪代码对照来自该文描述的 extensible optimizer 框架。
       本仓库也保存了本地副本：
-      <a href="../../book/Extensible-Query-Optimizers-in-Practice.pdf">book/Extensible-Query-Optimizers-in-Practice.pdf</a>。
+      <a href="../../../book/Extensible-Query-Optimizers-in-Practice.pdf">book/Extensible-Query-Optimizers-in-Practice.pdf</a>。
       Microsoft Research 页面：
       <a href="https://www.microsoft.com/en-us/research/publication/extensible-query-optimizers-in-practice/">publication page</a>。
     </small>
@@ -1209,8 +1212,8 @@ OptimizeGroup()</code></pre>
     <br>
     <small>
       分析 transformation-based join enumeration 的重复推导复杂度。
-      本仓库有手工转换的阅读版：
-      <a href="../../manual-html-output/Transformative-vldb1997.html">manual-html-output/Transformative-vldb1997.html</a>。
+      本仓库保存了 PDF 副本：
+      <a href="../../../join%20order/paper/Transformative-vldb1997%20.pdf">join order/paper/Transformative-vldb1997 .pdf</a>。
     </small>
   </li>
   <li>

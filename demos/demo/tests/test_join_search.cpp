@@ -42,9 +42,12 @@ void VerifyConsistency(const volcano::test::TestCase &tc) {
   auto result_tr = tr.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_td = td.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
-  Check(result_bu.best_plan.cost > 0, tc.name + ": DPSub found a plan");
-  Check(result_tr.best_plan.cost > 0, tc.name + ": Transformational found a plan");
-  Check(result_td.best_plan.cost > 0, tc.name + ": TopDown found a plan");
+  Check(result_bu.has_plan, tc.name + ": DPSub found a plan");
+  Check(result_tr.has_plan, tc.name + ": Transformational found a plan");
+  Check(result_td.has_plan, tc.name + ": TopDown found a plan");
+  Check(result_bu.best_plan.cost > 0, tc.name + ": DPSub plan has positive cost");
+  Check(result_tr.best_plan.cost > 0, tc.name + ": Transformational plan has positive cost");
+  Check(result_td.best_plan.cost > 0, tc.name + ": TopDown plan has positive cost");
 
   // All three should produce the same best cost
   CheckNear(result_bu.best_plan.cost, result_tr.best_plan.cost, 0.01,
@@ -77,7 +80,8 @@ int main() {
 
     volcano::DPSub bu;
     auto result = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
-    Check(result.best_plan.cost > 0, "two_table: plan found");
+    Check(result.has_plan, "two_table: plan found");
+    Check(result.best_plan.cost > 0, "two_table: plan has positive cost");
     Check(result.trace.partitions_explored > 0, "two_table: partitions explored");
     Check(result.trace.plans_costed > 0, "two_table: plans costed");
     Check(result.trace.dp_cells_filled > 0, "two_table: DP cells filled");
@@ -124,7 +128,8 @@ int main() {
     volcano::TopDownPartitioning td;
     auto result = td.Search(tc.graph, tc.stats,
                             volcano::RequiredProperty::Sorted({"b", "x"}));
-    Check(result.best_plan.cost > 0, "sorted: plan found");
+    Check(result.has_plan, "sorted: plan found");
+    Check(result.best_plan.cost > 0, "sorted: plan has positive cost");
 
     // Sorted plan should be at least as expensive as the Any plan
     auto result_any = td.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
@@ -137,9 +142,101 @@ int main() {
               << " cost=" << result_any.best_plan.cost << "\n";
   }
 
-  // --- Test 7: Transformational duplicates scale ---
+  // --- Test 7: Sorted root property fallback across strategies ---
   {
-    std::cout << "Test 7: Transformational duplicates\n";
+    std::cout << "Test 7: Sorted root property fallback across strategies\n";
+    const auto &tc = volcano::test::TestCase::Lookup("chain_3");
+
+    const auto property = volcano::RequiredProperty::Sorted({"a", "not_join_key"});
+    volcano::DPSub bu;
+    volcano::Transformational tr;
+    volcano::TopDownPartitioning td;
+    volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
+
+    auto result = bu.Search(tc.graph, tc.stats, property);
+    auto result_tr = tr.Search(tc.graph, tc.stats, property);
+    auto result_td = td.Search(tc.graph, tc.stats, property);
+    auto result_mincut = td_mincut.Search(tc.graph, tc.stats, property);
+    auto result_any = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+
+    Check(result.has_plan, "dpsub sorted fallback: plan found");
+    Check(result_tr.has_plan, "transformational sorted fallback: plan found");
+    Check(result_td.has_plan, "topdown sorted fallback: plan found");
+    Check(result_mincut.has_plan, "topdown mincut sorted fallback: plan found");
+    Check(result.best_plan.op == volcano::PhysicalOp::SortEnforcer,
+          "dpsub sorted fallback: root SortEnforcer used");
+    Check(result.best_plan.property == property,
+          "dpsub sorted fallback: required property preserved");
+    Check(result.best_plan.cost >= result_any.best_plan.cost,
+          "dpsub sorted fallback: sorted cost >= any cost");
+    CheckNear(result.best_plan.cost, result_tr.best_plan.cost, 0.01,
+              "sorted fallback: DPSub == Transformational cost");
+    CheckNear(result.best_plan.cost, result_td.best_plan.cost, 0.01,
+              "sorted fallback: DPSub == TopDown cost");
+    CheckNear(result_td.best_plan.cost, result_mincut.best_plan.cost, 0.01,
+              "sorted fallback: TopDown Mincut == Naive cost");
+
+    std::cout << "  sorted_fallback_plan: " << result.best_plan.ToString()
+              << " cost=" << result.best_plan.cost << "\n";
+  }
+
+  // --- Test 8: SearchResult no-plan state ---
+  {
+    std::cout << "Test 8: SearchResult no-plan state\n";
+    volcano::JoinGraph graph;
+    volcano::StatsCatalog stats;
+
+    volcano::DPSub bu;
+    volcano::Transformational tr;
+    volcano::TopDownPartitioning td;
+
+    auto result_bu = bu.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_tr = tr.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_td = td.Search(graph, stats, volcano::RequiredProperty::Any());
+
+    Check(!result_bu.has_plan, "empty graph: DPSub reports no plan");
+    Check(!result_tr.has_plan, "empty graph: Transformational reports no plan");
+    Check(!result_td.has_plan, "empty graph: TopDown reports no plan");
+    Check(result_bu.trace.best_cost == 0.0, "empty graph: DPSub best_cost is 0");
+    Check(result_tr.trace.best_cost == 0.0, "empty graph: Transformational best_cost is 0");
+    Check(result_td.trace.best_cost == 0.0, "empty graph: TopDown best_cost is 0");
+  }
+
+  // --- Test 9: StatsCatalog drives cost estimates ---
+  {
+    std::cout << "Test 9: StatsCatalog drives cost estimates\n";
+    volcano::JoinGraph graph;
+    graph.AddRelation("a", "table_a", 1000.0, 1000.0);
+    graph.AddRelation("b", "table_b", 500.0, 500.0);
+    graph.AddPredicate({"a", "x"}, {"b", "x"}, 0.5);
+
+    volcano::StatsCatalog stats;
+    stats.AddRelationStats("a", {10.0, 10.0});
+    stats.AddRelationStats("b", {20.0, 20.0});
+    stats.AddSelectivity({"a", "x"}, {"b", "x"}, 0.1);
+
+    volcano::DPSub bu;
+    volcano::Transformational tr;
+    volcano::TopDownPartitioning td;
+
+    auto result_bu = bu.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_tr = tr.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_td = td.Search(graph, stats, volcano::RequiredProperty::Any());
+
+    Check(result_bu.has_plan, "stats catalog: DPSub found a plan");
+    Check(result_tr.has_plan, "stats catalog: Transformational found a plan");
+    Check(result_td.has_plan, "stats catalog: TopDown found a plan");
+    CheckNear(result_bu.best_plan.cost, 80.0, 0.01,
+              "stats catalog: DPSub uses catalog rows/selectivity");
+    CheckNear(result_tr.best_plan.cost, 80.0, 0.01,
+              "stats catalog: Transformational uses catalog rows/selectivity");
+    CheckNear(result_td.best_plan.cost, 80.0, 0.01,
+              "stats catalog: TopDown uses catalog rows/selectivity");
+  }
+
+  // --- Test 10: Transformational duplicates scale ---
+  {
+    std::cout << "Test 10: Transformational duplicates\n";
     // chain_4 (4 tables) should have more duplicates than chain_3 (3 tables)
     const auto &tc3 = volcano::test::TestCase::Lookup("chain_3");
     const auto &tc4 = volcano::test::TestCase::Lookup("chain_4");
@@ -157,9 +254,9 @@ int main() {
           "duplicates: chain_4 >= chain_3 (more relations = more duplicates)");
   }
 
-  // --- Test 8: TopDown branch-and-bound ---
+  // --- Test 11: TopDown branch-and-bound ---
   {
-    std::cout << "Test 8: TopDown branch-and-bound\n";
+    std::cout << "Test 11: TopDown branch-and-bound\n";
     const auto &tc = volcano::test::TestCase::Lookup("clique_4");
 
     volcano::TopDownPartitioning td;
@@ -169,8 +266,10 @@ int main() {
     // With toy-sized scan costs (=rows), the lower bound may be too weak to
     // trigger pruning. This is expected behavior — pruning effectiveness
     // depends on lower-bound quality relative to the cost model.
-    Check(result.best_plan.cost > 0,
+    Check(result.has_plan,
           "topdown: found a plan for clique_4");
+    Check(result.best_plan.cost > 0,
+          "topdown: plan has positive cost for clique_4");
     std::cout << "  branches_pruned: " << result.trace.branches_pruned
               << " (may be 0 if lower bound too weak for toy data)\n";
     std::cout << "  partitions_explored: " << result.trace.partitions_explored << "\n";
@@ -178,9 +277,9 @@ int main() {
     std::cout << "  plans_costed: " << result.trace.plans_costed << "\n";
   }
 
-  // --- Test 9: Mincut partitioner correctness ---
+  // --- Test 12: Mincut partitioner correctness ---
   {
-    std::cout << "Test 9: Mincut partitioner correctness\n";
+    std::cout << "Test 12: Mincut partitioner correctness\n";
     const auto &tc = volcano::test::TestCase::Lookup("chain_3");
 
     // Mincut vs Naive: same best cost
@@ -209,9 +308,9 @@ int main() {
               << " cost=" << result_mincut.best_plan.cost << "\n";
   }
 
-  // --- Test 10: Mincut BC-tree structure ---
+  // --- Test 13: Mincut BC-tree structure ---
   {
-    std::cout << "Test 10: Mincut BC-tree structure\n";
+    std::cout << "Test 13: Mincut BC-tree structure\n";
 
     // Chain a-b-c-d: articulation points are b and c (edges are bicomponents)
     {
@@ -248,9 +347,9 @@ int main() {
     }
   }
 
-  // --- Test 11: RelSet connectivity functions ---
+  // --- Test 14: RelSet connectivity functions ---
   {
-    std::cout << "Test 11: JoinGraph connectivity\n";
+    std::cout << "Test 14: JoinGraph connectivity\n";
     const auto &tc = volcano::test::TestCase::Lookup("chain_3");
     const auto &graph = tc.graph;
 
@@ -272,9 +371,9 @@ int main() {
     Check(graph.IsValidJoinSplit(ab, RelSet{1} << 2, false), "a+b joined with c is valid");
   }
 
-  // --- Test 10: All test cases load ---
+  // --- Test 15: All test cases load ---
   {
-    std::cout << "Test 12: All test cases load\n";
+    std::cout << "Test 15: All test cases load\n";
     for (const auto &name : volcano::test::TestCase::AllNames()) {
       const auto &tc = volcano::test::TestCase::Lookup(name);
       Check(tc.graph.RelationCount() >= 2, name + ": has >= 2 relations");

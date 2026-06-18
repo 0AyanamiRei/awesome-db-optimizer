@@ -5,12 +5,28 @@
 
 namespace volcano {
 
-PlanPtr MakeScan(const Relation &relation) {
+namespace {
+
+double CrossingSelectivityFromStats(const JoinGraph &graph,
+                                    const StatsCatalog &stats,
+                                    RelSet left,
+                                    RelSet right) {
+  double selectivity = 1.0;
+  for (const auto &predicate : graph.CrossingPredicates(left, right)) {
+    selectivity *= stats.LookupSelectivity(predicate.left, predicate.right);
+  }
+  return selectivity;
+}
+
+} // namespace
+
+PlanPtr MakeScan(const Relation &relation, const StatsCatalog &stats) {
+  const auto &relation_stats = stats.LookupRelation(relation.alias);
   auto plan = std::make_shared<PhysicalPlan>();
   plan->op = PhysicalOp::SeqScan;
   plan->relset = RelSet{1} << relation.id;
-  plan->rows = relation.rows;
-  plan->cost = relation.scan_cost;
+  plan->rows = relation_stats.rows;
+  plan->cost = relation_stats.scan_cost;
   plan->property = RequiredProperty::Any();
   plan->relation_alias = relation.alias;
   return plan;
@@ -29,12 +45,14 @@ PlanPtr MakeSort(PlanPtr child, const ColumnRef &sort_key) {
 
 PlanPtr MakeJoin(PhysicalOp op, PlanPtr left, PlanPtr right,
                  const JoinGraph &graph,
+                 const StatsCatalog &stats,
                  const JoinPredicate *predicate,
                  const RequiredProperty &property) {
   auto plan = std::make_shared<PhysicalPlan>();
   plan->op = op;
   plan->relset = left->relset | right->relset;
-  plan->rows = left->rows * right->rows * graph.CrossingSelectivity(left->relset, right->relset);
+  plan->rows = left->rows * right->rows *
+               CrossingSelectivityFromStats(graph, stats, left->relset, right->relset);
   plan->property = property;
   plan->left = std::move(left);
   plan->right = std::move(right);

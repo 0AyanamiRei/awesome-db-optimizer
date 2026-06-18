@@ -48,6 +48,7 @@ private:
   // Seed singleton plans (size-1 base cases).
   void FillRelation(CacheTable &cache, const JoinGraph &graph,
                     RelSet singleton, const Relation &relation,
+                    const StatsCatalog &stats,
                     SearchTrace &trace);
 };
 

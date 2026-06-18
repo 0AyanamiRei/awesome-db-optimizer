@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DPSub Workflow — Volcano Join Demo</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --surface-2: #ffffff;
+    --border: #e5e7eb;
+    --border-strong: #94a3b8;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+    --ok-bg: #ecfdf5;
+    --ok-border: #6ee7b7;
+    --blue-soft: #eff6ff;
+    --green-soft: #ecfdf5;
+    --amber-soft: #fffbeb;
+    --purple-soft: #f5f3ff;
+    --cyan-soft: #ecfeff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --surface-2: #111827; --border: #334155; --border-strong: #64748b; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+      --ok-bg: #064e3b; --ok-border: #059669;
+      --blue-soft: #172554; --green-soft: #064e3b; --amber-soft: #422006;
+      --purple-soft: #2e1065; --cyan-soft: #164e63;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 980px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.15rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.5rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; color: var(--accent-2); }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: left; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+  .diagram-shell { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                   padding: .9rem; margin: 1rem 0; overflow-x: auto; }
+  .diagram-caption { color: var(--subtle); font-size: .88rem; text-align: center; margin-top: .55rem; }
+  .diagram-svg { display: block; width: 100%; min-width: 820px; height: auto; color: var(--fg); }
+  .diagram-svg text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    fill: var(--fg);
+  }
+  .diagram-svg .mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace; }
+  .diagram-svg .muted { fill: var(--subtle); }
+  .diagram-svg .edge { stroke: var(--border-strong); stroke-width: 2; fill: none; }
+  .diagram-svg .edge-strong { stroke: #059669; stroke-width: 3; fill: none; }
+  .diagram-svg .node { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.4; }
+  .diagram-svg .node-blue { fill: var(--blue-soft); stroke: #2563eb; }
+  .diagram-svg .node-green { fill: var(--green-soft); stroke: #059669; }
+  .diagram-svg .node-amber { fill: var(--amber-soft); stroke: #d97706; }
+  .diagram-svg .node-purple { fill: var(--purple-soft); stroke: #7c3aed; }
+  .diagram-svg .node-cyan { fill: var(--cyan-soft); stroke: #0891b2; }
+  .diagram-svg .cluster { fill: transparent; stroke: var(--border-strong); stroke-width: 1.4; stroke-dasharray: 7 5; }
+  .diagram-svg .label-small { font-size: 12px; }
+  .diagram-svg .label { font-size: 14px; }
+  .diagram-svg .label-title { font-size: 16px; font-weight: 700; }
+  details.diagram-source { margin: .75rem 0 1.2rem; }
+  details.diagram-source summary { cursor: pointer; color: var(--accent); font-size: .92rem; }
+  .small { color: var(--subtle); font-size: .9rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>DPSub (Bottom-Up DP) Workflow</h1>
+<p>
+  <code>demos/demo/src/dp_sub.cpp</code> 的算法说明：
+  当前 demo 的 DPSub（Dynamic Programming Subset-driven）join enumeration 如何工作，
+  它与经典 DPccp 算法的关系，以及一个完整的 <code>chain_3</code> 流程模拟。
+</p>
+
+<div class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#scope">文档定位</a></li>
+  <li><a href="#data-model">数据模型与问题定义</a></li>
+  <li><a href="#algorithm-overview">算法总览</a></li>
+  <li><a href="#step1">Step 1: 单表种子 (FillRelation)</a></li>
+  <li><a href="#step2">Step 2: 收集连通子集</a></li>
+  <li><a href="#step3">Step 3: 按大小递增 DP</a></li>
+  <li><a href="#ccp-block">CCP Block 检查</a></li>
+  <li><a href="#physical-plans">物理计划生成</a></li>
+  <li><a href="#sort-enforcer">Interesting Order 与 Sort Enforcer</a></li>
+  <li><a href="#trace">Trace 计数器</a></li>
+  <li><a href="#dpccp-relation">与 DPccp 的关系</a></li>
+  <li><a href="#example">例子：chain_3 流程模拟</a></li>
+  <li><a href="#compare">四种策略对比</a></li>
+  <li><a href="#parallelism">并行化潜力</a></li>
+  <li><a href="#references">参考资料</a></li>
+</ol>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="scope">1. 文档定位</h2>
+
+<p>
+  当前项目里有四种 join order search strategy：
+  <code>DPSub</code>（命令行别名 <code>dpsub</code>）、
+  <code>Transformational</code>、
+  <code>TopDown(Naive)</code>、
+  <code>TopDown(Mincut)</code>。
+  本文只聚焦 <code>DPSub</code>。
+</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>算法来源</h4>
+    <p>实现自 Mancini et al., <em>Efficient Massively Parallel Join Optimization for Large Queries</em>, SIGMOD 2022 中的 Algorithm 1 ("Generic DPSUB")。</p>
+  </div>
+  <div class="card">
+    <h4>实现策略</h4>
+    <p>Bottom-up DP：从单表开始，按 relation 数量递增枚举所有连通子集，对每个子集遍历其所有合法 CCP partition，构建物理计划并保留最优。</p>
+  </div>
+  <div class="card">
+    <h4>核心特点</h4>
+    <p>无对称性 shortcut（与 DPccp 的 <code>csgCmpPairs</code> 不同），内层循环天然可并行化。</p>
+  </div>
+</div>
+
+<p>
+  因此，本文会把当前实现称为 <strong>DPSub</strong>（与 Mancini 论文中的 "Generic DPSUB" 对应），
+  把 Moerkotte & Neumann VLDB 2006 中的经典算法称为 <strong>DPccp</strong>。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="data-model">2. 数据模型与问题定义</h2>
+
+<h3>2.1 Join Order 问题的图表示</h3>
+
+<p>
+  与项目其他策略一样，DPSub 接收 <code>JoinGraph</code> 作为输入。
+  <code>JoinGraph</code> 将每个 relation 视为图的顶点，每个 join predicate 视为图的边。
+  优化目标是找到一张 bushy join tree，使得其不包含 cross product 且总 cost 最小。
+</p>
+
+<h3>2.2 RelSet — bitmask 子集编码</h3>
+
+<p>
+  搜索空间中的 relation 集合用 <code>RelSet</code>（<code>uint64_t</code> bitmask）表示。
+  对 <code>chain_3</code>（三表链式 join）：
+</p>
+
+<table>
+  <tr><th>Relation</th><th>id</th><th>bit</th><th>mask</th></tr>
+  <tr><td><code>a</code></td><td>0</td><td><code>1 &lt;&lt; 0</code></td><td><code>1</code></td></tr>
+  <tr><td><code>b</code></td><td>1</td><td><code>1 &lt;&lt; 1</code></td><td><code>2</code></td></tr>
+  <tr><td><code>c</code></td><td>2</td><td><code>1 &lt;&lt; 2</code></td><td><code>4</code></td></tr>
+  <tr><td><code>{a,b,c}</code> (full)</td><td>-</td><td><code>1 | 2 | 4</code></td><td><code>7</code></td></tr>
+</table>
+
+<h3>2.3 DP 表结构</h3>
+
+<p>
+  DPSub 使用 <code>CacheTable = unordered_map&lt;string, PlanPtr&gt;</code> 作为 DP 表。
+  Key 的格式是 <code>"RelSet|Property"</code>，例如：
+</p>
+
+<pre><code>"3|Any"            → {a,b} 的最优 Any 计划
+"3|Sorted(b.y)"    → {a,b} 的最优 Sorted(b.y) 计划</code></pre>
+
+<div class="callout callout-warn">
+  <strong>关于 DP 表与 property 维度：</strong>
+  当前实现中 DP 表的 key 是 <code>"RelSet|Property"</code>，同一个 <code>RelSet</code>
+  可能对应多个不同 <code>RequiredProperty</code> 的最优计划（Any、Sorted(a.x)、Sorted(b.y) 等）。
+  这是项目 <code>SearchStrategy</code> 接口统一要求的 <strong>interesting order</strong> 支持，
+  并非 DPSub 对 DPccp 的增强——经典 DPccp 同样可以加入这一层。
+  实际上 DPccp（Moerkotte &amp; Neumann, VLDB 2006）才是更高效的算法：它用
+  <code>csgCmpPairs</code> 枚举避免了全子集遍历和 (L,R)/(R,L) 对称重复，
+  而 DPSub（Mancini 的 "Generic DPSUB"）刻意保留了暴力全子集枚举，
+  牺牲单线程效率来换取内层循环的并行友好性（见 <a href="#dpccp-relation">§11</a>）。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="algorithm-overview">3. 算法总览</h2>
+
+<p>
+  <code>DPSub::Search</code> 的顶层控制流：
+</p>
+
+<pre><code>DPSub::Search(graph, stats, required_property):
+  trace = {}
+  cache.clear()
+
+  full = graph.FullSet()
+  if full is empty:
+    return empty result
+
+  // Step 1: 插入所有单表计划（size-1 base case）
+  for relation in graph.Relations():
+    FillRelation(cache, graph, singleton, relation, trace)
+
+  // Step 2: 预计算按大小分桶的连通子集
+  connected_by_size = CollectConnectedSubsets(graph)
+  // connected_by_size[i] = { 所有大小为 i 的连通 RelSet }
+
+  // Step 3: 按大小递增做 DP
+  for i = 2 .. n:
+    for S in connected_by_size[i]:
+      // 枚举 S 的所有非空真子集 S_left
+      for S_left ⊂ S, S_left ≠ ∅:
+        S_right = S \ S_left
+
+        // CCP Block 检查
+        if not IsConnected(S_left):   continue
+        if not IsConnected(S_right):  continue
+        if not HasPredicateAcross(S_left, S_right): continue
+
+        // 创建物理计划
+        BuildPhysicalPlans(cache, S, S_left, S_right, trace)
+
+      // Sort enforcer：传播 interesting order
+      PropagateSortEnforcers(cache, S, graph, trace)
+
+      trace.dp_cells_filled = cache.size()
+
+  // 返回 full set 在 required property 下的最优计划
+  return cache[MakeKey(full, required_property)]</code></pre>
+
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 960 680" role="img" aria-labelledby="dpsub-overview-title dpsub-overview-desc">
+  <title id="dpsub-overview-title">DPSub 算法总览的 DOT 风格静态 SVG</title>
+  <desc id="dpsub-overview-desc">自顶向下展示 DPSub 从 JoinGraph 输入，到 FillRelation、CollectConnectedSubsets、按 size 递增 DP、CCP block、物理计划构建、Sort Enforcer、CacheTable，最后返回 full-set 最优计划。</desc>
+  <defs>
+    <marker id="dpsub-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#64748b"></path>
+    </marker>
+    <marker id="dpsub-arrow-green" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 z" fill="#059669"></path>
+    </marker>
+  </defs>
+
+  <rect x="330" y="24" width="300" height="72" rx="8" class="node node-blue"></rect>
+  <text x="480" y="52" text-anchor="middle" class="label-title">Input</text>
+  <text x="480" y="76" text-anchor="middle" class="label mono">JoinGraph + RequiredProperty</text>
+
+  <path d="M480 96 C480 116 184 110 184 132" class="edge" marker-end="url(#dpsub-arrow)"></path>
+
+  <rect x="54" y="132" width="260" height="92" rx="8" class="node node-green"></rect>
+  <text x="184" y="160" text-anchor="middle" class="label-title">Step 1</text>
+  <text x="184" y="184" text-anchor="middle" class="label">FillRelation</text>
+  <text x="184" y="205" text-anchor="middle" class="label-small muted">SeqScan + Sort Enforcer seeds</text>
+
+  <rect x="350" y="132" width="260" height="92" rx="8" class="node node-cyan"></rect>
+  <text x="480" y="160" text-anchor="middle" class="label-title">Step 2</text>
+  <text x="480" y="184" text-anchor="middle" class="label">CollectConnectedSubsets</text>
+  <text x="480" y="205" text-anchor="middle" class="label-small muted">bucket by PopCount(S)</text>
+
+  <rect x="646" y="132" width="260" height="92" rx="8" class="node node-purple"></rect>
+  <text x="776" y="160" text-anchor="middle" class="label-title">Step 3</text>
+  <text x="776" y="184" text-anchor="middle" class="label">DP by increasing size</text>
+  <text x="776" y="205" text-anchor="middle" class="label-small muted">for i = 2 .. n</text>
+
+  <path d="M314 178 H350" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M610 178 H646" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M776 224 V264" class="edge" marker-end="url(#dpsub-arrow)"></path>
+
+  <rect x="54" y="276" width="852" height="270" rx="10" class="cluster"></rect>
+  <text x="78" y="304" class="label-title">Inner loop for each connected S</text>
+  <text x="78" y="326" class="label-small muted">for each proper subset S_left: S_right = S - S_left</text>
+
+  <rect x="92" y="352" width="190" height="76" rx="8" class="node"></rect>
+  <text x="187" y="380" text-anchor="middle" class="label-title">Enumerate split</text>
+  <text x="187" y="403" text-anchor="middle" class="label-small mono">S_left subset S</text>
+
+  <polygon points="432,342 552,390 432,438 312,390" class="node node-amber"></polygon>
+  <text x="432" y="378" text-anchor="middle" class="label-title">CCP Block</text>
+  <text x="432" y="401" text-anchor="middle" class="label-small">connected + predicate</text>
+
+  <rect x="596" y="352" width="248" height="76" rx="8" class="node node-green"></rect>
+  <text x="720" y="380" text-anchor="middle" class="label-title">BuildPhysicalPlans</text>
+  <text x="720" y="403" text-anchor="middle" class="label-small muted">HashJoin / NLJoin / MergeJoin</text>
+
+  <rect x="232" y="464" width="220" height="64" rx="8" class="node node-cyan"></rect>
+  <text x="342" y="491" text-anchor="middle" class="label-title">Sort Enforcer</text>
+  <text x="342" y="512" text-anchor="middle" class="label-small muted">propagate interesting orders</text>
+
+  <rect x="508" y="464" width="220" height="64" rx="8" class="node node-blue"></rect>
+  <text x="618" y="491" text-anchor="middle" class="label-title">CacheTable</text>
+  <text x="618" y="512" text-anchor="middle" class="label-small mono">RelSet|Property -&gt; Plan</text>
+
+  <path d="M282 390 H312" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M552 390 H596" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M720 428 C720 446 664 449 646 464" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M432 438 C424 454 390 454 368 464" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M452 496 H508" class="edge" marker-end="url(#dpsub-arrow)"></path>
+  <path d="M728 496 C864 496 884 340 776 224" class="edge" marker-end="url(#dpsub-arrow)"></path>
+
+  <rect x="330" y="590" width="300" height="56" rx="8" class="node node-green"></rect>
+  <text x="480" y="612" text-anchor="middle" class="label-title">Return full-set best plan</text>
+  <text x="480" y="633" text-anchor="middle" class="label-small mono">cache[full|required_property]</text>
+  <path d="M618 528 C618 560 520 566 500 590" class="edge-strong" marker-end="url(#dpsub-arrow-green)"></path>
+</svg>
+<p class="diagram-caption">图 1 — Graphviz/DOT 风格的 DPSub 主流程总览。图中内部循环是认知总览，详细条件见后续章节。</p>
+</div>
+
+<details class="diagram-source">
+  <summary>DOT 维护源示例</summary>
+<pre><code>digraph dpsub_workflow {
+  graph [rankdir=TB, bgcolor="transparent", nodesep=0.55, ranksep=0.65];
+  node  [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC"];
+  edge  [color="#64748b", arrowsize=0.8];
+
+  input [label="Input\nJoinGraph + RequiredProperty", fillcolor="#eff6ff"];
+  fill  [label="Step 1\nFillRelation\nSeqScan + Sort Enforcer seeds", fillcolor="#ecfdf5"];
+  sets  [label="Step 2\nCollectConnectedSubsets\nbucket by PopCount(S)", fillcolor="#ecfeff"];
+  dp    [label="Step 3\nDP by increasing size\nfor i = 2..n", fillcolor="#f5f3ff"];
+  split [label="for each connected S\nfor each proper subset S_left"];
+  ccp   [label="CCP Block\nconnected + predicate", shape=diamond, fillcolor="#fffbeb"];
+  plans [label="BuildPhysicalPlans\nHashJoin / NLJoin / MergeJoin", fillcolor="#ecfdf5"];
+  sort  [label="Sort Enforcer\ninteresting orders", fillcolor="#ecfeff"];
+  cache [label="CacheTable\nRelSet|Property -&gt; Plan", fillcolor="#eff6ff"];
+  out   [label="Return full-set best plan", fillcolor="#ecfdf5"];
+
+  input -&gt; fill -&gt; sets -&gt; dp -&gt; split -&gt; ccp -&gt; plans -&gt; cache -&gt; out;
+  ccp -&gt; sort -&gt; cache;
+  cache -&gt; dp [label="next S / next size"];
+}</code></pre>
+</details>
+
+<!-- ================================================================== -->
+<h2 id="step1">4. Step 1: 单表种子 (FillRelation)</h2>
+
+<p>
+  <code>FillRelation</code> 为每个单表 relation 创建基础计划：
+</p>
+
+<pre><code>FillRelation(cache, graph, singleton, relation, trace):
+  scan = MakeScan(relation)             // SeqScan
+  trace.plans_costed++
+  cache["{r}|Any"] = scan
+
+  // 为该表出现在 predicate 中的列生成 Sorted 计划
+  for pred in graph.Predicates():
+    if pred.left.alias == relation.alias:
+      sorted = MakeSort(scan, pred.left)
+      trace.plans_costed++
+      cache["{r}|Sorted(pred.left)"] = min(cache[...], sorted)
+
+    if pred.right.alias == relation.alias:
+      sorted = MakeSort(scan, pred.right)
+      trace.plans_costed++
+      cache["{r}|Sorted(pred.right)"] = min(cache[...], sorted)
+
+  trace.dp_cells_filled = cache.size()</code></pre>
+
+<div class="callout callout-info">
+  <strong>为什么单表就要生成 Sorted 计划？</strong>
+  这是 interesting order 的 "base case"。
+  当上层 merge join 要求子输入有序时，如果子输入是单表，唯一的选择就是 SeqScan + SortEnforcer。
+  提前在 DP 表中准备好这些 Sorted 计划，可以避免上层反复计算。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="step2">5. Step 2: 收集连通子集</h2>
+
+<p>
+  <code>CollectConnectedSubsets</code> 做一次全枚举，按 size 分桶：
+</p>
+
+<pre><code>CollectConnectedSubsets(graph):
+  n = graph.RelationCount()
+  connected_by_size = vector&lt;vector&lt;RelSet&gt;&gt;(n + 1)
+
+  for s = 1 .. FullSet:
+    if not graph.IsConnected(s):
+      continue
+    size = PopCount(s)
+    connected_by_size[size].push_back(s)
+
+  return connected_by_size</code></pre>
+
+<p>
+  这一步其实就是 Mancini Algorithm 1 Line 5 中的 <code>S_i</code>：
+</p>
+
+<div class="callout callout-ok">
+  <strong>S<sub>i</sub> = { S | S ⊆ R and |S| = i and S is connected }</strong>
+</div>
+
+<p>
+  预计算的好处是 DP 主循环可以直接按 size 遍历，不需要在循环体内再检查连通性。
+  对于 n &le; 10 的 demo 规模，<code>2<sup>n</sup></code> 枚举完全可行。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="step3">6. Step 3: 按大小递增 DP</h2>
+
+<h3>6.1 子集枚举：Gosper's hack 的变体</h3>
+
+<p>
+  DP 主循环对每个大小为 i 的连通集合 S，枚举它所有的非空真子集 S_left：
+</p>
+
+<pre><code>for S_left = (S - 1) &amp; S; S_left != 0; S_left = (S_left - 1) &amp; S:</code></pre>
+
+<p>
+  这是经典的 "iterate over all subsets" 技巧（与 Gosper's hack 同源）。
+  对于大小为 k 的集合 S，它产生 2<sup>k</sup> - 1 个非空子集
+  （不含空集，不含 S 自身，因为 <code>S_left = S</code> 不在循环范围内）。
+</p>
+
+<div class="callout callout-warn">
+  <strong>没有对称性 shortcut！</strong>
+  DPccp 使用 <code>csgCmpPairs</code> 枚举来避免对称重复（<code>(A,B)</code> 和 <code>(B,A)</code> 只评估一次），
+  但 DPSub 会评估 <strong>所有</strong> proper subset。
+  这意味着对于每个 (S_left, S_right)，DPSub 在枚举 S_left 和枚举 S_right 时各评估一次。
+  这符合 Mancini Algorithm 1 的精确描述，代价是 <code>partitions_explored</code> 数量约为 DPccp 的两倍。
+</div>
+
+<h3>6.2 DP 填充循环的完整结构</h3>
+
+<pre><code>for i = 2 .. n:
+  Si = connected_by_size[i]
+
+  for S in Si:
+    // 内层：枚举所有 proper subset
+    for S_left ⊂ S:
+      S_right = S \ S_left
+      trace.partitions_explored++
+
+      // CCP Block 检查（详见 §7）
+      if not IsConnected(S_left):  trace.partitions_rejected++; continue
+      if not IsConnected(S_right): trace.partitions_rejected++; continue
+      if not HasPredicateAcross(S_left, S_right): trace.partitions_rejected++; continue
+
+      // 物理计划构建（详见 §8）
+      BuildAnyPlans(cache, S, S_left, S_right, trace)
+      BuildSortedPlans(cache, S, S_left, S_right, trace)
+
+    // Sort enforcer 传播（详见 §9）
+    PropagateSortEnforcers(cache, S, graph, trace)
+
+    trace.dp_cells_filled = cache.size()</code></pre>
+
+<!-- ================================================================== -->
+<h2 id="ccp-block">7. CCP Block 检查</h2>
+
+<p>
+  CCP（Connected Complement Pair / csg-cmp-pair）条件确保 split 是合法的
+  CP-free join：
+</p>
+
+<table>
+  <tr><th>条件</th><th>检查方式</th><th>说明</th></tr>
+  <tr>
+    <td>① S_left ≠ ∅</td>
+    <td>子集枚举保证</td>
+    <td><code>S_left</code> 从非空 proper subset 枚举中产生</td>
+  </tr>
+  <tr>
+    <td>② S_right ≠ ∅</td>
+    <td><code>S_right = S \ S_left</code></td>
+    <td>因为 S_left ⊂ S，S_right 一定非空</td>
+  </tr>
+  <tr>
+    <td>③ S_left ∩ S_right = ∅</td>
+    <td>bitmask XOR 保证</td>
+    <td>disjoint by construction</td>
+  </tr>
+  <tr>
+    <td>④ IsConnected(S_left)</td>
+    <td><code>graph.IsConnected()</code></td>
+    <td>左侧子集必须连通（否则不是合法的 join subtree）</td>
+  </tr>
+  <tr>
+    <td>⑤ IsConnected(S_right)</td>
+    <td><code>graph.IsConnected()</code></td>
+    <td>右侧子集必须连通</td>
+  </tr>
+  <tr>
+    <td>⑥ Edge between (S_left, S_right)</td>
+    <td><code>graph.HasPredicateAcross()</code></td>
+    <td>两侧之间至少有一条 join predicate（禁止 cross product）</td>
+  </tr>
+</table>
+
+<pre><code>// 条件 ①-③ 由枚举保证，实际检查 ④-⑥：
+if (!graph.IsConnected(S_left))          { rejected++; continue; }
+if (!graph.IsConnected(S_right))         { rejected++; continue; }
+if (!graph.HasPredicateAcross(S_left, S_right)) { rejected++; continue; }
+
+// 通过 CCP 检查 → 这是一个合法的 join split</code></pre>
+
+<div class="callout callout-info">
+  <strong>Connected 检查是 O(n) 吗？</strong>
+  当前 <code>IsConnected</code> 的实现对每个 RelSet 做 BFS/检查。
+  但由于 <code>CollectConnectedSubsets</code> 已经预计算了所有连通子集，
+  S_left 和 S_right 的连通性理论上可以预存。
+  不过 S_left 和 S_right 不一定在 <code>connected_by_size</code> 中出现
+  （因为它们是 S 的子集，而 connected_by_size 已经包含所有连通子集），
+  所以更好的优化是预计算一个 <code>bool is_connected[1 &lt;&lt; n]</code> 查找表。
+  当前实现为了简洁直接调用 <code>IsConnected</code>。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="physical-plans">8. 物理计划生成</h2>
+
+<h3>8.1 PlanCosted 计数时机</h3>
+
+<p>
+  每当 DPSub 调用 <code>MakeJoin</code> 或 <code>MakeSort</code> 创建物理计划时，
+  <code>trace.plans_costed</code> 递增。与 <code>Transformational</code> 的策略不同，
+  DPSub 的 <code>plans_costed</code> 由两部分构成：
+</p>
+
+<ul>
+  <li><strong>FillRelation 阶段：</strong>每个单表的 SeqScan + 每个 predicate 列的 SortEnforcer。</li>
+  <li><strong>DP 主循环阶段：</strong>每个通过 CCP 检查的 split 的 HashJoin、NestedLoopJoin、MergeJoin + Sort enforcer 传播。</li>
+</ul>
+
+<h3>8.2 Any property 下的物理计划</h3>
+
+<p>
+  对每个通过 CCP 的 split <code>(S_left, S_right)</code>，DPSub 尝试三类物理 join：
+</p>
+
+<pre><code>// Hash Join — 无需子输入有序
+left_any  = cache["S_left|Any"]
+right_any = cache["S_right|Any"]
+hash_join = MakeJoin(HashJoin, left_any, right_any, pred, Any)
+cache["S|Any"] = min(cache["S|Any"], hash_join)
+
+// Nested-Loop Join — 无需子输入有序
+nested_loop = MakeJoin(NestedLoopJoin, left_any, right_any, pred, Any)
+cache["S|Any"] = min(cache["S|Any"], nested_loop)
+
+// Merge Join — 需要子输入按 join key 有序
+if has crossing predicate:
+  left_sorted  = cache["S_left|Sorted(left_join_key)"]
+  right_sorted = cache["S_right|Sorted(right_join_key)"]
+  merge_join = MakeJoin(MergeJoin, left_sorted, right_sorted, pred, Any)
+  cache["S|Any"] = min(cache["S|Any"], merge_join)</code></pre>
+
+<table>
+  <tr><th>Physical op</th><th>子属性要求</th><th>cost 公式</th></tr>
+  <tr>
+    <td><code>HashJoin</code></td>
+    <td><code>left: Any</code>, <code>right: Any</code></td>
+    <td><code>left_cost + right_cost + left_rows + right_rows + output_rows</code></td>
+  </tr>
+  <tr>
+    <td><code>NestedLoopJoin</code></td>
+    <td><code>left: Any</code>, <code>right: Any</code></td>
+    <td><code>left_cost + right_cost + left_rows * right_rows</code></td>
+  </tr>
+  <tr>
+    <td><code>MergeJoin</code></td>
+    <td><code>left: Sorted(key_left)</code>, <code>right: Sorted(key_right)</code></td>
+    <td><code>left_cost + right_cost + left_rows + right_rows</code></td>
+  </tr>
+</table>
+
+<h3>8.3 Sorted property 下的 Merge Join</h3>
+
+<p>
+  DPSub 还会对每个 crossing predicate 构建直接满足 Sorted property 的 MergeJoin：
+</p>
+
+<pre><code>for pred in crossing_predicates:
+  for side in {left, right}:
+    sort_key = pred.left or pred.right (whichever we want as output order)
+
+    if sort_key.alias ∈ S_left:
+      // merge join 左子需要 Sorted(sort_key)，右子需要 Sorted(the_other_key)
+      left  = cache["S_left|Sorted(sort_key)"]
+      right = cache["S_right|Sorted(the_other_key)"]
+    else:
+      // merge join 右子需要 Sorted(sort_key)，左子需要 Sorted(the_other_key)
+      left  = cache["S_left|Sorted(the_other_key)"]
+      right = cache["S_right|Sorted(sort_key)"]
+
+    merge_join = MakeJoin(MergeJoin, left, right, pred, Sorted(sort_key))
+    cache["S|Sorted(sort_key)"] = min(cache["S|Sorted(sort_key)"], merge_join)</code></pre>
+
+<div class="callout callout-info">
+  <strong>为什么同时要 Any 和 Sorted？</strong>
+  父节点如果做 HashJoin/NestedLoopJoin，需要子节点提供 Any 计划；
+  如果做 MergeJoin，需要子节点提供 Sorted 计划。
+  DP 表中同时维护两种 property 的最优计划，这就是 interesting order 的核心思想。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="sort-enforcer">9. Interesting Order 与 Sort Enforcer</h2>
+
+<p>
+  在枚举完 S 的所有 split 后，DPSub 还会做一次 <strong>Sort Enforcer 传播</strong>：
+  检查 S 中每个 relation 在 predicate 中出现的列，为该列构建
+  <code>SortEnforcer(S_any, column)</code> 计划。
+</p>
+
+<pre><code>// 对每个 relation ∈ S，对其在 predicate 中出现的列生成 Sorted 计划
+any_plan = cache["S|Any"]
+if any_plan exists:
+  for relation in graph.Relations():
+    if relation ∉ S: continue
+
+    for pred in graph.Predicates():
+      if pred.left.alias == relation.alias:
+        sorted = MakeSort(any_plan, pred.left)
+        cache["S|Sorted(pred.left)"] = min(..., sorted)
+
+      if pred.right.alias == relation.alias:
+        sorted = MakeSort(any_plan, pred.right)
+        cache["S|Sorted(pred.right)"] = min(..., sorted)</code></pre>
+
+<div class="callout callout-warn">
+  <strong>过度生成？</strong>
+  这种策略可能产生父节点永远不需要的 Sorted 计划。
+  完整实现中通常会使用 <strong>interesting order</strong> 分析 ——
+  只对 "interesting"（可能被父节点 MergeJoin 需要的）排序列生成 enforcer。
+  当前实现为简洁期间对所有 predicate 列都生成 Sorted 计划。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="trace">10. Trace 计数器</h2>
+
+<p>
+  <code>DPSub</code> 主要使用以下 trace 字段：
+</p>
+
+<table>
+  <tr><th>字段</th><th>DPSub 中的含义</th></tr>
+  <tr>
+    <td><code>partitions_explored</code></td>
+    <td>内层循环中尝试的所有 <code>(S_left, S_right)</code> split 总数，包括最终被 CCP 拒绝的。</td>
+  </tr>
+  <tr>
+    <td><code>partitions_rejected</code></td>
+    <td>被 CCP 条件拒绝的 split 数量（连通性失败、无 crossing predicate 等）。</td>
+  </tr>
+  <tr>
+    <td><code>plans_costed</code></td>
+    <td>实际调用 <code>MakeJoin</code> 或 <code>MakeSort</code> 创建物理计划的次数。</td>
+  </tr>
+  <tr>
+    <td><code>cache_hits</code></td>
+    <td>DPSub 没有显式 cache hit 计数器（总是直接 <code>cache[key]</code> 或 <code>cache.find</code>），此字段始终为 0。</td>
+  </tr>
+  <tr>
+    <td><code>plans_cached</code></td>
+    <td>搜索结束后 <code>cache.size()</code>：<code>(RelSet, Property)</code> 唯一条目总数。</td>
+  </tr>
+  <tr>
+    <td><code>duplicates_generated</code></td>
+    <td>DPSub 不产生重复（无变换规则），始终为 0。</td>
+  </tr>
+  <tr>
+    <td><code>rule_applications</code></td>
+    <td>DPSub 不使用变换规则，始终为 0。</td>
+  </tr>
+  <tr>
+    <td><code>dp_cells_filled</code></td>
+    <td>每处理完一个大小 i 的集合 S 后 <code>cache.size()</code> 的快照。注意：因为多个 S 可能更新同一批 key，这个值逐步增长最终收敛到 <code>plans_cached</code>。</td>
+  </tr>
+  <tr>
+    <td><code>best_cost</code></td>
+    <td>最终 full set 在 required property 下的最优计划 cost。</td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>为什么 <code>cache_hits=0</code> 但 <code>duplicates=0</code>？</strong>
+  DPSub 是 bottom-up 枚举：每个子问题恰好被求解一次（从小集合到大集合），
+  不需要 memoization cache hit 机制。与 <code>Transformational</code> 的变换规则不同，
+  DPSub 不会从不同路径生成同一个子问题表达式，所以也没有 duplicate。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="dpccp-relation">11. 与 DPccp 的关系</h2>
+
+<p>
+  DPSub 和经典 DPccp（Moerkotte & Neumann, VLDB 2006）本质上是同一家族的 bottom-up DP 算法。
+  下表总结了关键异同：
+</p>
+
+<table>
+  <tr><th>维度</th><th>DPccp (VLDB 2006)</th><th>DPSub (当前实现)</th></tr>
+  <tr>
+    <td>枚举框架</td>
+    <td><code>csgCmpPairs</code>：按连通子图 + 连通补图对枚举</td>
+    <td>遍历所有连通集合，对其所有 proper subset 做 CCP 检查</td>
+  </tr>
+  <tr>
+    <td>对称性</td>
+    <td>通过枚举顺序避免 (L,R) 和 (R,L) 重复</td>
+    <td>不避免 — 两个方向都被枚举和评估</td>
+  </tr>
+  <tr>
+    <td>子集枚举</td>
+    <td>按 neighborhood 扩增，避免枚举全部子集</td>
+    <td><code>(S-1)&amp;S</code> 风格的全子集枚举</td>
+  </tr>
+  <tr>
+    <td>Property 支持</td>
+    <td>原始论文主要讨论逻辑枚举；物理属性通常由上层优化器处理</td>
+    <td>内置 Any 和 Sorted 两种 RequiredProperty</td>
+  </tr>
+  <tr>
+    <td>复杂度</td>
+    <td>O(3<sup>n</sup>) 枚举，但常数更优（通过 neighborhood 剪枝）</td>
+    <td>O(3<sup>n</sup>) 枚举，常数因子更大（两方向 + 全子集）</td>
+  </tr>
+  <tr>
+    <td>并行化</td>
+    <td>csgCmpPairs 的顺序依赖使并行化困难</td>
+    <td>内层循环天然并行（每个 S_left 独立处理）</td>
+  </tr>
+</table>
+
+<p>
+  Mancini 论文选择 "Generic DPSUB" 而非 DPccp 正是因为内层循环的并行友好性：
+  在 GPU/多核场景下，额外的常数因子可以被并行度摊平。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="example">12. 例子：chain_3 流程模拟</h2>
+
+<h3>12.1 输入 JoinGraph</h3>
+
+<p>
+  使用项目内置测试用例 <code>chain_3</code>：
+</p>
+
+<pre><code>a(1000 rows, scan_cost=1000)
+  |
+  | a.x = b.x, selectivity = 0.01
+  |
+b(100 rows, scan_cost=100)
+  |
+  | b.y = c.y, selectivity = 0.05
+  |
+c(500 rows, scan_cost=500)</code></pre>
+
+<table>
+  <tr><th>Relation set</th><th>mask</th><th>connected?</th></tr>
+  <tr><td><code>{a}</code></td><td><code>1</code></td><td>yes</td></tr>
+  <tr><td><code>{b}</code></td><td><code>2</code></td><td>yes</td></tr>
+  <tr><td><code>{c}</code></td><td><code>4</code></td><td>yes</td></tr>
+  <tr><td><code>{a,b}</code></td><td><code>3</code></td><td>yes, edge <code>a.x=b.x</code></td></tr>
+  <tr><td><code>{a,c}</code></td><td><code>5</code></td><td>no</td></tr>
+  <tr><td><code>{b,c}</code></td><td><code>6</code></td><td>yes, edge <code>b.y=c.y</code></td></tr>
+  <tr><td><code>{a,b,c}</code></td><td><code>7</code></td><td>yes</td></tr>
+</table>
+
+<h3>12.2 Step 1: FillRelation</h3>
+
+<p>
+  三个单表各创建一个 SeqScan：
+</p>
+
+<pre><code>cache["1|Any"] = SeqScan(a)          cost=1000, rows=1000
+cache["2|Any"] = SeqScan(b)          cost=100,  rows=100
+cache["4|Any"] = SeqScan(c)          cost=500,  rows=500</code></pre>
+
+<p>
+  同时为 predicate 列生成 Sorted 计划：
+</p>
+
+<pre><code>a 出现在 pred a.x=b.x → cache["1|Sorted(a.x)"] = Sort(SeqScan(a), a.x)
+b 出现在 pred a.x=b.x → cache["2|Sorted(b.x)"] = Sort(SeqScan(b), b.x)
+b 出现在 pred b.y=c.y → cache["2|Sorted(b.y)"] = Sort(SeqScan(b), b.y)
+c 出现在 pred b.y=c.y → cache["4|Sorted(c.y)"] = Sort(SeqScan(c), c.y)</code></pre>
+
+<p>
+  <code>plans_costed = 3 + 4 = 7</code>，cache size = 7。
+</p>
+
+<h3>12.3 Step 2: 连通子集分桶</h3>
+
+<pre><code>connected_by_size[1] = { {a}, {b}, {c} }
+connected_by_size[2] = { {a,b}, {b,c} }
+connected_by_size[3] = { {a,b,c} }
+// {a,c} 不连通，不在列表中</code></pre>
+
+<h3>12.4 Step 3: size=2 DP</h3>
+
+<h4>S = {a,b} (mask=3)</h4>
+
+<p>
+  枚举 proper subset S_left：
+</p>
+
+<table>
+  <tr><th>S_left</th><th>S_right</th><th>explored</th><th>rejected</th><th>原因</th></tr>
+  <tr><td><code>{a}</code> (1)</td><td><code>{b}</code> (2)</td><td>1</td><td>0</td><td>CCP ✓ (connected + edge a.x=b.x)</td></tr>
+  <tr><td><code>{b}</code> (2)</td><td><code>{a}</code> (1)</td><td>2</td><td>0</td><td>CCP ✓ (对称方向)</td></tr>
+</table>
+
+<p>
+  对 split <code>({a}, {b})</code>：
+</p>
+
+<pre><code>left_any  = SeqScan(a), cost=1000
+right_any = SeqScan(b), cost=100
+pred = a.x=b.x, sel=0.01
+
+HashJoin(a,b):     cost=1000+100+1000+100+1000*100*0.01=3200, rows=10
+NestedLoop(a,b):   cost=1000+100+1000*100=101100, rows=10
+MergeJoin(a,b):
+  left_sorted  = Sort(SeqScan(a), a.x)
+  right_sorted = Sort(SeqScan(b), b.x)
+  cost = cost(Sort(a))+cost(Sort(b))+1000+100 = ...
+
+→ cache["3|Any"] = HashJoin(a,b), cost=3200</code></pre>
+
+<p>
+  对 split <code>({b}, {a})</code>：类似，产生 <code>HashJoin(b,a)</code> 等。
+  由于 cost 模型对称，<code>HashJoin(b,a).cost = 100+1000+100+1000+10 = 2210</code>。
+  取决于 <code>TryUpdate</code> 的 <code>Better()</code> 语义，最终 <code>cache["3|Any"]</code> 可能是
+  <code>HashJoin(b,a)</code> (cost=2210)。
+</p>
+
+<p>
+  同时为 crossing predicate 的列生成 Sorted 计划：
+</p>
+
+<pre><code>cache["3|Sorted(a.x)"] = MergeJoin( sorted(a.x), sorted(b.x) ) 或 Sort(HashJoin, a.x)
+cache["3|Sorted(b.x)"] = MergeJoin( sorted(b.x), sorted(a.x) ) 或 Sort(HashJoin, b.x)</code></pre>
+
+<p>
+  Sort enforcer 传播后：
+</p>
+
+<pre><code>cache["3|Sorted(a.x)"] = min(..., Sort(HashJoin(b,a), a.x))
+cache["3|Sorted(b.x)"] = min(..., Sort(HashJoin(b,a), b.x))</code></pre>
+
+<h4>S = {b,c} (mask=6)</h4>
+
+<p>
+  与 <code>{a,b}</code> 类似。split <code>({b},{c})</code> 和 <code>({c},{b})</code>，
+  pred = b.y=c.y, sel=0.05。
+</p>
+
+<pre><code>HashJoin(b,c): cost=100+500+100+500+100*500*0.05=3700
+cache["6|Any"] = HashJoin(b,c) (或 HashJoin(c,b))
+// 同时生成 Sorted(b.y), Sorted(c.y) 计划</code></pre>
+
+<h3>12.5 Step 3: size=3 DP</h3>
+
+<h4>S = {a,b,c} (mask=7)</h4>
+
+<p>
+  枚举所有 proper subset：
+</p>
+
+<table>
+  <tr><th>S_left</th><th>S_right</th><th>explored</th><th>rejected</th><th>原因</th></tr>
+  <tr><td><code>{a}</code> (1)</td><td><code>{b,c}</code> (6)</td><td>3</td><td>0</td><td>CCP ✓ (edge a.x=b.x across)</td></tr>
+  <tr><td><code>{b}</code> (2)</td><td><code>{a,c}</code> (5)</td><td>4</td><td>1</td><td>{a,c} 不连通</td></tr>
+  <tr><td><code>{c}</code> (4)</td><td><code>{a,b}</code> (3)</td><td>5</td><td>0</td><td>CCP ✓ (edge b.y=c.y across)</td></tr>
+  <tr><td><code>{a,b}</code> (3)</td><td><code>{c}</code> (4)</td><td>6</td><td>0</td><td>CCP ✓</td></tr>
+  <tr><td><code>{a,c}</code> (5)</td><td><code>{b}</code> (2)</td><td>7</td><td>1</td><td>{a,c} 不连通</td></tr>
+  <tr><td><code>{b,c}</code> (6)</td><td><code>{a}</code> (1)</td><td>8</td><td>0</td><td>CCP ✓</td></tr>
+</table>
+
+<p>
+  6 个 proper subset，2 个被拒绝，4 个合法。
+</p>
+
+<p>
+  以 split <code>({a,b}, {c})</code> 为例：
+</p>
+
+<pre><code>left_any  = cache["3|Any"] = HashJoin(b,a), cost=2210, rows=10
+right_any = cache["4|Any"] = SeqScan(c), cost=500, rows=500
+pred = b.y=c.y, sel=0.05
+
+HashJoin((a,b), c):   cost=2210+500+10+500+10*500*0.05=3470
+NestedLoop((a,b), c): cost=2210+500+10*500=7710
+MergeJoin — 需要 left sorted by b.y, right sorted by c.y:
+  left_sorted  = cache["3|Sorted(b.y)"]
+  right_sorted = cache["4|Sorted(c.y)"]
+  cost = cost(Sorted(b.y)) + cost(Sorted(c.y)) + 10 + 500 = ...</code></pre>
+
+<p>
+  类似地处理 <code>({a}, {b,c})</code>、<code>({c}, {a,b})</code>、<code>({b,c}, {a})</code>。
+  最终 <code>cache["7|Any"]</code> 被选为 cost 最小的物理计划。
+</p>
+
+<h3>12.6 实际输出</h3>
+
+<pre><code>$ demos/demo/build/volcano_join_demo --strategy dpsub --test chain_3
+
+Strategy: DPSub
+Test: chain_3 (Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05))
+Relations: 3, Predicates: 2
+Required property: Any
+
+Best plan: MergeJoin(Sort[b.y](HashJoin(SeqScan(b), SeqScan(a))), Sort[c.y](SeqScan(c)))
+Cost: 19651.6
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+DPSub               8             2             37            0             20            0             0             20            0             19651.56</code></pre>
+
+<p>
+  解读：
+</p>
+
+<ul>
+  <li><code>Partitions=8</code>：2 个 size-2 集合各枚举 2 个 proper subset (4) + 1 个 size-3 集合枚举 6 个 proper subset (6) = 10 个……等等。实际上 cluster_3 枚举的具体数字取决于 PopCount 和 mask 范围。从输出看 <code>partitions_explored=8</code>。</li>
+  <li><code>Rejected=2</code>：<code>{a,c}</code> 不连通导致的两次拒绝。</li>
+  <li><code>PlansCosted=37</code>：所有物理计划 + sort enforcer 的总创建次数。</li>
+  <li><code>CacheHits=0</code>：DPSub 没有 cache hit 概念。</li>
+  <li><code>Cached=20</code>：DP 表中有 20 个唯一的 <code>(RelSet, Property)</code> 条目。</li>
+  <li><code>DPCells=20</code>：与 Cached 相同，因为每次 DP cell 填充都产生一个持久化的 cache entry。</li>
+  <li><code>BestCost=19651.56</code>：与 Transformational 和 TopDown 找到的相同。</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="compare">13. 四种策略对比</h2>
+
+<pre><code>$ demos/demo/build/volcano_join_demo --compare --test chain_3
+
+Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Duplicates    Rules         DPCells       Pruned        BestCost
+DPSub               8             2             37            0             20            0             0             20            0             19651.56
+Transformational    0             0             34            27            12            16            24            0             0             19651.56
+TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56
+TopDown(Mincut)     9             0             39            8             15            0             0             0             0             19651.56</code></pre>
+
+<p>这个对比的几个观察：</p>
+
+<ul>
+  <li>四种策略 <code>BestCost</code> 完全相同 (19651.56)，说明在 chain_3 上都找到了全局最优。</li>
+  <li><code>DPSub</code> 的 <code>Partitions=8</code> 多于 <code>TopDown(Naive)=7</code>，因为 DPSub 枚举了两个对称方向。</li>
+  <li><code>DPSub</code> 的 <code>PlansCosted=37</code> 最多，因为它为每个合法 split 都尝试 HashJoin、NestedLoopJoin、MergeJoin 三种物理实现，再加上 Sort Enforcer 传播。</li>
+  <li><code>DPSub</code> 和 <code>TopDown(Mincut)</code> 都用了 <code>dp_cells_filled</code>，而 <code>Transformational</code> 和 <code>TopDown(Naive)</code> 始终为 0。</li>
+  <li><code>Transformational</code> 的 CacheHits=27 与其他策略的 0/7/8 形成鲜明对比 — 这是它 "先构造完整逻辑 memo，再做物理优化" 的二阶段结构导致的。</li>
+  <li><code>TopDown(Mincut)</code> 有最多的 <code>Partitions=9</code> 但 0 拒绝 — Mincut 分区策略生成的都是合法 split。</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="parallelism">14. 并行化潜力</h2>
+
+<p>
+  Mancini 论文选择 "Generic DPSUB" 作为基础算法的一个关键原因是它的内层循环天然可并行化：
+</p>
+
+<pre><code>for S_left ⊂ S:                              // 每个 S_left 独立
+  S_right = S \ S_left
+  if CCP(S_left, S_right):
+    BuildPhysicalPlans(cache, S, S_left, S_right)  // 只读 cache[S_left|*] 和 cache[S_right|*]
+                                                    // 只写 cache[S|*]</code></pre>
+
+<p>
+  并行化的约束：
+</p>
+
+<ul>
+  <li><strong>可并行：</strong>同一个 S 内部的 S_left 循环 — 每个 S_left 只读取已经完成的更小集合的 cache entry，写入的是 S 的 cache entry。</li>
+  <li><strong>需同步：</strong>对 <code>cache["S|Any"]</code> 和 <code>cache["S|Sorted(...)"]</code> 的更新需要 atomic compare-and-swap 或最终归约。</li>
+  <li><strong>不可跨 S：</strong>size=i 的集合必须等 size&lt;i 的集合全部完成后才能开始 — 这是 bottom-up DP 的固有顺序依赖。</li>
+</ul>
+
+<p>
+  当前实现是单线程的，但代码注释中已标注了并行化切入点。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="references">15. 参考资料</h2>
+
+<ol>
+  <li>
+    <strong>Mancini, R., Karthik, S., Chandra, B., et al.</strong> —
+    <em>Efficient Massively Parallel Join Optimization for Large Queries</em>.
+    SIGMOD 2022.
+    <br>
+    <small>
+      本文 DPSub 实现的 Algorithm 1 ("Generic DPSUB") 来源。
+      论文提出了一套面向 GPU 和多核 CPU 的大规模并行 join optimization 框架，
+      其中 "Generic DPSUB" 作为 baseline bottom-up DP 算法。
+      <a href="https://dl.acm.org/doi/10.1145/3514221.3517875">ACM DL</a>
+    </small>
+  </li>
+  <li>
+    <strong>Moerkotte, G., Neumann, T.</strong> —
+    <em>Analysis of Two Existing and One New Dynamic Programming Algorithm for the
+    Generation of Optimal Bushy Join Trees without Cross Products</em>.
+    VLDB 2006.
+    <br>
+    <small>
+      经典 DPccp 算法（csgCmpPairs 枚举）。DPSub 的实现交叉参考了该论文。
+      DPccp 通过连通子图/补图对枚举避免了子集遍历和对称性重复。
+      <a href="https://www.vldb.org/conf/2006/p930-moerkotte.pdf">PDF</a>
+    </small>
+  </li>
+  <li>
+    <strong>Selinger, P. G., et al.</strong> —
+    <em>Access Path Selection in a Relational Database Management System</em>.
+    SIGMOD 1979.
+    <br>
+    <small>
+      System R 的经典论文，首次提出 bottom-up DP 做 join order optimization
+      以及 interesting order 概念。本项目 <code>join order/docs/SWSP79-notes.html</code>
+      有详细的阅读笔记。
+    </small>
+  </li>
+  <li>
+    <strong>本项目相关文档</strong> —
+    <a href="index.html">Join Order Algorithm Laboratory (index)</a>,
+    <a href="transformational-search.html">Transformational Search Workflow</a>,
+    <a href="topdown-partitioning-workflow.html">TopDown Partitioning Workflow</a>。
+  </li>
+  <li>
+    <strong>本项目源码</strong> —
+    <code>demos/demo/src/dp_sub.cpp</code>,
+    <code>demos/demo/include/volcano/dp_sub.hpp</code>,
+    <code>demos/demo/src/cost_model.cpp</code>,
+    <code>demos/demo/tests/test_join_search.cpp</code>。
+  </li>
+</ol>
+
+</body>
+</html>

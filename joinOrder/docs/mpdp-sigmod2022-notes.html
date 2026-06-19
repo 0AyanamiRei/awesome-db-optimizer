@@ -406,20 +406,103 @@ window.MathJax = {
 
 <h2 id="s4">5. 原文 §3.2：一般图上的 block + grow</h2>
 
-<p>一般图有 cycle，删边不一定切开图。Figure 5 里的边 \((1,4)\) 就是例子：删掉以后，1 到 4 仍可能通过 2/3 路径连通，所以不能形成一个合法 Join-Pair。这就是 MPDP 从 tree 过渡到 general graph 的难点。</p>
+<div class="callout warn">
+<strong>先不要急着读 Algorithm 3。</strong>这一节真正要解决的问题只有一个：tree 上“删一条边就能得到左右两边”，但一般图里有环，删边不一定能把图切开。MPDP 需要一种新的办法，从有环的 join graph 里生成合法的 \((S_{left}, S_{right})\)。
+</div>
+
+<h3>5.1 为什么 tree 上的删边法失效</h3>
+
+<p>在 tree join graph 里，任意一条边都是唯一通路。删掉它，图一定断成左右两个连通部分，所以 Algorithm 2 可以直接用“删边”生成 Join-Pair。</p>
+
+<p>一般图里有 cycle 时就不行。假设有一个四边形：</p>
+
+<pre><code>1 --- 4
+|     |
+2 --- 3</code></pre>
+
+<p>删掉边 \((1,4)\) 以后，1 仍然可以沿着 \(1 \rightarrow 2 \rightarrow 3 \rightarrow 4\) 到达 4。也就是说，删边没有产生左右两块。Figure 5 里的 \((1,4)\) 就是这个问题的原文例子。</p>
 
 <figure class="paper-figure">
   <img src="assets/mpdp-sigmod2022/figure-5-general-graph-blocks.png" alt="Figure 5: Example Join Graph with 9 Relations" loading="lazy">
   <figcaption>原文 Figure 5：9 个 relation 的 join graph。原文展示了 block 内 CCP 如何映射为整个 set \(S\) 的 CCP，例如 \((lb, rb) \rightarrow (S_{left}, S_{right})\)。</figcaption>
 </figure>
 
-<p>MPDP generalization 的核心是 hybrid enumeration：</p>
+<h3>5.2 这一节只需要三个术语</h3>
+
+<table>
+  <thead>
+    <tr><th>术语</th><th>先用这个直觉理解</th><th>在 MPDP 里做什么</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>cut vertex</td>
+      <td>删掉它以后，图会被切成更多块的“关节点”。</td>
+      <td>告诉我们哪些 relation 是多个结构块之间的连接点。</td>
+    </tr>
+    <tr>
+      <td>block</td>
+      <td>内部比较结实的一块；不能再靠删一个点轻易拆开。</td>
+      <td>MPDP 不在整个 \(S\) 上枚举 subset，而是在每个 block 内枚举局部左右种子。</td>
+    </tr>
+    <tr>
+      <td>block-cut tree</td>
+      <td>把复杂图压成“block - cut vertex - block”的树状骨架。</td>
+      <td>帮助理解为什么局部切分可以沿着关节点扩展到全局切分。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>以 Figure 5 中论文直接给出的例子为准：</p>
+
+<pre><code>S = {1, 2, 3, 4, 5}
+Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
+
+<p>这里 `{1,2,3,4}` 是一个有环的 block，`{4,5}` 是一条连接出去的 bridge block。MPDP 的第一步就是：不要枚举 \(S\) 的所有 subset，先只在这些 block 内枚举。</p>
+
+<h3>5.3 grow 到底在做什么</h3>
+
+<p>Algorithm 3 里最难读的函数是 <code>grow(lb, S \ rb)</code>。可以把它翻译成一句话：</p>
+
+<div class="callout info">
+从局部左种子 <code>lb</code> 出发，只允许在 <code>S \ rb</code> 里走；所有能走到的点，都归到全局左边 \(S_{left}\)。
+</div>
+
+<p>也就是说，<code>rb</code> 是禁区。grow 不是随便扩展，而是在“不能进入右种子”的限制下做 reachability。</p>
+
+<table>
+  <thead>
+    <tr><th>block 内局部切分</th><th>grow 怎么走</th><th>得到的全局 Join-Pair</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>\(lb=\{1\}\), \(rb=\{2,3,4\}\)</td>
+      <td>\(S \setminus rb = \{1,5\}\)。从 1 出发，不能经过 2/3/4，因此到不了 5。</td>
+      <td>\((\{1\}, \{2,3,4,5\})\)</td>
+    </tr>
+    <tr>
+      <td>\(lb=\{4\}\), \(rb=\{1,2,3\}\)</td>
+      <td>\(S \setminus rb = \{4,5\}\)。从 4 出发，可以走到 5。</td>
+      <td>\((\{4,5\}, \{1,2,3\})\)</td>
+    </tr>
+    <tr>
+      <td>在 block \(\{4,5\}\) 里取 \(lb=\{4\}\), \(rb=\{5\}\)</td>
+      <td>\(S \setminus rb = \{1,2,3,4\}\)。从 4 出发，会把 1/2/3 也吸到左边。</td>
+      <td>\((\{1,2,3,4\}, \{5\})\)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这三个例子就是 Figure 5 里 \((lb, rb) \rightarrow (S_{left}, S_{right})\) 的核心。block 只决定“切口在哪里”，grow 负责把切口外面挂着的 relation 自动归到对应一侧。</p>
+
+<h3>5.4 现在再读 Algorithm 3</h3>
+
+<p>有了上面的直觉，Algorithm 3 可以按四步读：</p>
 
 <ol>
-  <li>在 \(S\) 的诱导子图中找所有 biconnected component/block。</li>
-  <li>只在每个 block 内枚举 \(lb\) 和 \(rb = block \setminus lb\)，并检查它们是不是 block 内的 CCP。</li>
-  <li>用 <code>grow(lb, S \ rb)</code> 把局部左种子扩展到整个 \(S\) 的左侧；右侧则是 \(S \setminus S_{left}\)。</li>
-  <li>对得到的 \((S_{left}, S_{right})\) 调 cost model，并更新 <code>BestPlan(S)</code>。</li>
+  <li><strong>选定一个 connected set \(S\)。</strong>这和 DPSUB/MPDP:Tree 一样，外层仍按 set size 推进。</li>
+  <li><strong>找 \(G[S]\) 里的 blocks。</strong>如果 \(S\) 内部有环，block 会把这些环结构圈出来。</li>
+  <li><strong>在每个 block 内枚举 \(lb/rb\)。</strong>这一步是局部枚举，不是枚举整个 \(S\) 的 powerset。</li>
+  <li><strong>用 grow 扩展成全局 pair。</strong>得到 \((S_{left}, S_{right})\) 后，才调用 <code>CreatePlan</code> 并更新 <code>BestPlan(S)</code>。</li>
 </ol>
 
 <figure class="paper-figure">
@@ -427,9 +510,11 @@ window.MathJax = {
   <figcaption>原文 Algorithm 3：一般图 MPDP。它不是枚举 \(S\) 的全部 subset，而是枚举每个 block 内的 subset，再通过 grow 扩展回全局 pair。</figcaption>
 </figure>
 
-<p><code>grow</code> 函数可以理解为“带禁区的可达性扩展”。输入源点集合和允许访问的 restricted set，返回从源点出发能在 restricted set 内到达的全部点。这样，block 内的一次局部切分会沿着 block-cut tree 的结构向外吸收所有属于同一侧的 relation。</p>
+<p>这就是论文说的 hybrid enumeration：在 block 内有点像 vertex-based enumeration，但不是对整个 \(S\) 做；在 block 之间又利用 cut structure，有点像 edge/tree-aware enumeration。它的目的不是改变 DP 的状态，而是让每个状态 \(S\) 的候选 Join-Pair 更少、更接近真正的 CCP-Pair。</p>
 
-<p>原文的正确性证明围绕两句话：</p>
+<h3>5.5 为什么这样不会漏候选</h3>
+
+<p>证明可以先记成两句话：</p>
 
 <ol>
   <li>任何全局 CCP-Pair 的跨边都落在同一个 block 内。如果跨边分布在不同 block，会构造出跨多个 block 的 cycle，违反 block 的 maximality。</li>

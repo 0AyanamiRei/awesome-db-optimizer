@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPDP / Efficient Massively Parallel Join Optimization · 论文笔记</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #2563eb;
+    --accent-2: #0f766e;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; line-height: 1.35; }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #eff6ff;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.95rem;
+  }
+  .callout.info { border-left-color: #10b981; background: #ecfdf5; }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.red { border-left-color: #ef4444; background: #fef2f2; }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--th-bg); font-weight: 600; }
+
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.55rem 1rem;
+    border-left: 4px solid var(--border);
+    color: #333;
+    background: #fffdf7;
+  }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: 0.15rem 0; break-inside: avoid; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .tag {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1e40af;
+    font-size: 0.78rem;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    margin-right: 0.3rem;
+    font-family: sans-serif;
+  }
+  .tag.green { background: #d1fae5; color: #065f46; }
+  .tag.amber { background: #fef3c7; color: #92400e; }
+  .key-term {
+    background: var(--highlight);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+  .diagram {
+    margin: 1.4rem 0;
+    padding: 1rem 1rem 0.6rem;
+    background: var(--fig-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    text-align: center;
+  }
+  .diagram figcaption {
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    font-style: italic;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+  .footnotes {
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+    table { font-size: 0.86rem; }
+  }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+
+<h1>MPDP：大查询的 Massively Parallel Join Optimization 论文笔记</h1>
+<p class="meta">
+  <strong>论文：</strong>Riccardo Mancini, Srinivas Karthik, Bikash Chandra, Vasilis Mageirakos, Anastasia Ailamaki —
+  <em>Efficient Massively Parallel Join Optimization for Large Queries</em>, SIGMOD 2022, pp. 122–135.<br>
+  <strong>主题：</strong>如何把精确 join order DP 改造成更少无效枚举、同时适合 CPU/GPU 大规模并行的算法，并用它支撑更大查询上的启发式搜索。<br>
+  <strong>阅读来源：</strong>本仓库 PDF：<code>joinOrder/paper/MPDP-sigm2022.pdf</code><br>
+  <strong>日期：</strong>2026-06-19
+</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#s0">为什么这篇论文重要</a></li>
+  <li><a href="#s1">大查询优化的两个瓶颈</a></li>
+  <li><a href="#s2">问题框架：Join-Pair 与 CCP-Pair</a></li>
+  <li><a href="#s3">从 DPSUB / DPCCP 看 MPDP 的位置</a></li>
+  <li><a href="#s4">MPDP 的核心算法</a></li>
+  <li><a href="#s5">为什么 MPDP 更适合并行和 GPU</a></li>
+  <li><a href="#s6">超大查询上的启发式：IDP2-MPDP 与 UnionDP</a></li>
+  <li><a href="#s7">实验结论怎么读</a></li>
+  <li><a href="#s8">与 join order 学习路线和 demo 的关系</a></li>
+  <li><a href="#s9">边界与实现提醒</a></li>
+  <li><a href="#summary">读完应记住的结论</a></li>
+</ol>
+</nav>
+
+<hr>
+
+<h2 id="s0">0. 为什么这篇论文重要</h2>
+
+<p><span class="tag">SIGMOD 2022</span> <span class="tag green">Massively Parallel DP</span> <span class="tag amber">GPU Join Optimization</span></p>
+
+<div class="callout info">
+<strong>一句话概括：</strong>MPDP 试图同时拿到 DPSUB 的并行性和 DPCCP 的少枚举优势：不要像 DPSUB 那样遍历大量无效 Join-Pair，也不要像 DPCCP 那样把枚举顺序绑得过紧、难以大规模并行。
+</div>
+
+<p>这篇论文关心的场景很现实：现代 BI / reporting / 自动生成 SQL 的系统里，一条查询可能有几十张甚至上百张表。执行引擎、存储布局、JIT、scale-out 都在进步，但优化器里 join order 这一步仍会因为指数搜索空间而成为瓶颈。</p>
+
+<p>论文给出的目标有两个：</p>
+
+<ol>
+  <li><strong>精确场景：</strong>在仍然求最优 bushy join order 的前提下，把优化时间降下来。</li>
+  <li><strong>启发式场景：</strong>当查询大到精确 DP 不现实，用 MPDP 作为子过程，让启发式能系统地看更多候选空间，从而得到更便宜的计划。</li>
+</ol>
+
+<p>论文的关键结果是：在 PostgreSQL 里的真实 benchmark 查询上，MPDP 相比当时的 state-of-the-art 精确算法至少快一个数量级；在相同时间预算下，PostgreSQL 的 heuristic fallback 门槛可以从 12 个关系提高到 25 个关系。对更大查询，MPDP 结合 IDP2 / UnionDP 后能找到成本显著更低的计划。</p>
+
+<hr>
+
+<h2 id="s1">1. 大查询优化的两个瓶颈</h2>
+
+<p>论文把 DP join order 优化的效率拆成两个维度：</p>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>含义</th><th>为什么影响大查询</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Evaluated Join-Pairs</td>
+      <td>算法实际枚举并检查了多少候选左右子计划组合。</td>
+      <td>如果大量组合最后发现不是合法 join，时间会浪费在 generate-and-test 上。</td>
+    </tr>
+    <tr>
+      <td>Parallelizability</td>
+      <td>同一阶段的候选 Join-Pair 能否互不依赖地并行评估。</td>
+      <td>GPU / 多核 CPU 只有在任务粒度足够多、依赖少时才能发挥作用。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这两个维度之间有张力：</p>
+
+<ul>
+  <li><strong>DPSUB / DPSIZE</strong> 枚举很规整，容易并行，但会检查大量无效 Join-Pair。</li>
+  <li><strong>DPCCP</strong> 只枚举有效 connected-subgraph complement pair，因此工作量少，但枚举过程依赖 join graph 的结构，较难大规模并行。</li>
+</ul>
+
+<figure class="diagram">
+<svg width="720" height="300" viewBox="0 0 720 300" role="img" aria-label="DP 算法在无效枚举和并行性上的位置">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#555"></path>
+    </marker>
+  </defs>
+  <line x1="80" y1="250" x2="650" y2="250" stroke="#555" stroke-width="2" marker-end="url(#arrow)"></line>
+  <line x1="80" y1="250" x2="80" y2="40" stroke="#555" stroke-width="2" marker-end="url(#arrow)"></line>
+  <text x="650" y="278" text-anchor="end" font-size="13" fill="#333">并行性更高</text>
+  <text x="18" y="48" transform="rotate(-90 18 48)" font-size="13" fill="#333">无效 Join-Pair 更多</text>
+
+  <circle cx="190" cy="82" r="32" fill="#fee2e2" stroke="#dc2626" stroke-width="2"></circle>
+  <text x="190" y="87" text-anchor="middle" font-size="13" font-weight="700" fill="#991b1b">DPSUB</text>
+
+  <circle cx="135" cy="210" r="32" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"></circle>
+  <text x="135" y="215" text-anchor="middle" font-size="13" font-weight="700" fill="#5b21b6">DPCCP</text>
+
+  <circle cx="490" cy="125" r="34" fill="#dbeafe" stroke="#2563eb" stroke-width="2"></circle>
+  <text x="490" y="130" text-anchor="middle" font-size="13" font-weight="700" fill="#1e40af">MPDP</text>
+
+  <text x="195" y="130" text-anchor="middle" font-size="12" fill="#444">易并行</text>
+  <text x="195" y="148" text-anchor="middle" font-size="12" fill="#444">但浪费多</text>
+  <text x="135" y="258" text-anchor="middle" font-size="12" fill="#444">枚举少但依赖强</text>
+  <text x="490" y="175" text-anchor="middle" font-size="12" fill="#444">少枚举 + 高并行</text>
+</svg>
+<figcaption>图1：论文 Figure 2 的学习化简。MPDP 的目标是同时向右、向下移动。</figcaption>
+</figure>
+
+<hr>
+
+<h2 id="s2">2. 问题框架：Join-Pair 与 CCP-Pair</h2>
+
+<p>论文把查询看作 join graph \(G=(R,E)\)：顶点 \(R\) 是关系，边 \(E\) 是 inner equi-join predicate。一个 DP 枚举器会尝试把两个关系集合 \(S_{left}\)、\(S_{right}\) join 成更大的集合。</p>
+
+<p>一个 <span class="key-term">Join-Pair</span> 要成为合法候选，必须满足四个条件：</p>
+
+<ol>
+  <li>\(S_{left}\) 和 \(S_{right}\) 都非空。</li>
+  <li>二者在 join graph 上各自诱导出的子图都是连通的。</li>
+  <li>二者互不相交。</li>
+  <li>二者之间至少有一条 join predicate 边相连。</li>
+</ol>
+
+<div class="callout">
+满足这些条件的 Join-Pair 就是论文里的 <strong>CCP-Pair</strong>（Connected-subgraph Complement Pair）。这和 DPCCP / DPhyp 文献里的 csg-cmp-pair 是同一个核心概念。
+</div>
+
+<p>论文还强调依赖关系：如果某个 Join-Pair 的左侧或右侧本身是另一个 Join-Pair 计算出来的结果，那么二者不能同时计算。DPSIZE / DPSUB 按结果集合大小推进时，同一层的 Join-Pair 往往没有依赖，因此很好并行；DPCCP 的枚举更精细，但也更难批量并行。</p>
+
+<h3>2.1 一个小例子</h3>
+
+<pre><code>join graph:
+  A -- B -- C
+
+valid Join-Pairs:
+  ({A}, {B})
+  ({B}, {C})
+  ({A,B}, {C})
+  ({A}, {B,C})
+
+invalid Join-Pair:
+  ({A}, {C})       // 二者之间没有 join edge，会变成 Cartesian product</code></pre>
+
+<p>DPSUB 式枚举会容易走到 <code>({A}, {C})</code> 这种需要检查后丢弃的候选；DPCCP 避免了它；MPDP 的目标是大部分时候也避免它，同时让候选生成仍有规整的并行结构。</p>
+
+<hr>
+
+<h2 id="s3">3. 从 DPSUB / DPCCP 看 MPDP 的位置</h2>
+
+<table>
+  <thead>
+    <tr><th>算法</th><th>枚举风格</th><th>优点</th><th>短板</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DPSIZE</td>
+      <td>按 relation set size 从小到大枚举。</td>
+      <td>概念简单，很多系统沿用类似思想。</td>
+      <td>会评估大量无效 Join-Pair。</td>
+    </tr>
+    <tr>
+      <td>DPSUB</td>
+      <td>按 subset precedence order 枚举所有子集。</td>
+      <td>同层候选较独立，容易 CPU/GPU 并行。</td>
+      <td>仍然需要大量有效性检查。</td>
+    </tr>
+    <tr>
+      <td>DPCCP</td>
+      <td>按 join graph 直接枚举 CCP-Pair。</td>
+      <td>只枚举有效候选，避免 Cartesian product。</td>
+      <td>枚举依赖强，难以发挥 massive parallelism。</td>
+    </tr>
+    <tr>
+      <td>MPDP</td>
+      <td>对每个 connected set \(S\)，用 graph 结构直接构造更少候选。</td>
+      <td>接近 DPCCP 的少枚举，同时保留 DPSUB 的按层并行。</td>
+      <td>实现更复杂，需要图算法、bitmap/memo/GPU 工程配合。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这篇论文的漂亮点在于它没有只说“GPU 更快”。真正的算法贡献是：先减少 GPU 不该做的无效工作，再把剩下的工作排成 GPU 擅长处理的批量任务。</p>
+
+<hr>
+
+<h2 id="s4">4. MPDP 的核心算法</h2>
+
+<p>MPDP 仍是动态规划：为每个 relation set \(S\) 保存 <code>BestPlan(S)</code>，逐层从小集合构造大集合。变化在于：对每个 \(S\)，它如何枚举候选 Join-Pair。</p>
+
+<h3>4.1 Tree join graph：删边即可得到候选</h3>
+
+<p>如果 join graph 是树，那么任意 connected set \(S\) 的诱导子图也是树。树有一个非常直接的性质：删掉任意一条边，都会把树分成两个连通分量。这两个分量正好构成一个合法 CCP-Pair。</p>
+
+<pre><code>MPDP:Tree
+for size i = 2..n:
+  for each connected set S with |S| = i:
+    for each edge e in induced_tree(S):
+      (S_left, S_right) = components_after_removing(e)
+      curr = CreatePlan(S_left, S_right)
+      BestPlan(S) = min(BestPlan(S), curr)</code></pre>
+
+<p>树场景下，大小为 \(i\) 的 connected set 只需要看 \(i-1\) 条边，因此 EvaluatedCounter 可以等于 CCP-Counter。星型和雪花 schema 都常落在这个直觉附近，所以这是数据仓库查询里的关键优化。</p>
+
+<h3>4.2 Cyclic join graph：先找 block，再 grow</h3>
+
+<p>一般图里会有环，删一条边不一定把图切开。论文使用 graph theory 里的 <span class="key-term">block</span>（双连通分量）来处理：对 \(S\) 找 blocks；在每个 block 内枚举候选 \(lb\) 和补集 \(rb\)，检查它们是否在 block 内构成 CCP；然后用 <code>grow</code> 把局部 CCP 扩展回整个 \(S\)。</p>
+
+<pre><code>MPDP for general graphs
+for size i = 2..n:
+  S_i = { S | S connected and |S| = i }
+  for each S in S_i:
+    blocks = FindBlocks(S)
+    for each block in blocks:
+      for each non-empty lb subset of block:
+        rb = block - lb
+        if (lb, rb) is not CCP inside block:
+          continue
+        S_left  = grow(lb, S - rb)
+        S_right = S - S_left
+        curr = CreatePlan(S_left, S_right)
+        BestPlan(S) = min(BestPlan(S), curr)</code></pre>
+
+<p><code>grow(lb, S - rb)</code> 的作用是：从 \(lb\) 出发，只在不经过 \(rb\) 的限制集合中继续扩张，得到整个 \(S\) 内应该放在同侧的最大连通区域。这样，block 内的局部切分被提升成 \(S\) 上的合法 Join-Pair。</p>
+
+<div class="callout warn">
+这个地方容易误读：MPDP 不是简单“遍历每条边再切图”。树上可以这么理解；有环图上需要 block 和 grow，否则会漏掉候选或重复不必要候选。
+</div>
+
+<h3>4.3 正确性直觉</h3>
+
+<p>论文的正确性思路可以压成一句话：每个合法 CCP-Pair 都能在某个 block 的某个局部切分中被发现，再通过 grow 还原到 \(S\) 上；同时生成出来的候选经过连通性、非空、互斥、相邻性检查，仍是合法 Join-Pair。</p>
+
+<p>因此 MPDP 仍是精确算法，不是剪掉 plan space 的启发式。它减少的是<strong>无效候选的评估</strong>，不是删除可能成为最优计划的合法候选。</p>
+
+<hr>
+
+<h2 id="s5">5. 为什么 MPDP 更适合并行和 GPU</h2>
+
+<p>MPDP 的并行化来自两个层次：</p>
+
+<ol>
+  <li><strong>DP 层级并行：</strong>按 set size \(i\) 逐层推进；同一层的 set \(S\) 之间可以并行处理。</li>
+  <li><strong>候选内部并行：</strong>对每个 \(S\)，block / subset / Join-Pair 检查可以批量展开，适合 GPU warp-level parallelism。</li>
+</ol>
+
+<p>论文的 GPU 实现大致是下面这条流水线：</p>
+
+<pre><code>for size i = 2..n:
+  unrank:   生成大小为 i 的所有 relation sets
+  filter:   过滤掉不连通的 sets
+  evaluate: 对每个 connected S 执行 MPDP Join-Pair 枚举和 cost
+  prune:    每个 S 只保留 best join
+  scatter:  把 (S, BestPlan(S)) 写回 memo table</code></pre>
+
+<table>
+  <thead>
+    <tr><th>工程点</th><th>论文做法</th><th>为什么重要</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Relation set 表示</td>
+      <td>固定宽度 bitmap set。</td>
+      <td>集合 union/intersection/difference 都变成位运算，适合 GPU。</td>
+    </tr>
+    <tr>
+      <td>Memo table</td>
+      <td>Murmur3 hashing + open addressing。</td>
+      <td>GPU 上需要简单、连续、可预测的数据结构。</td>
+    </tr>
+    <tr>
+      <td>Unrank</td>
+      <td>用 combinatorial unranking 生成固定大小集合。</td>
+      <td>避免递归枚举，把任务转成可并行索引空间。</td>
+    </tr>
+    <tr>
+      <td>Filter</td>
+      <td>用 stream compaction 过滤不连通 set。</td>
+      <td>减少后续 evaluate 阶段的无效输入。</td>
+    </tr>
+    <tr>
+      <td>Branch divergence</td>
+      <td>用 Collaborative Context Collection 缓解 warp 内分支发散。</td>
+      <td>简单 if 过滤会让部分线程等待，浪费 SIMD 并行度。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>我的理解是：MPDP 的 GPU 化不是“把 DP 搬到显卡上”这么粗暴。它先把 DP 的图枚举改写成更规则的数据并行任务，再做 GPU 友好的内存和控制流设计。</p>
+
+<hr>
+
+<h2 id="s6">6. 超大查询上的启发式：IDP2-MPDP 与 UnionDP</h2>
+
+<p>MPDP 精确算法更快，但 join order optimization 本身仍是 NP-hard。对几百张、上千张表的查询，论文还是需要启发式。</p>
+
+<h3>6.1 IDP2-MPDP</h3>
+
+<p>IDP2（Iterative Dynamic Programming version 2）的思路是：先生成一个 tentative join tree，然后反复挑出其中较贵、大小不超过 \(k\) 的子树，用精确 DP 重新优化局部。论文把这个局部精确优化器替换为 MPDP。</p>
+
+<pre><code>IDP2-MPDP:
+  initial_plan = heuristic_join_order(query)
+  while there is an expensive subtree with size <= k:
+    optimized_subtree = MPDP(subtree)
+    replace subtree in plan
+  return plan</code></pre>
+
+<p>MPDP 使得 \(k\) 可以取更大值；论文提到在 snowflake schema 上，GPU 加速 MPDP 可把 \(k\) 用到 25，并在 100 表场景保持可接受优化时间。</p>
+
+<h3>6.2 UnionDP</h3>
+
+<p>UnionDP 是论文提出的新启发式。它先根据图结构和 cost model 把关系合并成不超过 \(k\) 大小的 partition；每个 partition 内用 MPDP 求局部最优；然后把每个局部计划压成 composite node，在更小的图上递归重复。</p>
+
+<pre><code>UnionDP(G, k):
+  if |G| <= k:
+    return MPDP(G)
+
+  initialize one disjoint-set per relation
+  sort edges by size(leftRelSet + rightRelSet), then edge weight
+  for edge in sorted_edges:
+    if union size <= k:
+      union(leftRelSet, rightRelSet)
+
+  for each partition:
+    subplan = MPDP(induced_subgraph(partition))
+    create composite node
+
+  G' = graph(composite_nodes, cut_edges)
+  return UnionDP(G', k)</code></pre>
+
+<div class="callout">
+UnionDP 的精神和 Query Simplification 有一点像：先对大图做结构化降维，再把剩余问题交给精确 DP。但 UnionDP 是构造 partition / composite node；Query Simplification 是给 join graph 增加顺序约束，保留一个受限后的 DP 问题。
+</div>
+
+<hr>
+
+<h2 id="s7">7. 实验结论怎么读</h2>
+
+<h3>7.1 实验设置</h3>
+
+<p>论文把所有算法都实现在 PostgreSQL 12 的优化器中。硬件环境包含双路 Intel Xeon E5-2650L v3（共 24 cores / 48 threads）、755GB RAM，以及 Nvidia GTX 1080 GPU。论文没有使用完整 PostgreSQL 原生 cost model，而是实现了一个接近 PostgreSQL 的 cost model；对实验查询，最坏情况下和 PostgreSQL cost 相差在 5% 内。</p>
+
+<p>这个设置很重要：论文比较的是 <strong>optimization time</strong> 和估计 cost 下的 plan quality，不是端到端执行时间。作者也明确说，cost/cardinality error 的处理不在本文范围内。</p>
+
+<h3>7.2 精确算法：MPDP 把 fallback 门槛推高</h3>
+
+<p>在 star / chain / cycle / clique / JOB / MusicBrainz 等场景里，论文比较了 PostgreSQL 原优化器、DPCCP、DPE、GPU DPSub/DPSize、CPU/GPU MPDP 等。总体结论：</p>
+
+<ul>
+  <li>MPDP 在大查询上明显快于已有精确 DP 方案。</li>
+  <li>GPU MPDP 在 star / snowflake 这类常见分析型结构上尤其有优势。</li>
+  <li>在相同时间预算下，可以把 PostgreSQL 从 12 表左右就 fallback 到启发式的门槛提高到约 25 表。</li>
+</ul>
+
+<h3>7.3 启发式：更大局部精确空间带来更好计划</h3>
+
+<p>论文比较 GEQO、GOO、LinearizedDP、IKKBZ、IDP2-MPDP、UnionDP-MPDP 等启发式，在 snowflake、star、clique 等大图上看相对 plan cost。</p>
+
+<table>
+  <thead>
+    <tr><th>场景</th><th>实验观察</th><th>阅读时的注意点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Snowflake schema</td>
+      <td>UnionDP-MPDP 和 IDP2-MPDP 计划质量强，论文报告可比 state-of-the-art 技术便宜最多约 7 倍。</td>
+      <td>这类图结构让 partition / 局部精确优化很有发挥空间。</td>
+    </tr>
+    <tr>
+      <td>Star schema</td>
+      <td>IDP2-MPDP、UnionDP-MPDP 在许多规模上达到接近最优的 cost。</td>
+      <td>star 的结构简单，但 relation 数大时精确枚举仍会很贵。</td>
+    </tr>
+    <tr>
+      <td>Clique / dense graph</td>
+      <td>所有方法都更早遇到超时或退化；UnionDP 在 dense graph 上不如在 snowflake 上稳定。</td>
+      <td>边太多会让 partition balance 和 cut edge 选择变难。</td>
+    </tr>
+    <tr>
+      <td>JOB / MusicBrainz</td>
+      <td>用于验证真实 benchmark 图形下的优化时间和枚举行为。</td>
+      <td>这些实验更接近真实优化器输入，但仍依赖论文实现的 cost model。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+不要把“plan cost 更便宜”直接读成“真实执行时间必然等比例更快”。这篇论文主要研究优化器枚举效率和估计 cost 下的计划质量；真实执行仍受 cardinality estimation、operator implementation、缓存、并行执行等影响。
+</div>
+
+<hr>
+
+<h2 id="s8">8. 与 join order 学习路线和 demo 的关系</h2>
+
+<p>如果把这篇论文放到本仓库的 join order 学习路线里，可以这样定位：</p>
+
+<ol>
+  <li><strong>System R / DPsize：</strong>理解为什么 join order 可以用 DP 按集合大小求解。</li>
+  <li><strong>DPsub：</strong>理解 subset 枚举为何规整、并行友好，但会产生无效 Join-Pair。</li>
+  <li><strong>DPCCP / DPhyp：</strong>理解 graph-aware 枚举如何只生成 connected complement pair。</li>
+  <li><strong>MPDP：</strong>理解如何在“少枚举”和“高并行”之间重新设计枚举器。</li>
+  <li><strong>Query Simplification / Heuristic Search：</strong>理解当精确 DP 仍超预算时，如何做有控制的搜索空间退化。</li>
+</ol>
+
+<h3>8.1 对 demo 的启发</h3>
+
+<p>本仓库的 demo 若要吸收 MPDP 思路，不必一上来实现 GPU。更适合的教学路径是：</p>
+
+<ul>
+  <li><strong>先统计 Join-Pair。</strong>在现有 DPSub / DPCCP trace counters 里区分 evaluated Join-Pair、valid CCP-Pair、invalid Join-Pair。</li>
+  <li><strong>实现 tree-specialized MPDP。</strong>对 tree / star / snowflake join graph，用“删边得到候选”的规则替代 subset 枚举。</li>
+  <li><strong>再做 general graph block + grow。</strong>这一步可以作为高阶实验，展示 block decomposition 如何减少无效枚举。</li>
+  <li><strong>最后谈并行。</strong>即使不写 CUDA，也可以用同层 set 独立性解释为什么它适合 task parallel 或 GPU batch。</li>
+</ul>
+
+<p>这样做能把论文最重要的思想讲清楚：并行优化器不是只靠硬件堆线程，而是要先把枚举结构整理成硬件能高效吃下去的形状。</p>
+
+<hr>
+
+<h2 id="s9">9. 边界与实现提醒</h2>
+
+<table>
+  <thead>
+    <tr><th>边界</th><th>说明</th><th>对实现者的提醒</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Join 类型</td>
+      <td>论文主要处理 inner equi-join graph。</td>
+      <td>outer/semi/anti join 或复杂 predicate 需要 hypergraph 语义约束，不能直接照搬。</td>
+    </tr>
+    <tr>
+      <td>Cost model</td>
+      <td>实验使用接近 PostgreSQL 的自实现 cost model。</td>
+      <td>真实系统的完整 cost model 更复杂，GPU 上复刻成本很高。</td>
+    </tr>
+    <tr>
+      <td>GPU 工程</td>
+      <td>性能依赖 bitmap、hash memo、stream compaction、warp-level scheduling。</td>
+      <td>算法正确只是第一步，数据布局和 branch divergence 会决定实际收益。</td>
+    </tr>
+    <tr>
+      <td>Dense graph</td>
+      <td>clique 这类图对所有方法都难。</td>
+      <td>MPDP 不是指数复杂度的解药，只是在很多结构上减少常数和无效工作。</td>
+    </tr>
+    <tr>
+      <td>Plan quality</td>
+      <td>IDP2-MPDP / UnionDP 是启发式。</td>
+      <td>它们靠更大局部精确搜索提高质量，但不保证全局最优。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>我的理解是：MPDP 最适合教学我们如何评价 join order 算法的“工程可用性”。一个枚举器不仅要理论上少枚举，还要让每一批工作能被现代硬件并行消化。</p>
+
+<hr>
+
+<h2 id="summary">10. 读完应记住的结论</h2>
+
+<table>
+  <thead>
+    <tr><th>结论</th><th>一句话解释</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>MPDP 是精确 DP，不是启发式本身。</strong></td>
+      <td>它减少无效 Join-Pair 评估，但不删除合法 plan space。</td>
+    </tr>
+    <tr>
+      <td><strong>核心指标是 evaluated Join-Pair / valid CCP-Pair。</strong></td>
+      <td>大查询优化时间很大程度上浪费在枚举后又丢弃的候选上。</td>
+    </tr>
+    <tr>
+      <td><strong>Tree join graph 上，删边就是候选生成器。</strong></td>
+      <td>大小为 \(i\) 的 connected tree set 只需看 \(i-1\) 条边。</td>
+    </tr>
+    <tr>
+      <td><strong>一般图需要 block + grow。</strong></td>
+      <td>先在双连通分量内找局部切分，再扩展回整个 relation set。</td>
+    </tr>
+    <tr>
+      <td><strong>GPU 加速依赖算法形状。</strong></td>
+      <td>bitmap set、unrank/filter/evaluate/scatter 流水线、branch divergence 控制同样关键。</td>
+    </tr>
+    <tr>
+      <td><strong>MPDP 还能作为启发式子过程。</strong></td>
+      <td>IDP2-MPDP 和 UnionDP-MPDP 用更大的局部精确搜索改善超大查询的 plan quality。</td>
+    </tr>
+    <tr>
+      <td><strong>它连接了 DPsub 和 DPCCP 两条路线。</strong></td>
+      <td>MPDP 的目标就是结合 subset DP 的并行性与 graph-aware DP 的少枚举。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+最后的心智模型：DPCCP 问“如何只枚举正确候选”，DPSUB 问“如何规整地并行枚举”，MPDP 问“能不能把这两件事同时做得足够好”。这就是它在 join order 学习路线里的位置。
+</div>
+
+<div class="footnotes">
+  <p><strong>阅读范围说明：</strong>本文基于本仓库 PDF <code>joinOrder/paper/MPDP-sigm2022.pdf</code> 提取文本后整理。论文主要讨论 inner equi-join 的 join graph；对 demo 实现的建议属于学习化延展。</p>
+</div>
+
+</body>
+</html>

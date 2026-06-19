@@ -407,7 +407,7 @@ window.MathJax = {
 <h2 id="s4">5. 原文 §3.2：一般图上的 block + grow</h2>
 
 <div class="callout warn">
-<strong>先不要急着读 Algorithm 3。</strong>这一节真正要解决的问题只有一个：tree 上“删一条边就能得到左右两边”，但一般图里有环，删边不一定能把图切开。MPDP 需要一种新的办法，从有环的 join graph 里生成合法的 \((S_{left}, S_{right})\)。
+这一节真正要解决的问题是tree 上“删一条边就能得到左右两边”，但一般图里有环，删边不一定能把图切开。MPDP 需要一种新的办法，从有环的 join graph 里生成合法的 \((S_{left}, S_{right})\)。
 </div>
 
 <h3>5.1 为什么 tree 上的删边法失效</h3>
@@ -459,7 +459,48 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
 
 <p>这里 `{1,2,3,4}` 是一个有环的 block，`{4,5}` 是一条连接出去的 bridge block。MPDP 的第一步就是：不要枚举 \(S\) 的所有 subset，先只在这些 block 内枚举。</p>
 
-<h3>5.3 grow 到底在做什么</h3>
+<h3>5.3 为什么不能直接在 block-cut tree 上跑 tree 算法</h3>
+
+<p>你可以把 Figure 5 的 block-cut tree 看成：</p>
+
+<pre><code>{1,2,3,4} - 4 - {4,5} - 5 - {5,9} - 9 - {6,7,8,9}</code></pre>
+
+<p>这确实已经把一般图压成了树形骨架。但 MPDP 不能只在这个树上删边，原因是：<strong>删 block-cut tree 的边，只能表达 block 之间的切分；很多合法 Join-Pair 的切口发生在 block 内部。</strong></p>
+
+<p>例如在 \(S=\{1,2,3,4,5\}\) 里，一个合法切分可以是：</p>
+
+<pre><code>S_left  = {1}
+S_right = {2,3,4,5}</code></pre>
+
+<p>这个切分把 block `{1,2,3,4}` 自己切开了：点 1 在左边，2/3/4 在右边。可是如果把 `{1,2,3,4}` 整体看成 block-cut tree 上的一个点，这个切分就不可见了。也就是说，block-cut tree 只能告诉我们“大块怎么连”，不能替我们决定“大块内部怎么切”。</p>
+
+<p>所以 Algorithm 3 多做了一步：在每个 block 内部枚举局部切分。这里的 \(lb/rb\) 不要理解成最终答案，而要理解成<strong>两个锚点</strong>：</p>
+
+<table>
+  <thead>
+    <tr><th>符号</th><th>更容易懂的说法</th><th>它还不是最终答案的原因</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>\(lb\)</td>
+      <td>block 内先站到左边的一小组点。</td>
+      <td>block 外面可能还有通过这些点挂出去的 relation，也应该被吸到左边。</td>
+    </tr>
+    <tr>
+      <td>\(rb\)</td>
+      <td>block 内先站到右边的一小组点。</td>
+      <td>block 外面也可能有通过右边锚点挂出去的 relation，最终要归到右边。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>于是一般图算法的思路可以改写成：</p>
+
+<pre><code>先用 block-cut tree 找到“有哪些大块”
+再在某个 block 内枚举“这块内部可能怎么切”
+最后用 grow 把 block 外面挂着的部分补到左边或右边</code></pre>
+
+<h3>5.4 grow 到底在做什么</h3>
 
 <p>Algorithm 3 里最难读的函数是 <code>grow(lb, S \ rb)</code>。可以把它翻译成一句话：</p>
 
@@ -467,7 +508,7 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
 从局部左种子 <code>lb</code> 出发，只允许在 <code>S \ rb</code> 里走；所有能走到的点，都归到全局左边 \(S_{left}\)。
 </div>
 
-<p>也就是说，<code>rb</code> 是禁区。grow 不是随便扩展，而是在“不能进入右种子”的限制下做 reachability。</p>
+<p>也就是说，<code>rb</code> 是禁区。grow 不是随便扩展，而是在“不能进入右锚点”的限制下做 reachability。它回答的是：<strong>如果右锚点不能被穿过，那么从左锚点自然能连到哪些 relation？</strong></p>
 
 <table>
   <thead>
@@ -492,9 +533,9 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
   </tbody>
 </table>
 
-<p>这三个例子就是 Figure 5 里 \((lb, rb) \rightarrow (S_{left}, S_{right})\) 的核心。block 只决定“切口在哪里”，grow 负责把切口外面挂着的 relation 自动归到对应一侧。</p>
+<p>这三个例子就是 Figure 5 里 \((lb, rb) \rightarrow (S_{left}, S_{right})\) 的核心。block 内的 \(lb/rb\) 只决定“切口在哪里”；grow 负责沿着原图连通性，把切口外面挂着的 relation 自动归到对应一侧。</p>
 
-<h3>5.4 现在再读 Algorithm 3</h3>
+<h3>5.5 现在再读 Algorithm 3</h3>
 
 <p>有了上面的直觉，Algorithm 3 可以按四步读：</p>
 
@@ -512,7 +553,7 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
 
 <p>这就是论文说的 hybrid enumeration：在 block 内有点像 vertex-based enumeration，但不是对整个 \(S\) 做；在 block 之间又利用 cut structure，有点像 edge/tree-aware enumeration。它的目的不是改变 DP 的状态，而是让每个状态 \(S\) 的候选 Join-Pair 更少、更接近真正的 CCP-Pair。</p>
 
-<h3>5.5 为什么这样不会漏候选</h3>
+<h3>5.6 为什么这样不会漏候选</h3>
 
 <p>证明可以先记成两句话：</p>
 

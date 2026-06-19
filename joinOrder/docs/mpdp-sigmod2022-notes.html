@@ -420,7 +420,7 @@ window.MathJax = {
 |     |
 2 --- 3</code></pre>
 
-<p>删掉边 \((1,4)\) 以后，1 仍然可以沿着 \(1 \rightarrow 2 \rightarrow 3 \rightarrow 4\) 到达 4。也就是说，删边没有产生左右两块。Figure 5 里的 \((1,4)\) 就是这个问题的原文例子。</p>
+<p>删掉边 \((1,4)\) 以后，1 仍然可以沿着 \(1 \rightarrow 2 \rightarrow 3 \rightarrow 4\) 到达 4。也就是说，在一般图里，删一条边不能覆盖所有合法切分；有些合法 Join-Pair 的左右两边之间会跨过多条边。</p>
 
 <figure class="paper-figure">
   <img src="assets/mpdp-sigmod2022/figure-5-general-graph-blocks.png" alt="Figure 5: Example Join Graph with 9 Relations" loading="lazy">
@@ -465,14 +465,21 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
 
 <pre><code>{1,2,3,4} - 4 - {4,5} - 5 - {5,9} - 9 - {6,7,8,9}</code></pre>
 
-<p>这确实已经把一般图压成了树形骨架。但 MPDP 不能只在这个树上删边，原因是：<strong>删 block-cut tree 的边，只能表达 block 之间的切分；很多合法 Join-Pair 的切口发生在 block 内部。</strong></p>
+<p>这确实已经把一般图压成了树形骨架。但 MPDP 不能只在这个树上删边，原因是：<strong>block-cut tree 只告诉我们 block 之间怎么连，不会告诉我们 block 内部怎么切。</strong></p>
 
-<p>例如在 \(S=\{1,2,3,4,5\}\) 里，一个合法切分可以是：</p>
+<p>先看一个比较直观、边界在 bridge block 上的切分：</p>
+
+<pre><code>S_left  = {1,2,3,4}
+S_right = {5}</code></pre>
+
+<p>这个切分的边界落在 `{4,5}` 这条 bridge block 上。你看 block-cut tree 时，大概能猜到“左边大块 `{1,2,3,4}` 和右边点 5 要在 `{4,5}` 附近分开”。Algorithm 3 会通过 block `{4,5}` 内的 \(lb=\{4\}, rb=\{5\}\)，再 grow 得到这个全局切分。</p>
+
+<p>真正说明“block-cut tree 单独不够”的，是下面这种<strong>合法但发生在 block 内部</strong>的切分：</p>
 
 <pre><code>S_left  = {1}
 S_right = {2,3,4,5}</code></pre>
 
-<p>这个切分把 block `{1,2,3,4}` 自己切开了：点 1 在左边，2/3/4 在右边。可是如果把 `{1,2,3,4}` 整体看成 block-cut tree 上的一个点，这个切分就不可见了。也就是说，block-cut tree 只能告诉我们“大块怎么连”，不能替我们决定“大块内部怎么切”。</p>
+<p>这个切分把 block `{1,2,3,4}` 自己切开了：点 1 在左边，2/3/4 在右边。可是如果把 `{1,2,3,4}` 整体看成 block-cut tree 上的一个点，这个切分就不可见了。也就是说，block-cut tree 能告诉我们“大块怎么连”，但不能替我们枚举“大块内部怎么切”。</p>
 
 <p>所以 Algorithm 3 多做了一步：在每个 block 内部枚举局部切分。这里的 \(lb/rb\) 不要理解成最终答案，而要理解成<strong>两个锚点</strong>：</p>
 

@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Good Are Query Optimizers, Really? — 中文学习笔记</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --text: #1a1a1a;
+    --accent: #7c3aed;
+    --accent-2: #2563eb;
+    --border: #e0dcd0;
+    --code-bg: #f3f1eb;
+    --highlight: #fef9c3;
+    --muted: #6b6b6b;
+    --th-bg: #f0ede5;
+    --fig-bg: #fdfdfc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+    line-height: 1.85;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.8rem 0 0.8rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 0.5rem; color: #333; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  p { margin: 0.65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #f5f3ff;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.95rem;
+  }
+  .callout.info { border-left-color: #10b981; background: #ecfdf5; }
+  .callout.warn { border-left-color: #f59e0b; background: #fffbeb; }
+  .callout.red { border-left-color: #ef4444; background: #fef2f2; }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0.75rem 0;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre code { background: none; padding: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--th-bg); font-weight: 600; }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+  li { margin: 0.25rem 0; }
+
+  .toc { margin: 1.2rem 0 2rem; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: 0.15rem 0; break-inside: avoid; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5rem 0;
+  }
+
+  .tag {
+    display: inline-block;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-size: 0.78rem;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    margin-right: 0.3rem;
+    font-family: sans-serif;
+  }
+  .tag.blue { background: #dbeafe; color: #1e40af; }
+  .tag.green { background: #d1fae5; color: #065f46; }
+  .tag.amber { background: #fef3c7; color: #92400e; }
+  .tag.red { background: #fee2e2; color: #991b1b; }
+
+  .key-term {
+    background: var(--highlight);
+    padding: 0.1em 0.3em;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+
+  .mini-flow {
+    margin: 1.2rem 0;
+    padding: 1rem;
+    background: var(--fig-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: "SF Mono", "Fira Code", "Consolas", "Noto Sans Mono CJK SC", monospace;
+    font-size: 0.9rem;
+    line-height: 1.65;
+    overflow-x: auto;
+  }
+
+  .note-list strong { color: #333; }
+  .footnotes {
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1.5rem 1rem 4rem; }
+    pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
+    .toc ol { columns: 1; }
+    table { font-size: 0.86rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>How Good Are Query Optimizers, Really? 论文学习笔记</h1>
+<p class="meta">
+  <strong>论文：</strong>Viktor Leis, Andrey Gubichev, Atanas Mirchev, Peter Boncz, Alfons Kemper, Thomas Neumann —
+  <em>How Good Are Query Optimizers, Really?</em>, PVLDB 9(3), 2015.<br>
+  <strong>定位：</strong>Join Order Benchmark (JOB) 的提出论文；用真实数据和真实多表 join 查询重新审视传统查询优化器的三个核心组件。<br>
+  <strong>阅读来源：</strong>本仓库 PDF：<code>joinOrder/paper/how good are qo--pvldb2015.pdf</code><br>
+  <strong>日期：</strong>2026-06-18
+</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#s0">为什么这篇论文重要</a></li>
+  <li><a href="#s1">研究问题与经典优化器架构</a></li>
+  <li><a href="#s2">JOB：数据、查询与隔离变量方法</a></li>
+  <li><a href="#s3">Cardinality Estimation：最痛的输入</a></li>
+  <li><a href="#s4">坏估计什么时候真的拖慢查询</a></li>
+  <li><a href="#s5">Cost Model：重要，但不是主要矛盾</a></li>
+  <li><a href="#s6">Plan Space / Plan Search：穷举仍有价值</a></li>
+  <li><a href="#s7">优化器设计教训</a></li>
+  <li><a href="#s8">与 join order 学习路线和本仓库 demo 的关系</a></li>
+  <li><a href="#summary">读完应记住的结论</a></li>
+</ol>
+</nav>
+
+<hr>
+
+<h2 id="s0">0. 为什么这篇论文重要</h2>
+
+<div class="callout info">
+  <strong>一句话概括：</strong>这篇论文不是提出一个新的 join 枚举算法，而是用真实 IMDB 数据集和 113 个多 join 查询，定量回答“查询优化器到底哪里最脆弱”。结论很直接：<strong>Cardinality Estimation 是主因，Cost Model 的影响相对小，而 exhaustive plan search 在估计有误时仍然值得做。</strong>
+</div>
+
+<p>在 join order 学习路线中，我们经常先学 System R DP、IKKBZ、DPccp、top-down partitioning、Volcano/Cascades 等算法。这些工作回答的是：</p>
+
+<ul>
+  <li>搜索空间有多大？</li>
+  <li>怎样避免重复枚举？</li>
+  <li>怎样只枚举 CP-free join？</li>
+  <li>怎样在 left-deep、bushy、zig-zag 等空间中找低代价计划？</li>
+</ul>
+
+<p>但工程上还有另一个问题：<strong>枚举器找的是“估计代价最低”的计划，如果 cardinality/cost 输入是错的，枚举器到底还能帮多少？</strong>这篇论文的价值就在这里。它把传统优化器拆成三块分别实验：</p>
+
+<table>
+  <thead>
+    <tr><th>组件</th><th>论文中的英文术语</th><th>它控制什么</th><th>论文主要结论</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>基数估计</td>
+      <td>Cardinality Estimation</td>
+      <td>每个 base selection / intermediate join result 有多少行。</td>
+      <td>误差随 join 数快速放大，是坏计划的主要原因。</td>
+    </tr>
+    <tr>
+      <td>代价模型</td>
+      <td>Cost Model</td>
+      <td>给候选物理计划打分，比较 scan、join、index lookup 等成本。</td>
+      <td>在 main-memory JOB 场景下，复杂模型不如正确 cardinality 关键。</td>
+    </tr>
+    <tr>
+      <td>计划枚举</td>
+      <td>Plan Space Enumeration / Plan Search</td>
+      <td>枚举哪些 join tree、join method、access path。</td>
+      <td>穷举 bushy DP 比启发式有中等但实在的收益；不应轻易放弃。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="s1">1. 研究问题与经典优化器架构</h2>
+
+<p>论文从传统 cost-based optimizer 的架构出发：查询优化器枚举若干语义等价的候选计划，用 cardinality estimates 作为主要输入，再由 cost model 选择最便宜的计划。</p>
+
+<div class="mini-flow">
+SQL query<br>
+  -> Cardinality Estimation<br>
+  -> Plan Space Enumeration<br>
+  -> Cost Model<br>
+  -> chosen physical plan
+</div>
+
+<p>理论上，如果 cardinality estimation 和 cost model 都准确，那么这个架构可以选到最优计划。现实中，优化器通常要依赖 <span class="key-term">uniformity</span>（均匀分布）、<span class="key-term">independence</span>（谓词独立）、<span class="key-term">principle of inclusion</span>（小 domain 的 join key 都能在大 domain 中匹配）这类简化假设。真实数据里这些假设经常不成立，特别是多表 join 后的相关性。</p>
+
+<p>论文明确提出三个问题：</p>
+
+<ol>
+  <li><strong>Cardinality estimators 到底有多好？</strong>坏估计什么时候会变成慢查询？</li>
+  <li><strong>Cost model 的准确性有多重要？</strong>复杂 cost model 是否真的决定端到端性能？</li>
+  <li><strong>Plan space 需要枚举多大？</strong>估计已经有误时，还值得 exhaustive enumeration 吗？</li>
+</ol>
+
+<div class="callout warn">
+  <strong>阅读时要注意：</strong>这篇论文主要研究 main-memory 场景。作者也在结论中说明，disk-resident 和 distributed databases 会带来不同挑战。因此不要把所有实验数字直接外推到磁盘或分布式系统。
+</div>
+
+<h2 id="s2">2. JOB：数据、查询与隔离变量方法</h2>
+
+<p><span class="tag">IMDB</span> <span class="tag blue">113 queries</span> <span class="tag green">真实相关性</span></p>
+
+<h3>2.1 为什么不用 TPC-H</h3>
+
+<p>论文认为 TPC-H、TPC-DS、SSB 这类合成 benchmark 对 cardinality estimation 不够“坏”。原因是这些数据生成器通常也采用 uniformity、independence 等简化假设；而优化器估计时用的也是类似假设。因此 TPC-H 往往让优化器看起来比真实世界更聪明。</p>
+
+<p>JOB 使用 IMDB 数据集。论文使用 2013 年 5 月快照，经 imdbpy 转为 21 张关系表；导出 CSV 约 3.6GB，最大的两张表 <code>cast_info</code> 和 <code>movie_info</code> 分别约 3600 万行与 1500 万行。IMDB 的优点是自然包含偏斜分布和跨表相关性，例如演员、电影类型、国家、公司、评分之间并非独立。</p>
+
+<h3>2.2 JOB 查询长什么样</h3>
+
+<p>JOB 查询都是 select-project-join block。论文构造了 33 个 query structures，每个结构有 2-6 个只在 selection 上不同的 variants，总共 113 个查询。它们包含 3 到 16 个 join，平均 8 个 join。</p>
+
+<p>一个典型查询会问类似“美国公司制作的电影的评分与上映日期”这种电影爱好者可能真的会问的问题。论文刻意没有用极端 trick：没有故意挑极端相关属性，也没有加入不等值 join 或非 surrogate key join，因为仅靠普通 SPJ 和真实相关性就已经足够困难。</p>
+
+<h3>2.3 PostgreSQL 作为实验平台</h3>
+
+<p>PostgreSQL 被选作主要实验系统，因为它是传统 textbook 架构、开源、可修改。论文描述的 PostgreSQL 优化器特征包括：</p>
+
+<ul>
+  <li>join order 使用 dynamic programming 枚举；支持 bushy trees，但排除 cross products。</li>
+  <li>base table cardinality 依赖 histograms、most common values、distinct value counts。</li>
+  <li>复杂 predicate 无法使用 histogram 时会退回经验常数。</li>
+  <li>join 方法包括 full table scan、B+Tree index lookup、nested loop join、hash join、sort-merge join。</li>
+  <li>join algorithm 由优化器静态决定，运行时不能自动改变。</li>
+</ul>
+
+<p>PostgreSQL 的等值 join cardinality 估计公式被论文写成：</p>
+
+<pre><code>|T1 join_{x=y} T2| = |T1| * |T2| / max(dom(x), dom(y))
+
+dom(x): attribute x 的 distinct value count
+核心假设: uniformity + independence + principle of inclusion</code></pre>
+
+<h3>2.4 Cardinality extraction / injection：这篇论文的方法论关键</h3>
+
+<p>为了隔离变量，作者把 IMDB 数据加载到 PostgreSQL、HyPer 和 3 个商业系统中，先用各系统默认统计信息收集命令得到统计信息，再抽取每个 JOB 查询所有中间表达式的估计 cardinality。同时，作者通过执行 <code>SELECT COUNT(*)</code> 获得每个中间表达式的真实 cardinality。</p>
+
+<p>更关键的是，作者修改 PostgreSQL，使其可以对任意 join expression 注入 cardinality。这样就能问一个非常干净的问题：</p>
+
+<pre><code>同一个 PostgreSQL execution engine
+同一个 PostgreSQL plan search / cost model
+只替换 cardinality estimates:
+  - PostgreSQL estimates
+  - HyPer estimates
+  - commercial DBMS estimates
+  - true cardinalities
+然后比较最终计划 runtime</code></pre>
+
+<div class="callout info">
+  <strong>我的理解：</strong>这一步是论文最漂亮的实验设计。它不是简单比较“哪个数据库跑得快”，而是把不同系统的估计值移植到同一个执行引擎里，尽量把 execution engine、buffering、operator implementation 等因素压到背景里。
+</div>
+
+<h2 id="s3">3. Cardinality Estimation：最痛的输入</h2>
+
+<p><span class="tag red">主因</span> <span class="tag amber">q-error</span> <span class="tag blue">join-crossing correlation</span></p>
+
+<h3>3.1 q-error：为什么用倍数误差</h3>
+
+<p>论文用 <span class="key-term">q-error</span> 衡量估计质量。真实 cardinality 为 100 时，估计为 10 或 1000 的 q-error 都是 10。它强调的是相对误差，而不是绝对误差。</p>
+
+<pre><code>q_error(estimate, true) = max(estimate / true, true / estimate)</code></pre>
+
+<p>这很适合优化器，因为计划比较通常关心“这个候选比那个候选大多少/小多少”，而不是单纯差了多少行。</p>
+
+<h3>3.2 Base table selections：中位数看起来很好，但尾部很坏</h3>
+
+<table>
+  <thead>
+    <tr><th>系统</th><th>median</th><th>90th</th><th>95th</th><th>max</th><th>学习笔记</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>PostgreSQL</td><td>1.00</td><td>2.08</td><td>6.10</td><td>207</td><td>多数 selection 估得准，但尾部误差明显。</td></tr>
+    <tr><td>DBMS A</td><td>1.01</td><td>1.33</td><td>1.98</td><td>43.4</td><td>base table 估计最强；论文推测可能使用 sampling。</td></tr>
+    <tr><td>DBMS B</td><td>1.00</td><td>6.03</td><td>30.2</td><td>104000</td><td>中位数好，但极端错误很大。</td></tr>
+    <tr><td>DBMS C</td><td>1.06</td><td>1677</td><td>5367</td><td>20471</td><td>base selection 在该 workload 上表现很差。</td></tr>
+    <tr><td>HyPer</td><td>1.02</td><td>4.47</td><td>8.00</td><td>2084</td><td>用每表 1000 行 random sample 估计 base predicate。</td></tr>
+  </tbody>
+</table>
+
+<p>表 1 的重点不是“哪个系统赢”，而是：base table selection 的 median 常常接近 1，但复杂 predicate、极低选择率、相关属性会让尾部错误非常大。HyPer 这类 sample-based 方法对 base predicate 很有效，但当真实 selectivity 太低，sample 中可能一个命中都没有，于是还是会退回经验方法。</p>
+
+<h3>3.3 Join estimates：误差随 join 数指数级放大</h3>
+
+<p>真正困难的是 intermediate join result。论文统计了超过 100,000 个中间结果估计。图 3 的核心结论是：</p>
+
+<ul class="note-list">
+  <li><strong>所有系统都会出现 1000 倍以上误差。</strong>DBMS A 的 base table 估计很强，但 join estimate 的方差仍与其他系统接近。</li>
+  <li><strong>误差随着 join 数增加而快速放大。</strong>论文特别给出 PostgreSQL 中“错误超过 10 倍”的比例：1 个 join 为 16%，2 个 join 为 32%，3 个 join 为 52%。DBMS A 对应为 15%、25%、36%，只略好一些。</li>
+  <li><strong>系统性低估很常见。</strong>多 join 后真实中间结果确实常会变小，但没有 independence assumption 预测得那么小。</li>
+  <li><strong>没有被测系统能识别 join-crossing correlations。</strong>也就是跨表相关性，例如“出生在巴黎的演员更可能出演法国电影”。</li>
+</ul>
+
+<div class="callout warn">
+  <strong>重要：</strong>论文提醒读者不要把图 3 当成“某个 DBMS 优化器整体好坏”的排名。最终 runtime 取决于系统如何使用估计值、是否有 adaptive operator、是否有更 robust 的执行策略，而不仅仅是估计数字本身。
+</div>
+
+<h3>3.4 TPC-H 为什么显得简单</h3>
+
+<p>论文用 PostgreSQL 在 TPC-H 和 JOB 上的估计误差做对比，认为 TPC-H 对 cardinality estimator 的挑战不足。我的理解是：TPC-H 当然仍可用于执行引擎性能测试，但如果研究目标是 join cardinality estimation，JOB 更能暴露真实相关性带来的难题。</p>
+
+<h3>3.5 “修正统计信息”也可能露出更大问题</h3>
+
+<p>PostgreSQL join estimate 很依赖 distinct value count。作者把 estimated distinct counts 替换成 true distinct counts 后，误差方差略有改善，但系统性低估反而更明显。原因是原先被低估的 distinct counts 会让 join cardinality 估计变大，偶然抵消 independence assumption 的低估。</p>
+
+<div class="callout red">
+  <strong>这就是论文说的 two wrongs that make a right：</strong>两个错误可能相互抵消。优化器工程里的麻烦在于，修好一个统计项可能让另一些查询变慢，因为原先的“错”正在掩盖另一个更深的“错”。
+</div>
+
+<h2 id="s4">4. 坏估计什么时候真的拖慢查询</h2>
+
+<p>大 q-error 并不必然导致慢查询。如果某个误估表达式本来就不贵，或者两个候选计划被类似比例误估，最终计划可能仍不错。论文第 4 节的重点是找出坏估计真正变成灾难的条件。</p>
+
+<h3>4.1 先看只有 primary key indexes 的相对鲁棒设计</h3>
+
+<p>作者把不同系统的 cardinality estimates 注入 PostgreSQL，并与注入 true cardinalities 的计划运行时间比较。以下是 primary-key-only 配置下的 slowdown 分布：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>估计来源</th><th>&lt;0.9</th><th>[0.9,1.1)</th><th>[1.1,2)</th><th>[2,10)</th><th>[10,100)</th><th>&gt;100</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>PostgreSQL</td><td>1.8%</td><td>38%</td><td>25%</td><td>25%</td><td>5.3%</td><td>5.3%</td></tr>
+    <tr><td>DBMS A</td><td>2.7%</td><td>54%</td><td>21%</td><td>14%</td><td>0.9%</td><td>7.1%</td></tr>
+    <tr><td>DBMS B</td><td>0.9%</td><td>35%</td><td>18%</td><td>15%</td><td>7.1%</td><td>25%</td></tr>
+    <tr><td>DBMS C</td><td>1.8%</td><td>38%</td><td>35%</td><td>13%</td><td>7.1%</td><td>5.3%</td></tr>
+    <tr><td>HyPer</td><td>2.7%</td><td>37%</td><td>27%</td><td>19%</td><td>8.0%</td><td>6.2%</td></tr>
+  </tbody>
+</table>
+
+<p><code>&lt;0.9</code> 表示用错误估计反而比用 true cardinalities 更快，这通常来自 cost model error：true cardinalities 只保证“相对于该 cost model 最优”，不保证真实 runtime 最优。</p>
+
+<h3>4.2 最大的坑：非 index nested-loop join</h3>
+
+<p>作者观察到，很多 timeout 来自 PostgreSQL 因严重低估而选择 nested-loop join，且 inner side 没有 index lookup。因为 nested loop 是 O(n²) 风险，而 hash join 通常是 O(n)。如果两个估计代价只差一点点，纯 cost-based 决策会选择估计上略便宜的 nested loop，但实际 payoff 很小，downside 很大。</p>
+
+<div class="callout">
+  <strong>论文的工程建议：</strong>不要只看 expected cost。优化器应该考虑估计本身的不确定性和算法复杂度。一个“估计上只快一点、但错了会炸”的计划，不应该轻易胜过 robust plan。
+</div>
+
+<p>作者禁用非 index nested-loop join 后，使用 PostgreSQL estimates 不再出现 timeout。之后又发现一些慢查询来自 PostgreSQL 9.4 根据估计值固定 hash table size；build input 被低估时，hash table 太小导致长 collision chains。作者 backport 了 PostgreSQL 9.5 的 runtime rehashing 补丁后，primary-key-only 场景中相对 true cardinalities 慢 2 倍以上的查询少于 4%。</p>
+
+<h3>4.3 为什么 primary-key-only 反而稳</h3>
+
+<p>在只有 primary key indexes 时，大的 fact tables 多半必须 full scan。不同 join order 仍然重要，但可选择 access path 较少，搜索空间没有那么多“高收益但高风险”的分支。再加上 main-memory 场景下 index-nested-loop 和 hash join 的差距被缓和，错误估计不一定立刻导致灾难。</p>
+
+<p>论文给出一个经验观察：在全部数据和 index 都缓存于内存时，hash join 相比 index-nested-loop 的优势在 PostgreSQL 中最多约 5 倍，在 HyPer 中最多约 2 倍。这与磁盘上 random I/O 被放大的情况不同。</p>
+
+<h3>4.4 外键索引越多，优化器工作越难</h3>
+
+<p>当作者额外给所有 foreign key attributes 建索引后，access paths 变多，query optimizer 的选择也变多。论文发现此时有 40% 的查询比使用 true cardinalities 的计划慢至少 2 倍。注意，这不是说加索引总体会让系统变慢；论文说总体性能通常显著提高，但<strong>更多索引让优化问题本身更难</strong>。</p>
+
+<h3>4.5 Join-crossing correlations 与物理设计</h3>
+
+<p>论文把跨表相关性称作 <span class="key-term">join-crossing correlations</span>。单表 sample 可以很好估计表内 correlated predicates，但跨表相关性很难。作者用 ROX/DBLP 的例子说明：即使优化器能知道某个跨表相关性，如果物理设计没有相应 access path，也可能无法利用。</p>
+
+<div class="callout info">
+  <strong>我的理解：</strong>Cardinality estimation 不是孤立问题。估计、access path、operator、physical design 是一组耦合问题。知道“这个 join 后会很小”还不够；系统还要有办法在计划中提前利用这个事实。
+</div>
+
+<h2 id="s5">5. Cost Model：重要，但不是主要矛盾</h2>
+
+<p><span class="tag">4000+ LOC</span> <span class="tag blue">main-memory</span> <span class="tag green">simple Cmm</span></p>
+
+<h3>5.1 PostgreSQL cost model 的位置</h3>
+
+<p>PostgreSQL 的 cost model 是一个复杂的 disk-oriented artifact，论文说它有 4000 多行 C 代码，会考虑 CPU、I/O、随机页访问、顺序页访问、tuple size、interesting order、部分相关 index access 等因素。</p>
+
+<p>这个复杂性自然引出问题：在 JOB 这种数据全部在内存里的场景，复杂 cost model 对最终性能到底贡献多少？</p>
+
+<h3>5.2 只有 true cardinalities 才让 cost 与 runtime 更可靠相关</h3>
+
+<p>论文比较了 predicted cost 与真实 runtime 的相关性。使用 PostgreSQL estimates 时，outliers 很多；注入 true cardinalities 后，PostgreSQL cost model 才成为比较可靠的 runtime predictor。用 default cost model + true cardinalities 时，论文按线性拟合定义的 median prediction error 为 38%。</p>
+
+<h3>5.3 面向内存调参：有提升，但仍被 cardinality 盖过</h3>
+
+<p>PostgreSQL 默认参数暗含“处理一个 tuple 比从 page 读数据便宜 400 倍”的假设。论文为了贴近 main-memory workload，把 CPU cost parameters 乘以 50，以缩小 CPU 与 I/O 的差距。这样 median prediction error 从 38% 降到 30%。</p>
+
+<p>但是，调参带来的改进仍小于“估计 cardinality vs true cardinality”的差距。论文还观察到 cardinality misestimates 会导致计划选择“振荡”：优化器偶然发现很快的计划却给了很高 cost，或反过来。</p>
+
+<h3>5.4 一个很简单的 Cmm 也能工作</h3>
+
+<p>论文设计了一个非常简单的 main-memory cost function：不建模 I/O，只数查询执行过程中经过各 operator 的 tuple 数，并区分 hash join 和 index-nested-loop join。参数中 <code>lambda = 2</code> 近似 index lookup 比 hash lookup 更贵，<code>tau = 0.2</code> 折扣 table scan 成本。</p>
+
+<pre><code>Cmm 的精神版本:
+
+scan / selection:
+  cost = tau * |R|
+
+hash join:
+  cost = |join result| + cost(left) + cost(right)
+
+index nested-loop:
+  cost = cost(left) + lambda * |left| * lookup_factor</code></pre>
+
+<p>在 true cardinalities 下，tuned cost model 的几何平均 runtime 比 PostgreSQL standard model 快 41%，这个简单 <code>Cmm</code> 也快 34%。这是有意义的提升，但论文强调：它仍然被“把 estimated cardinalities 换成 true cardinalities”的收益压过。</p>
+
+<div class="callout">
+  <strong>学习重点：</strong>Cost model 不是不重要，而是它高度依赖 cardinality。cardinality 错得很离谱时，再精细的 operator cost 常常只是在错误输入上精细计算。
+</div>
+
+<h2 id="s6">6. Plan Space / Plan Search：穷举仍有价值</h2>
+
+<p>论文第 6 节研究最后一个组件：plan enumeration algorithm。这里作者使用 standalone optimizer 实现 DP 和若干 heuristic algorithms。为了比较大量候选计划，他们不逐个执行计划，而是：</p>
+
+<pre><code>1. 用某种 cardinality estimates 让 optimizer 选计划
+2. 用 true cardinalities + Section 5.4 的 in-memory cost model 重新计算该计划的 true-ish cost
+3. 以此近似该计划真实 runtime
+</code></pre>
+
+<p>这个近似依赖前一节结论：在 main-memory JOB 设置中，cost model error 相比 cardinality error 可以认为是次要的。</p>
+
+<h3>6.1 Join order 的影响有多大</h3>
+
+<p>作者用 Quickpick 随机生成 join order，每个查询运行 10,000 次，观察 random plans 的 cost 分布。结论是：join order 非常重要，慢计划和好计划常常差数个数量级。</p>
+
+<table>
+  <thead>
+    <tr><th>物理设计</th><th>不超过最优 1.5 倍的计划比例</th><th>worst/best 平均宽度</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>无索引</td><td>44%</td><td>101x</td><td>好计划相对多，access path 少。</td></tr>
+    <tr><td>仅 PK indexes</td><td>39%</td><td>115x</td><td>与无索引相近，因为 JOB 没有 primary key selection。</td></tr>
+    <tr><td>PK + FK indexes</td><td>4%</td><td>48120x</td><td>好计划稀少，搜索空间风险变大。</td></tr>
+  </tbody>
+</table>
+
+<h3>6.2 Bushy trees 是否必要</h3>
+
+<p>作者修改 DP，只枚举 left-deep、right-deep 或 zig-zag trees，然后用 true cardinalities 比较受限空间与最优 bushy plan 的差距。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>tree shape</th>
+      <th>PK median</th><th>PK 95%</th><th>PK max</th>
+      <th>PK+FK median</th><th>PK+FK 95%</th><th>PK+FK max</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>zig-zag</td><td>1.00</td><td>1.06</td><td>1.33</td><td>1.00</td><td>1.60</td><td>2.54</td></tr>
+    <tr><td>left-deep</td><td>1.00</td><td>1.14</td><td>1.63</td><td>1.06</td><td>2.49</td><td>4.50</td></tr>
+    <tr><td>right-deep</td><td>1.87</td><td>4.97</td><td>6.80</td><td>47.2</td><td>30931</td><td>738349</td></tr>
+  </tbody>
+</table>
+
+<p>结论比较细腻：zig-zag trees 表现不错，left-deep 也还算可接受；right-deep 单独使用很糟。bushy exhaustive enumeration 有收益，但在该 workload 上收益是“中等但不可忽略”，不是压倒一切。</p>
+
+<h3>6.3 Heuristics 是否够用</h3>
+
+<p>论文比较了 DP、Quickpick-1000 和 Greedy Operator Ordering (GOO)。Quickpick-1000 随机生成 1000 个计划并选估计 cost 最低者；GOO 每次合并 cost 最低的一对 join trees。三者都用 PostgreSQL cardinality estimates 选计划，再用 true cardinalities 计算相对最优 cost。</p>
+
+<table>
+  <thead>
+    <tr><th>配置</th><th>算法</th><th>median</th><th>95%</th><th>max</th><th>笔记</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>PK + PostgreSQL estimates</td><td>DP</td><td>1.03</td><td>1.85</td><td>4.79</td><td>估计有误时仍优于两个启发式。</td></tr>
+    <tr><td>PK + PostgreSQL estimates</td><td>Quickpick-1000</td><td>1.05</td><td>2.19</td><td>7.29</td><td>接近 DP，但尾部更差。</td></tr>
+    <tr><td>PK + PostgreSQL estimates</td><td>GOO</td><td>1.19</td><td>2.29</td><td>2.36</td><td>尾部不大，但 median 更差。</td></tr>
+    <tr><td>PK+FK + PostgreSQL estimates</td><td>DP</td><td>1.66</td><td>169</td><td>186367</td><td>更多 access paths 下，估计错会非常痛。</td></tr>
+    <tr><td>PK+FK + PostgreSQL estimates</td><td>Quickpick-1000</td><td>2.52</td><td>365</td><td>186367</td><td>启发式在 rich physical design 下更吃亏。</td></tr>
+    <tr><td>PK+FK + PostgreSQL estimates</td><td>GOO</td><td>2.35</td><td>169</td><td>186367</td><td>未充分感知 indexes，收益有限。</td></tr>
+  </tbody>
+</table>
+
+<p>如果注入 true cardinalities，DP 当然是 1.00；Quickpick-1000 与 GOO 仍会因为搜索不完整而损失性能，尤其在 PK+FK 配置中，Quickpick-1000 的 95% slowdown 为 4.72，GOO 为 5.77。</p>
+
+<div class="callout info">
+  <strong>论文结论：</strong>即使 cardinality estimates 有错，完整枚举搜索空间仍然有价值。考虑到已有 exhaustive enumeration algorithms 可以很快处理几十个 relations，很多情况下没有必要退回启发式或禁用 bushy trees。
+</div>
+
+<h2 id="s7">7. 优化器设计教训</h2>
+
+<h3>7.1 不要盲目信任点估计</h3>
+
+<p>传统优化器把 cardinality 当成一个确定数字，然后让 cost model 精确比较计划。论文的实验说明这个点估计常常不可靠。更稳的设计应考虑 estimate uncertainty，也就是“这个估计错了会怎样”。</p>
+
+<ul>
+  <li>估计上只略便宜但复杂度风险大的 nested-loop join，不应轻易击败 hash join。</li>
+  <li>operator 参数应尽可能在 runtime 自适应，例如 hash table resizing。</li>
+  <li>优化器可以把 risk/reward 纳入计划选择，而不是只比较 expected cost。</li>
+</ul>
+
+<h3>7.2 Base table sampling 有用，但 join-crossing correlations 仍开放</h3>
+
+<p>论文认为 table samples 对 base table estimation 是简单且 robust 的技术。可是 JOB 的主要困难在跨表相关性：单表 sample 无法直接知道“演员出生地”和“电影产地”经 join 后的相关结构。相关工作里有 join samples、sketches、graphical models、feedback、MaxEnt 等路线，但工程落地仍困难。</p>
+
+<h3>7.3 物理设计越丰富，优化问题越尖锐</h3>
+
+<p>增加 FK indexes 通常提高总体执行能力，但也让优化器更容易在复杂 access path 中选错。论文中好计划比例从 PK-only 的 39% 降到 PK+FK 的 4%，这说明“给优化器更多选择”并不自动等于“优化器更容易成功”。</p>
+
+<h3>7.4 Cost model 可以简化，但枚举器不应随便降级</h3>
+
+<p>在 main-memory workload 中，简单 tuple-counting cost model 已经相当有竞争力。这不代表 cost model 可有可无，而是说明设计精力应优先投向 cardinality 和 robust execution。与此同时，DP/bushy exhaustive enumeration 仍然有收益；估计有错不是放弃好枚举器的理由。</p>
+
+<h2 id="s8">8. 与 join order 学习路线和本仓库 demo 的关系</h2>
+
+<h3>8.1 它补上了“算法正确性”之外的现实层</h3>
+
+<p>System R、IKKBZ、DPccp、top-down partitioning、Volcano/Cascades 等材料主要研究搜索空间与算法效率。这篇论文补上的问题是：</p>
+
+<pre><code>搜索算法找到的最优，是哪个世界里的最优？
+
+estimated cardinalities + cost model 世界:
+  optimizer 看到的最优
+
+true cardinalities + actual runtime 世界:
+  用户体验到的好坏
+</code></pre>
+
+<p>因此，学习 join order 时可以把这篇论文放在“枚举算法之后、真实优化器之前”：它提醒我们，join order search 算法再漂亮，也需要被 cardinality、cost model、physical design 和 runtime robustness 包围起来理解。</p>
+
+<h3>8.2 与本仓库 demo 的对应</h3>
+
+<p>本仓库的 <code>demos/demo</code> 是一个教学型 join reorder demo：从代码结构看，它包含 <code>DPSub</code>、transformational search、top-down partitioning、MincutLazy、shared cost model、<code>StatsCatalog</code>、trace counters 等组件。它很适合演示“搜索策略如何枚举同一个 join graph 并找到相同 best cost”。</p>
+
+<p>这篇论文给 demo 的启发是：</p>
+
+<ul>
+  <li><strong>StatsCatalog 是实验旋钮。</strong>论文的 cardinality injection 可以对应到 demo 中调整 <code>rows</code> 与 predicate selectivity，观察估计错误如何改变 best plan。</li>
+  <li><strong>Cost model 是可替换假设。</strong>论文的 <code>Cmm</code> 告诉我们，一个教学 demo 可以先用简单、确定、可解释的 cost formula；复杂性应服务于实验问题，而不是为了像真实系统而复杂。</li>
+  <li><strong>搜索策略比较要区分“枚举能力”和“输入质量”。</strong>如果 DPSub、Transformational、TopDown 在同一 cost inputs 下给出相同 best cost，这说明枚举实现一致；但真实系统还要面对 cardinality 输入错误。</li>
+  <li><strong>trace counters 可帮助理解 plan space。</strong>论文第 6 节关心好计划在空间中的稀有程度；demo 的 <code>PlansCosted</code>、<code>DPCells</code>、<code>Partitions</code> 等计数可以帮助把这种搜索成本具体化。</li>
+  <li><strong>branch-and-bound 的效果依赖 lower bound 和 cost model。</strong>如果估计本身很不稳定，过度相信 predicted-cost bound 也可能有风险；这与论文“不盲信点估计”的教训一致。</li>
+</ul>
+
+<div class="callout warn">
+  <strong>边界：</strong>论文实验是在真实 DBMS + IMDB + JOB 上做的；demo 是小规模教学系统。两者不能直接比较性能数字，但可以共享同一组概念：join graph、cardinality、cost、search space、physical operators、robustness。
+</div>
+
+<h2 id="summary">9. 读完应记住的结论</h2>
+
+<table>
+  <thead>
+    <tr><th>结论</th><th>为什么重要</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Cardinality Estimation 是传统优化器最脆弱的输入。</strong></td>
+      <td>多 join 后误差会快速放大，所有被测系统都会出现数量级错误，且常系统性低估。</td>
+    </tr>
+    <tr>
+      <td><strong>坏估计不必然导致慢查询，关键在执行策略是否 robust。</strong></td>
+      <td>禁用高风险非 index nested-loop join、启用 runtime rehashing 后，primary-key-only 场景明显稳定。</td>
+    </tr>
+    <tr>
+      <td><strong>Cost Model 有用，但在 JOB main-memory 场景不是主要矛盾。</strong></td>
+      <td>调参和简单 Cmm 都能改进，但收益小于把 estimated cardinalities 换成 true cardinalities。</td>
+    </tr>
+    <tr>
+      <td><strong>Plan Search 仍值得认真做。</strong></td>
+      <td>即使估计不完美，exhaustive DP 仍优于启发式；rich access paths 下好计划更稀有。</td>
+    </tr>
+    <tr>
+      <td><strong>物理设计会改变优化问题难度。</strong></td>
+      <td>FK indexes 提高潜在性能，也让错误计划的风险变大；优化器需要在更多选择中识别少数好计划。</td>
+    </tr>
+    <tr>
+      <td><strong>join-crossing correlations 是开放前沿。</strong></td>
+      <td>单表 sample 不足以解决跨表相关性；估计、access path、runtime adaptivity 需要一起设计。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <strong>最后的心智模型：</strong>查询优化器不是“DP + cost formula”这么简单。它更像一个由估计、搜索、代价、物理设计和运行时纠错组成的闭环系统。这篇论文的核心贡献，是把这个闭环拆开做了可解释的实验。
+</div>
+
+<div class="footnotes">
+  <p><strong>术语保留：</strong>Cardinality Estimation（基数估计）、Cost Model（代价模型）、Plan Space Enumeration / Plan Search（计划空间枚举/搜索）、Join Order Benchmark (JOB)、q-error、join-crossing correlations、Dynamic Programming (DP)、Quickpick、Greedy Operator Ordering (GOO)。</p>
+</div>
+
+</body>
+</html>

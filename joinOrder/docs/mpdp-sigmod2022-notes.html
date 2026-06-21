@@ -572,6 +572,14 @@ S_right = {2,3,4,5}</code></pre>
   <li><strong>用 grow 扩展成全局 pair。</strong>得到 \((S_{left}, S_{right})\) 后，才调用 <code>CreatePlan</code> 并更新 <code>BestPlan(S)</code>。</li>
 </ol>
 
+<div class="callout info">
+<strong>这里的 block-cut tree 是隐式用的。</strong>Algorithm 3 没有显式构造一棵树并沿树 DFS；<code>Find-Blocks</code> 找到 blocks 之后，图中 block 外的连接方式已经只剩“通过 cut vertex 挂接”的树状结构。对任意真实的全局 CCP-Pair \((S_L,S_R)\)，左右之间所有跨边都会落在同一个 block \(B\) 里。于是算法枚举到 \(B\) 时，一定会枚举到
+\[
+lb=B\cap S_L,\qquad rb=B\cap S_R.
+\]
+接下来 <code>grow(lb, S \ rb)</code> 的“禁止进入 \(rb\)”就等价于在 block-cut tree 上从 \(lb\) 这一侧向外扩展：所有不需要穿过右侧锚点 \(rb\) 就能到达的挂接分支都会被吸进左边；剩下的补集自然留在右边。所以 MPDP 不需要显式枚举 block 外每个点属于左还是右，这部分归属由 cut vertex 连接性和 <code>grow</code> 自动决定。
+</div>
+
 <figure class="paper-figure">
   <img src="assets/mpdp-sigmod2022/algorithm-3-mpdp-general.png" alt="Algorithm 3 MPDP generalization with cycles" loading="lazy">
   <figcaption>原文 Algorithm 3：一般图 MPDP。它不是枚举 \(S\) 的全部 subset，而是枚举每个 block 内的 subset，再通过 grow 扩展回全局 pair。</figcaption>

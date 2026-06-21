@@ -473,7 +473,7 @@ window.MathJax = {
   </tbody>
 </table>
 
-<p>以 Figure 5 中论文直接给出的例子为准：</p>
+<p>注意 Figure 5 有两层对象：整张 join graph 有 9 个 relation；图中右侧表格只是拿当前 DP 状态 \(S=\{1,2,3,4,5\}\) 来演示 Algorithm 3。以这个状态为准：</p>
 
 <pre><code>S = {1, 2, 3, 4, 5}
 Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
@@ -589,7 +589,80 @@ lb=B\cap S_L,\qquad rb=B\cap S_R.
 
 <p>这就是论文说的 hybrid enumeration：在 block 内有点像 vertex-based enumeration，但不是对整个 \(S\) 做；在 block 之间又利用 cut structure，有点像 edge/tree-aware enumeration。它的目的不是改变 DP 的状态，而是让每个状态 \(S\) 的候选 Join-Pair 更少、更接近真正的 CCP-Pair。</p>
 
-<h3>5.7 为什么这样不会漏候选</h3>
+<h3>5.7 用 Figure 5 手工跑一遍</h3>
+
+<p>先跑论文 Figure 5 右侧明确列出的状态：</p>
+
+<pre><code>当前 DP 状态:
+S = {1,2,3,4,5}
+
+Find-Blocks(G[S]):
+B1 = {1,2,3,4}   // 有环 block
+B2 = {4,5}       // bridge block</code></pre>
+
+<p>先看 bridge block \(B2=\{4,5\}\)。这里 Algorithm 3 的行为和 tree case 的删边枚举完全一致：</p>
+
+<table>
+  <thead>
+    <tr><th>block-local split</th><th>grow</th><th>全局 pair</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>\(lb=\{4\}, rb=\{5\}\)</td>
+      <td>\(\operatorname{grow}(\{4\}, S\setminus\{5\})\)</td>
+      <td>\((\{1,2,3,4\}, \{5\})\)</td>
+      <td>等价于删掉 bridge edge \((4,5)\) 后取 4 侧。</td>
+    </tr>
+    <tr>
+      <td>\(lb=\{5\}, rb=\{4\}\)</td>
+      <td>\(\operatorname{grow}(\{5\}, S\setminus\{4\})\)</td>
+      <td>\((\{5\}, \{1,2,3,4\})\)</td>
+      <td>同一条切边的对称方向。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这就是 §3.1 的优势在一般图里的保留方式：block-cut tree 上的 bridge 部分不需要枚举 powerset；它退化成“枚举这条桥两侧”。</p>
+
+<p>再看有环 block \(B1=\{1,2,3,4\}\)。这里删单条边已经不够，因为 block 内部有多条路径，必须枚举 block-local 的 \(lb/rb\)，再把 block 外挂着的点 5 通过 grow 自动归边：</p>
+
+<table>
+  <thead>
+    <tr><th>block-local split</th><th>是否通过 block 内 CCP 检查</th><th>grow 后全局 pair</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>\((\{1\}, \{2,3,4\})\)</td>
+      <td>通过</td>
+      <td>\((\{1\}, \{2,3,4,5\})\)</td>
+    </tr>
+    <tr>
+      <td>\((\{4\}, \{1,2,3\})\)</td>
+      <td>通过</td>
+      <td>\((\{4,5\}, \{1,2,3\})\)</td>
+    </tr>
+    <tr>
+      <td>\((\{1,4\}, \{2,3\})\)</td>
+      <td>通过</td>
+      <td>\((\{1,4,5\}, \{2,3\})\)</td>
+    </tr>
+    <tr>
+      <td>\((\{1,3\}, \{2,4\})\)</td>
+      <td>不通过</td>
+      <td>block 内左右侧不连通，丢弃。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这个例子能看出 MPDP 的两个动作分工很清楚：block 内枚举负责发现“切口在有环区域里怎么切”；grow 负责把 5 这种挂在 cut vertex 4 外面的点归到正确一侧。算法没有枚举 \(S\) 的所有 subset，例如不会先枚举全局左侧 \(\{1,4,5\}\)，而是枚举 block 内的 \(\{1,4\}\)，再由 grow 把 5 带进来。</p>
+
+<p>如果当前 DP 状态换成 Figure 5 的整张 9 点图 \(S=\{1,2,3,4,5,6,7,8,9\}\)，则 block-cut tree 是一条带 cut vertices 的链：</p>
+
+<pre><code>{1,2,3,4} - 4 - {4,5} - 5 - {5,9} - 9 - {6,7,8,9}</code></pre>
+
+<p>这时 \(\{4,5\}\)、\(\{5,9\}\) 这样的 bridge blocks 继续退化成 tree-style 删边枚举；\(\{1,2,3,4\}\) 和 \(\{6,7,8,9\}\) 这两个有环 blocks 才需要局部 subset 枚举。也就是说，MPDP 的收益不来自“把整图变成树后直接删边”，而来自只在真正有环的 block 内支付指数枚举成本。</p>
+
+<h3>5.8 为什么这样不会漏候选</h3>
 
 <p>证明可以先记成两句话：</p>
 
@@ -832,6 +905,11 @@ lb=B\cap S_L,\qquad rb=B\cap S_R.
       <td>算法正确性</td>
       <td>Tree 和 general graph 都证明 MPDP 枚举到与 DPSUB 相同的 CCP-Pair，并能得到 optimal join order。</td>
       <td>前提是不考虑 cross product，且问题建模为 inner join graph；DPHyp 那类 hypergraph/outer join 支持是未来工作。</td>
+    </tr>
+    <tr>
+      <td>证明可读性</td>
+      <td>§3.2 给出了 Lemma 4/5/8，把 completeness、soundness 和去重都串到了 block-local enumeration + grow 上。</td>
+      <td>原文证明写得很压缩，Algorithm 3 也没有显式展示 block-cut tree traversal。读者应额外检查三个点：跨边为何一定落在同一 block、一次左侧 grow 加补集为何保证右侧连通、不同 block/local split 是否会重复生成同一全局 pair。</td>
     </tr>
     <tr>
       <td>枚举效率</td>

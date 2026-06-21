@@ -149,8 +149,8 @@
   <li><a href="#step2">Step 2: 收集连通子集</a></li>
   <li><a href="#step3">Step 3: 按大小递增 DP</a></li>
   <li><a href="#ccp-block">CCP Block 检查</a></li>
-  <li><a href="#physical-plans">物理计划生成</a></li>
-  <li><a href="#sort-enforcer">Interesting Order 与 Sort Enforcer</a></li>
+  <li><a href="#physical-plans">物理计划生成：三阶段</a></li>
+  <li><a href="#sort-enforcer">Interesting Order 深入</a></li>
   <li><a href="#trace">Trace 计数器</a></li>
   <li><a href="#dpccp-relation">与 DPccp 的关系</a></li>
   <li><a href="#example">例子：chain_3 流程模拟</a></li>
@@ -238,6 +238,86 @@
   <code>csgCmpPairs</code> 枚举避免了全子集遍历和 (L,R)/(R,L) 对称重复，
   而 DPSub（Mancini 的 "Generic DPSUB"）刻意保留了暴力全子集枚举，
   牺牲单线程效率来换取内层循环的并行友好性（见 <a href="#dpccp-relation">§11</a>）。
+</div>
+
+<h3>2.4 JoinGraph 设计：顶点与边的分离</h3>
+
+<p>
+  一个重要的设计选择：<code>Relation</code> 结构体<strong>不包含任何边/邻接信息</strong>——
+  它只有 <code>id</code>、<code>alias</code>、<code>table_name</code>、<code>rows</code>、<code>scan_cost</code>。
+  所有的图结构信息集中在 <code>JoinGraph</code> 类内部：
+</p>
+
+<pre><code>class JoinGraph {
+private:
+  std::vector&lt;Relation&gt; relations_;                       // 顶点：纯数据描述符
+  std::vector&lt;JoinPredicate&gt; predicates_;                 // 边：ColumnRef 对 + 选择性
+  std::unordered_map&lt;std::string, std::size_t&gt; alias_to_index_;  // alias → 顶点索引
+};</code></pre>
+
+<p>
+  边（<code>JoinPredicate</code>）存在图级别而非顶点级别，这是一个刻意为之的设计：
+</p>
+
+<table>
+  <tr><th>原因</th><th>说明</th></tr>
+  <tr>
+    <td>边属于查询，不属于 relation</td>
+    <td>同一个 <code>Relation("b", rows=100)</code> 在 chain_3 中连接 a 和 c，在 star query 中可能连接五个维表。边结构随查询变化，把边挂在 relation 上会让 Relation 失去复用性。</td>
+  </tr>
+  <tr>
+    <td>bitmask 枚举不需要邻接表</td>
+    <td>DPSub 的图查询全部是 set-level 的——<code>IsConnected(RelSet)</code>、<code>HasPredicateAcross(RelSet, RelSet)</code>。
+    这些判断只需要知道 "给定位掩码集合内部/之间有没有边"，用扁平的 <code>predicates_</code> 向量做 bitmask 交集匹配即可，无需从某个顶点出发遍历邻接表。</td>
+  </tr>
+  <tr>
+    <td>ColumnRef 存 alias 而非指针</td>
+    <td><code>JoinPredicate</code> 中用 <code>ColumnRef{alias, column}</code>（字符串）引用 relation，而非 <code>Relation*</code> 或 <code>size_t id</code>。
+    这让 predicate 定义独立于 relation 的创建顺序——可以先建顶点再建边，<code>JoinGraph</code> 内部用 <code>alias_to_index_</code> 做名字解析。</td>
+  </tr>
+</table>
+
+<p>
+  以 star query <code>a.x=b.x, a.y=c.y, a.z=d.z</code> 为例，JoinGraph 的内部形态：
+</p>
+
+<div class="diagram">vertices (relations_):
+  [0] {id=0, alias="a", rows=..., scan_cost=...}
+  [1] {id=1, alias="b", rows=..., scan_cost=...}
+  [2] {id=2, alias="c", rows=..., scan_cost=...}
+  [3] {id=3, alias="d", rows=..., scan_cost=...}
+
+edges (predicates_):
+  [0] {left=("a","x"), right=("b","x"), selectivity=...}
+  [1] {left=("a","y"), right=("c","y"), selectivity=...}
+  [2] {left=("a","z"), right=("d","z"), selectivity=...}
+
+bitmask encoding:
+  a → 0001, b → 0010, c → 0100, d → 1000
+  FullSet() = 1111 = 15
+
+Topology (a is the center):
+         b (0010)
+        /
+    a.x=b.x
+      /
+    a (0001)
+     |      \
+    a.y=c.y  a.z=d.z
+     |        \
+    c (0100)  d (1000)
+
+Key: a knows nothing about its 3 edges — all graph queries go through JoinGraph:
+  graph.HasPredicateAcross(0b0001, 0b1110)  // true: 3 edges cross
+  graph.IsConnected(0b1110)                 // false: b,c,d with no edges among themselves
+  graph.CrossingPredicates(0b0001, 0b0110)  // [{a-b}, {a-c}], excludes a-d (d not in 0b0110)</div>
+
+<div class="callout callout-info">
+  <strong>对比邻接表模型：</strong>
+  如果 <code>Relation</code> 存邻接表（<code>vector&lt;pair&lt;size_t, JoinPredicate&gt;&gt; neighbors</code>），
+  则 bitmask 判断需要从任意顶点做 BFS 遍历邻接表，同一条边在两个顶点中重复存储，
+  star query 的中心表会有大量邻接条目。当前设计为 bitmask-based set enumeration 优化——
+  顶点轻、边集中、查询靠 mask 运算。
 </div>
 
 <!-- ================================================================== -->
@@ -563,46 +643,84 @@ if (!graph.HasPredicateAcross(S_left, S_right)) { rejected++; continue; }
 </div>
 
 <!-- ================================================================== -->
-<h2 id="physical-plans">8. 物理计划生成</h2>
+<h2 id="physical-plans">8. 物理计划生成：三阶段结构</h2>
 
-<h3>8.1 PlanCosted 计数时机</h3>
-
-<p>
-  每当 DPSub 调用 <code>MakeJoin</code> 或 <code>MakeSort</code> 创建物理计划时，
-  <code>trace.plans_costed</code> 递增。与 <code>Transformational</code> 的策略不同，
-  DPSub 的 <code>plans_costed</code> 由两部分构成：
-</p>
-
-<ul>
-  <li><strong>FillRelation 阶段：</strong>每个单表的 SeqScan + 每个 predicate 列的 SortEnforcer。</li>
-  <li><strong>DP 主循环阶段：</strong>每个通过 CCP 检查的 split 的 HashJoin、NestedLoopJoin、MergeJoin + Sort enforcer 传播。</li>
-</ul>
-
-<h3>8.2 Any property 下的物理计划</h3>
+<h3>8.1 总览：每个 CCP split 的三层处理</h3>
 
 <p>
-  对每个通过 CCP 的 split <code>(S_left, S_right)</code>，DPSub 尝试三类物理 join：
+  对每个通过 CCP 检查的 split <code>(S_left, S_right)</code>，DPSub 执行<strong>两个阶段</strong>的物理计划构建。
+  在所有 split 枚举完毕后，再执行<strong>第三个阶段</strong>——Sort enforcer 传播。
+  三层各有不同的目标和填充的 DP 表 key：
 </p>
 
-<pre><code>// Hash Join — 无需子输入有序
+<table>
+  <tr><th>阶段</th><th>何时执行</th><th>填充的 key</th><th>生产者</th><th>消费者</th></tr>
+  <tr>
+    <td>(1) Optimize for Any</td>
+    <td>每个 CCP split 内</td>
+    <td><code>cache[S, Any]</code></td>
+    <td>HashJoin, NestedLoopJoin, MergeJoin</td>
+    <td>上层 (1) 的 Any 输入；根节点最终答案</td>
+  </tr>
+  <tr>
+    <td>(2) Optimize for Sorted via predicates</td>
+    <td>每个 CCP split 内</td>
+    <td><code>cache[S, Sorted(join_col)]</code></td>
+    <td>本次 join 的 MergeJoin（输出天然有序）</td>
+    <td>上层 MergeJoin 的 Sorted 输入</td>
+  </tr>
+  <tr>
+    <td>(3) Sort enforcer propagation</td>
+    <td>所有 split 枚举完后</td>
+    <td><code>cache[S, Sorted(pred_col)]</code></td>
+    <td>SortEnforcer 节点（显式排序）</td>
+    <td>上层 MergeJoin 的 Sorted 输入（当 join 的是其他列时）</td>
+  </tr>
+</table>
+
+<div class="diagram">DP 内层循环的三阶段位置：
+for each connected S (by increasing size):
+    for each S_left ⊂ S:
+        if not CCP: continue
+        ╔══════════════════════════════════════════╗
+        ║ (1) Optimize for Any                    ║  → cache[S, Any]
+        ╚══════════════════════════════════════════╝
+        ╔══════════════════════════════════════════╗
+        ║ (2) Optimize for Sorted via predicates  ║  → cache[S, Sorted(join_col)]
+        ╚══════════════════════════════════════════╝
+    ╔══════════════════════════════════════════════╗
+    ║ (3) Sort enforcer propagation               ║  → cache[S, Sorted(other_col)]
+    ╚══════════════════════════════════════════════╝</div>
+
+<h3>8.2 阶段 (1)：Optimize for Any property</h3>
+
+<p>
+  为 <code>S</code> 产生输出顺序不限（<code>Any</code>）的最优计划，尝试三种物理 join：
+</p>
+
+<pre><code>// 从 cache 取左右子集的 Any 计划
 left_any  = cache["S_left|Any"]
 right_any = cache["S_right|Any"]
+
+// (1a) Hash Join — 输入无需有序
 hash_join = MakeJoin(HashJoin, left_any, right_any, pred, Any)
 cache["S|Any"] = min(cache["S|Any"], hash_join)
 
-// Nested-Loop Join — 无需子输入有序
+// (1b) Nested-Loop Join — 输入无需有序
 nested_loop = MakeJoin(NestedLoopJoin, left_any, right_any, pred, Any)
 cache["S|Any"] = min(cache["S|Any"], nested_loop)
 
-// Merge Join — 需要子输入按 join key 有序
-if has crossing predicate:
-  left_sorted  = cache["S_left|Sorted(left_join_key)"]
-  right_sorted = cache["S_right|Sorted(right_join_key)"]
-  merge_join = MakeJoin(MergeJoin, left_sorted, right_sorted, pred, Any)
-  cache["S|Any"] = min(cache["S|Any"], merge_join)</code></pre>
+// (1c) Merge Join — 输入需要 Sorted，查找左右子集是否已有按 join key 排好序的计划
+// 例：pred = a.x=b.x，S_left={a}, S_right={b}
+sorted_left  = cache["{a}|Sorted(a.x)"]
+sorted_right = cache["{b}|Sorted(b.x)"]
+if both exist:
+  merge_join = MakeJoin(MergeJoin, sorted_left, sorted_right, pred, Any)
+  cache["S|Any"] = min(cache["S|Any"], merge_join)
+  // 注意：MergeJoin 自身输出标记为 Any（上层不要求有序），但它消费了 Sorted 孩子</code></pre>
 
 <table>
-  <tr><th>Physical op</th><th>子属性要求</th><th>cost 公式</th></tr>
+  <tr><th>Physical op</th><th>子属性要求</th><th>cost 公式 (cost_model.cpp)</th></tr>
   <tr>
     <td><code>HashJoin</code></td>
     <td><code>left: Any</code>, <code>right: Any</code></td>
@@ -611,75 +729,244 @@ if has crossing predicate:
   <tr>
     <td><code>NestedLoopJoin</code></td>
     <td><code>left: Any</code>, <code>right: Any</code></td>
-    <td><code>left_cost + right_cost + left_rows * right_rows</code></td>
+    <td><code>left_cost + right_cost + left_rows × right_rows</code></td>
   </tr>
   <tr>
-    <td><code>MergeJoin</code></td>
+    <td><code>MergeJoin</code> (for Any)</td>
     <td><code>left: Sorted(key_left)</code>, <code>right: Sorted(key_right)</code></td>
     <td><code>left_cost + right_cost + left_rows + right_rows</code></td>
   </tr>
 </table>
 
-<h3>8.3 Sorted property 下的 Merge Join</h3>
-
-<p>
-  DPSub 还会对每个 crossing predicate 构建直接满足 Sorted property 的 MergeJoin：
-</p>
-
-<pre><code>for pred in crossing_predicates:
-  for side in {left, right}:
-    sort_key = pred.left or pred.right (whichever we want as output order)
-
-    if sort_key.alias ∈ S_left:
-      // merge join 左子需要 Sorted(sort_key)，右子需要 Sorted(the_other_key)
-      left  = cache["S_left|Sorted(sort_key)"]
-      right = cache["S_right|Sorted(the_other_key)"]
-    else:
-      // merge join 右子需要 Sorted(sort_key)，左子需要 Sorted(the_other_key)
-      left  = cache["S_left|Sorted(the_other_key)"]
-      right = cache["S_right|Sorted(sort_key)"]
-
-    merge_join = MakeJoin(MergeJoin, left, right, pred, Sorted(sort_key))
-    cache["S|Sorted(sort_key)"] = min(cache["S|Sorted(sort_key)"], merge_join)</code></pre>
-
 <div class="callout callout-info">
-  <strong>为什么同时要 Any 和 Sorted？</strong>
-  父节点如果做 HashJoin/NestedLoopJoin，需要子节点提供 Any 计划；
-  如果做 MergeJoin，需要子节点提供 Sorted 计划。
-  DP 表中同时维护两种 property 的最优计划，这就是 interesting order 的核心思想。
+  <strong>MergeJoin 为何出现在 Any 阶段？</strong>
+  虽然 MergeJoin 要求 Sorted 输入，但它的<em>输出</em>可以标注为 Any（上层不要求有序）。
+  如果子集的 Sorted 计划已经由 FillRelation 或之前的传播生成，且 MergeJoin 的 cost 低于 HashJoin/NLJoin，
+  它就会成为 <code>cache[S, Any]</code> 的最优候选。
 </div>
 
-<!-- ================================================================== -->
-<h2 id="sort-enforcer">9. Interesting Order 与 Sort Enforcer</h2>
+<h3>8.3 阶段 (2)：Optimize for Sorted properties via matching predicates</h3>
 
 <p>
-  在枚举完 S 的所有 split 后，DPSub 还会做一次 <strong>Sort Enforcer 传播</strong>：
-  检查 S 中每个 relation 在 predicate 中出现的列，为该列构建
-  <code>SortEnforcer(S_any, column)</code> 计划。
+  对每条<strong>跨越 S_left 和 S_right</strong> 的 predicate，尝试用 MergeJoin 产生<strong>输出按 join 列有序</strong>的计划。
+  代码中遍历 predicate 的两个 "方向"（side 0 和 side 1），对应输出按 <code>pred.left</code> 或 <code>pred.right</code> 排序：
 </p>
 
-<pre><code>// 对每个 relation ∈ S，对其在 predicate 中出现的列生成 Sorted 计划
+<pre><code>// 对每个跨越 split 的 predicate
+for pred in crossing_predicates:
+  for side in {0, 1}:
+    sort_key = (side == 0) ? pred.left : pred.right
+    // 判断 sort_key.alias 在左子集还是右子集
+    key_in_left = (S_left &amp; MaskForAlias(sort_key.alias)) != 0
+
+    // 确定左右各需要按什么键排序
+    left_sort_key  = key_in_left ? sort_key : (side == 0 ? pred.right : pred.left)
+    right_sort_key = key_in_left ? (side == 0 ? pred.right : pred.left) : sort_key
+
+    // 查 cache：左右子集有没有对应的 Sorted 计划？
+    sorted_left  = cache["S_left|Sorted(left_sort_key)"]
+    sorted_right = cache["S_right|Sorted(right_sort_key)"]
+    if both exist:
+      merge_join = MakeJoin(MergeJoin, sorted_left, sorted_right, pred, Sorted(sort_key))
+      cache["S|Sorted(sort_key)"] = min(cache["S|Sorted(sort_key)"], merge_join)</code></pre>
+
+<p>
+  以 star query 中 <code>S={a,b,c}</code>、<code>S_left={a,b}, S_right={c}</code>、predicate <code>a.y=c.y</code> 为例：
+</p>
+
+<table>
+  <tr><th>迭代</th><th>sort_key</th><th>key_in_left</th><th>左需要</th><th>右需要</th><th>输出存入</th></tr>
+  <tr>
+    <td><code>side=0</code></td>
+    <td><code>(a, y)</code></td>
+    <td><code>true</code></td>
+    <td><code>Sorted(a.y)</code></td>
+    <td><code>Sorted(c.y)</code></td>
+    <td><code>cache[{a,b,c}, Sorted(a.y)]</code></td>
+  </tr>
+  <tr>
+    <td><code>side=1</code></td>
+    <td><code>(c, y)</code></td>
+    <td><code>false</code></td>
+    <td><code>Sorted(a.y)</code> (← 注意!)</td>
+    <td><code>Sorted(c.y)</code></td>
+    <td><code>cache[{a,b,c}, Sorted(c.y)]</code></td>
+  </tr>
+</table>
+
+<p>
+  两次迭代需要的<strong>输入 children 完全相同</strong>（<code>{a,b} Sorted(a.y)</code> + <code>{c} Sorted(c.y)</code>），
+  同一个 MergeJoin <code>a.y=c.y</code> 创建了两次，唯一区别是输出 property：
+  一次标注为 <code>Sorted(a.y)</code>，另一次标注为 <code>Sorted(c.y)</code>。
+  因为 MergeJoin 完成后结果在 <code>a.y</code> 和 <code>c.y</code> 上同时有序（它们是等值的），
+  代码没有 "列等价" 推理，所以为两个别名各存一份（详见 <a href="#sort-enforcer">§9</a>）。
+</p>
+
+<h3>8.4 阶段 (3)：Sort enforcer propagation</h3>
+
+<p>
+  阶段 (2) 只能产生 "join key 正好是本次 join 的 predicate 列" 的 Sorted 计划。
+  但上层可能需要 S 按一个<strong>与当前 join 无关</strong>的列排序。
+  例如 <code>{a,b}</code> 通过 <code>a.x=b.x</code> join 后，阶段 (2) 只产生了
+  <code>Sorted(a.x)</code> 和 <code>Sorted(b.x)</code>。
+  当上层要 join <code>c</code> on <code>a.y=c.y</code> 时，需要 <code>cache[{a,b}, Sorted(a.y)]</code>——
+  这个条目阶段 (2) 没有生成，阶段 (3) 负责补齐：
+</p>
+
+<pre><code>// 在 S 的所有 split 枚举完后执行
 any_plan = cache["S|Any"]
 if any_plan exists:
+  // 遍历 S 中的每个 relation
   for relation in graph.Relations():
     if relation ∉ S: continue
 
+    // 遍历<strong>所有</strong> predicate（不只是 crossing 的），找到涉及该 relation 的列
     for pred in graph.Predicates():
       if pred.left.alias == relation.alias:
-        sorted = MakeSort(any_plan, pred.left)
+        sorted = MakeSort(any_plan, pred.left)         // SortEnforcer: cost + N log N
         cache["S|Sorted(pred.left)"] = min(..., sorted)
 
       if pred.right.alias == relation.alias:
         sorted = MakeSort(any_plan, pred.right)
         cache["S|Sorted(pred.right)"] = min(..., sorted)</code></pre>
 
-<div class="callout callout-warn">
-  <strong>过度生成？</strong>
-  这种策略可能产生父节点永远不需要的 Sorted 计划。
-  完整实现中通常会使用 <strong>interesting order</strong> 分析 ——
-  只对 "interesting"（可能被父节点 MergeJoin 需要的）排序列生成 enforcer。
-  当前实现为简洁期间对所有 predicate 列都生成 Sorted 计划。
+<p>
+  <code>MakeSort</code> 创建一个 <code>SortEnforcer</code> 节点，cost 公式为：
+</p>
+
+<pre><code>plan->cost = child->cost + child->rows × log₂(child->rows + 1.0);
+//             ↑ 基础代价     ↑ O(N log N) 排序代价</code></pre>
+
+<div class="callout callout-ok">
+  <strong>阶段 (2) 和 (3) 的互补关系：</strong>
+  (2) 是 "免费" 的有序性——MergeJoin 天然产出有序结果，无额外排序代价；
+  (3) 是 "付费" 的有序性——在 Any 结果上加显式 SortEnforcer。
+  两者合在一起构成了 <strong>interesting order</strong> 机制：为上层 MergeJoin 提供所有可能被需要的 Sorted 计划。
 </div>
+
+<h3>8.5 完整数据流示例：star query 中 {a,b} → {a,b,c}</h3>
+
+<p>
+  设定：star query <code>a.x=b.x, a.y=c.y, a.z=d.z</code>。追踪 <code>S={a,b}</code> 的生成及其被 <code>S={a,b,c}</code> 消费：
+</p>
+
+<div class="diagram">Phase 1: FillRelation
+  cache[{a}, Any]           ← SeqScan(a)
+  cache[{a}, Sorted(a.x)]   ← Sort(SeqScan(a), a.x)
+  cache[{a}, Sorted(a.y)]   ← Sort(SeqScan(a), a.y)
+  cache[{a}, Sorted(a.z)]   ← Sort(SeqScan(a), a.z)
+  cache[{b}, Any]           ← SeqScan(b)
+  cache[{b}, Sorted(b.x)]   ← Sort(SeqScan(b), b.x)
+  cache[{c}, Any]           ← SeqScan(c)
+  cache[{c}, Sorted(c.y)]   ← Sort(SeqScan(c), c.y)
+
+Phase 2, S={a,b} (join via a.x=b.x):
+  ┌─ (1) Optimize for Any:
+  │   HJ({a}Any, {b}Any)   → cache[{a,b}, Any] ← 候选
+  │   NL({a}Any, {b}Any)   → cache[{a,b}, Any] ← 候选
+  │   MJ({a}S(a.x), {b}S(b.x)) → cache[{a,b}, Any] ← 候选
+  │
+  ├─ (2) Optimize for Sorted via a.x=b.x:
+  │   side=0: MJ({a}S(a.x), {b}S(b.x)) → cache[{a,b}, Sorted(a.x)]
+  │   side=1: MJ({a}S(a.x), {b}S(b.x)) → cache[{a,b}, Sorted(b.x)]
+  │
+  └─ (3) Sort enforcer:
+      Sort({a,b}Any, a.y) → cache[{a,b}, Sorted(a.y)]  ← 阶段(2)没有，这里补齐!
+      Sort({a,b}Any, a.z) → cache[{a,b}, Sorted(a.z)]  ← 同样补齐
+      Sort({a,b}Any, b.x) → 可能被 (2) 的 Sorted(b.x) 覆盖（若更优）
+
+Phase 2, S={a,b,c}, S_left={a,b}, S_right={c}:
+  Crossing preds = [a.y=c.y]  (只有一条跨越)
+  ┌─ (1) Optimize for Any:
+  │   MJ({a,b}S(a.y), {c}S(c.y)) → cache[{a,b,c}, Any]
+  │                               ↑ 可用，因为 (3) 补齐了 Sorted(a.y)!
+  ├─ (2) Optimize for Sorted via a.y=c.y:
+  │   side=0: MJ({a,b}S(a.y), {c}S(c.y)) → cache[{a,b,c}, Sorted(a.y)]
+  │   side=1: MJ({a,b}S(a.y), {c}S(c.y)) → cache[{a,b,c}, Sorted(c.y)]
+  └─ (3) Sort enforcer:
+      继续为 {a,b,c} 传播 Sorted 计划供上层使用…</div>
+
+<p>
+  关键洞察：<strong>如果没有阶段 (3)，<code>cache[{a,b}, Sorted(a.y)]</code> 不存在
+  → <code>{a,b}</code> join <code>{c}</code> 的 MergeJoin 无法生成 → 丢失一个可能的物理计划。</strong>
+  Sort enforcer 的存在保证了 interesting order 的<strong>传递闭包</strong>：
+  不只是 join key 本身，而是所有可能在未来被用到的排序列都能在 DP 表中找到。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="sort-enforcer">9. Interesting Order 深入</h2>
+
+<h3>9.1 为什么分开记录 Sorted(a.x) 和 Sorted(b.x)</h3>
+
+<p>
+  阶段 (2) 对同一个 predicate <code>a.x=b.x</code> 生成了两份计划：
+</p>
+
+<pre><code>side=0:  MJ({a}S(a.x), {b}S(b.x))  →  cache[{a,b}, Sorted(a.x)]
+side=1:  MJ({a}S(a.x), {b}S(b.x))  →  cache[{a,b}, Sorted(b.x)]
+//         ^^^^^^^^^^^^^^^^^^^^^^         ^^^^^^^^^^^^
+//         同一个 join 计划被创建两次      property 标签不同</code></pre>
+
+<p>
+  MergeJoin on <code>a.x=b.x</code> 的结果在 <code>a.x</code> 和 <code>b.x</code> 上<strong>同时有序</strong>
+  （因为它们是等值连接）。代码没有 "列等价"（equivalence class）推理，所以机械地为两个 alias 各存一份：
+</p>
+
+<ul>
+  <li><code>Sorted(a.x)</code> 和 <code>Sorted(b.x)</code> 是不同的 property key——上层通过 <code>MakeKey</code> 查询时用 alias 区分。</li>
+  <li>每次 <code>MakeJoin</code> 创建新 <code>PlanPtr</code>，cost 相同，只是 <code>plan->property</code> 字段不同。</li>
+  <li>在生产级优化器中，会用 equivalence class 机制避免这种重复，但 demo 为简洁选择了直接存两份。</li>
+</ul>
+
+<h3>9.2 哪些列是 "interesting" 的</h3>
+
+<p>
+  Sort enforcer 不会凭空发明排序列。它只处理<strong>出现在 join predicate 中的列</strong>——
+  这从代码的过滤逻辑可以直接看出：
+</p>
+
+<pre><code>for pred in graph.Predicates():         // ← 遍历所有 join 谓词
+  if pred.left.alias == relation.alias  // ← 只有谓词中出现的列才被考虑
+    → 生成 Sorted(pred.left)
+  if pred.right.alias == relation.alias
+    → 生成 Sorted(pred.right)
+// 不在任何 predicate 中的列（如 a.g）→ 永远不生成 Sorted(a.g)</code></pre>
+
+<p>以 star query <code>a.x=b.x, a.y=c.y, a.z=d.z</code> 为例，对 <code>S={a,b}</code>：</p>
+
+<table>
+  <tr><th>列</th><th>出现在 predicate 中?</th><th>阶段 (3) 生成 Sorted?</th><th>原因</th></tr>
+  <tr><td><code>a.x</code></td><td>✓ (p0: a.x=b.x)</td><td>✓</td><td>未来 join on a.x 可能需要</td></tr>
+  <tr><td><code>a.y</code></td><td>✓ (p1: a.y=c.y)</td><td>✓</td><td>未来 join c on a.y 时需要</td></tr>
+  <tr><td><code>a.z</code></td><td>✓ (p2: a.z=d.z)</td><td>✓</td><td>未来 join d on a.z 时需要</td></tr>
+  <tr><td><code>b.x</code></td><td>✓ (p0: a.x=b.x)</td><td>✓</td><td>反向排序方向</td></tr>
+  <tr><td><code>a.g</code></td><td>✗（不在任何谓词中）</td><td>✗</td><td>没有任何 MergeJoin 会要求按 a.g 排序</td></tr>
+</table>
+
+<p>
+  这就是 <strong>interesting order</strong> 中 "interesting" 的精髓——只有<strong>可能被未来某个操作需要的</strong>物理属性才值得维护。
+  当前实现中，"可能被需要" 的判据是 "列出现在 <code>graph.Predicates()</code> 中"。
+  这同样适用于 Phase 1 的 <code>FillRelation</code>——singleton 阶段也只为 predicate 中涉及的列创建 Sorted 计划。
+</p>
+
+<div class="callout callout-info">
+  <strong>为什么不过滤？</strong>
+  读者可能会问：阶段 (3) 为 <code>a.z</code> 生成了 <code>Sorted(a.z)</code>，但 <code>d</code> 还没 join 进来，
+  万一 <code>d</code> 不在最终查询中呢？当前实现不做跨 predicate 的 demand-driven 过滤——
+  对所有 predicate 列都生成。在生产级优化器中，通常会自顶向下传递 "required property" 来做按需生成。
+  Demo 为了简洁选择了全量传播——对于 n≤10 的规模，额外开销可忽略。
+</div>
+
+<h3>9.3 MakeSort 代价模型</h3>
+
+<p>
+  阶段 (3) 生成的 SortEnforcer 不是免费的——它带有 O(N log N) 的排序代价。
+  这意味着 <code>cache[S, Sorted(col)]</code> 的 cost 往往高于 <code>cache[S, Any]</code>。
+  但当上层 MergeJoin 消费它时，MergeJoin 的 cost 公式中不再包含排序项
+  （<code>left_rows + right_rows</code>，而非 NLJoin 的 <code>left_rows × right_rows</code>），
+  可能在整体上更优。这正是 DP 表同时维护多种 property 的意义——
+  让 cost 模型全局决定排序发生在哪里最划算。
+</p>
 
 <!-- ================================================================== -->
 <h2 id="trace">10. Trace 计数器</h2>
@@ -857,53 +1144,45 @@ connected_by_size[3] = { {a,b,c} }
 </table>
 
 <p>
-  对 split <code>({a}, {b})</code>：
+  对 split <code>({a}, {b})</code>，crossing preds = [a.x=b.x]：
 </p>
 
 <pre><code>left_any  = SeqScan(a), cost=1000
 right_any = SeqScan(b), cost=100
 pred = a.x=b.x, sel=0.01
 
-HashJoin(a,b):     cost=1000+100+1000+100+1000*100*0.01=3200, rows=10
-NestedLoop(a,b):   cost=1000+100+1000*100=101100, rows=10
-MergeJoin(a,b):
-  left_sorted  = Sort(SeqScan(a), a.x)
-  right_sorted = Sort(SeqScan(b), b.x)
-  cost = cost(Sort(a))+cost(Sort(b))+1000+100 = ...
-
-→ cache["3|Any"] = HashJoin(a,b), cost=3200</code></pre>
+┌─ 阶段 (1) Optimize for Any ────────────────────────────
+│ HashJoin(a,b):     cost=1000+100+1000+100+1000*100*0.01=3200
+│ NestedLoop(a,b):   cost=1000+100+1000*100=101100
+│ MergeJoin(a,b):    cost=cost(Sort(a,x))+cost(Sort(b,x))+1000+100=...
+│ → cache["3|Any"] = min(3200, 101100, MJ_cost) = HashJoin(a,b) 或 MergeJoin
+│
+├─ 阶段 (2) Optimize for Sorted via a.x=b.x ─────────────
+│ side=0: MJ({a}S(a.x), {b}S(b.x)) → cache["3|Sorted(a.x)"]
+│ side=1: MJ({a}S(a.x), {b}S(b.x)) → cache["3|Sorted(b.x)"]
+│   (同一个 MergeJoin，property 标签不同)
+│
+└─ 阶段 (3) Sort enforcer propagation (两个 split 枚举完后) ─
+    Sort(Any, a.x) → cache["3|Sorted(a.x)"]  (与 (2) 竞争)
+    Sort(Any, b.x) → cache["3|Sorted(b.x)"]  (与 (2) 竞争)</code></pre>
 
 <p>
-  对 split <code>({b}, {a})</code>：类似，产生 <code>HashJoin(b,a)</code> 等。
+  对 split <code>({b}, {a})</code>：对称方向，产生 <code>HashJoin(b,a)</code> 等。
   由于 cost 模型对称，<code>HashJoin(b,a).cost = 100+1000+100+1000+10 = 2210</code>。
-  取决于 <code>TryUpdate</code> 的 <code>Better()</code> 语义，最终 <code>cache["3|Any"]</code> 可能是
-  <code>HashJoin(b,a)</code> (cost=2210)。
+  最终 <code>cache["3|Any"] = HashJoin(b,a)</code> (cost=2210)。
+  (1) 和 (2) 对两个方向都执行，(3) 只在所有 split 枚举完后执行一次。
 </p>
-
-<p>
-  同时为 crossing predicate 的列生成 Sorted 计划：
-</p>
-
-<pre><code>cache["3|Sorted(a.x)"] = MergeJoin( sorted(a.x), sorted(b.x) ) 或 Sort(HashJoin, a.x)
-cache["3|Sorted(b.x)"] = MergeJoin( sorted(b.x), sorted(a.x) ) 或 Sort(HashJoin, b.x)</code></pre>
-
-<p>
-  Sort enforcer 传播后：
-</p>
-
-<pre><code>cache["3|Sorted(a.x)"] = min(..., Sort(HashJoin(b,a), a.x))
-cache["3|Sorted(b.x)"] = min(..., Sort(HashJoin(b,a), b.x))</code></pre>
 
 <h4>S = {b,c} (mask=6)</h4>
 
 <p>
-  与 <code>{a,b}</code> 类似。split <code>({b},{c})</code> 和 <code>({c},{b})</code>，
+  与 <code>{a,b}</code> 结构相同。split <code>({b},{c})</code> 和 <code>({c},{b})</code>，
   pred = b.y=c.y, sel=0.05。
 </p>
 
-<pre><code>HashJoin(b,c): cost=100+500+100+500+100*500*0.05=3700
-cache["6|Any"] = HashJoin(b,c) (或 HashJoin(c,b))
-// 同时生成 Sorted(b.y), Sorted(c.y) 计划</code></pre>
+<pre><code>┌─ (1) Any: HJ(b,c)=3700 → cache["6|Any"]
+├─ (2) Sorted: MJ({b}S(b.y),{c}S(c.y)) → cache["6|Sorted(b.y)"], cache["6|Sorted(c.y)"]
+└─ (3) Sort enforcer: 补齐 Sorted(b.y), Sorted(c.y) 等</code></pre>
 
 <h3>12.5 Step 3: size=3 DP</h3>
 
@@ -928,19 +1207,31 @@ cache["6|Any"] = HashJoin(b,c) (或 HashJoin(c,b))
 </p>
 
 <p>
-  以 split <code>({a,b}, {c})</code> 为例：
+  以 split <code>({a,b}, {c})</code> 为例，crossing preds = [b.y=c.y]
+  （注意：a.x=b.x 不跨越，因为它两端都在 {a,b} 中）：
 </p>
 
 <pre><code>left_any  = cache["3|Any"] = HashJoin(b,a), cost=2210, rows=10
 right_any = cache["4|Any"] = SeqScan(c), cost=500, rows=500
 pred = b.y=c.y, sel=0.05
 
-HashJoin((a,b), c):   cost=2210+500+10+500+10*500*0.05=3470
-NestedLoop((a,b), c): cost=2210+500+10*500=7710
-MergeJoin — 需要 left sorted by b.y, right sorted by c.y:
-  left_sorted  = cache["3|Sorted(b.y)"]
-  right_sorted = cache["4|Sorted(c.y)"]
-  cost = cost(Sorted(b.y)) + cost(Sorted(c.y)) + 10 + 500 = ...</code></pre>
+┌─ 阶段 (1) Optimize for Any ────────────────────────────
+│ HashJoin((a,b),c):   cost=2210+500+10+500+10*500*0.05=3470
+│ NestedLoop((a,b),c): cost=2210+500+10*500=7710
+│ MergeJoin: 需要 left sorted by b.y, right sorted by c.y
+│   left_sorted  = cache["3|Sorted(b.y)"]  ← (3) 补齐的!
+│   right_sorted = cache["4|Sorted(c.y)"]  ← FillRelation 阶段生成的
+│   MergeJoin 可行 → cache["7|Any"] ← min(HJ, NL, MJ)
+│
+├─ 阶段 (2) Optimize for Sorted via b.y=c.y ─────────────
+│ side=0 (sort_key=b.y, key_in_left=true):
+│   MJ({a,b}S(b.y), {c}S(c.y)) → cache["7|Sorted(b.y)"]
+│ side=1 (sort_key=c.y, key_in_left=false):
+│   MJ({a,b}S(b.y), {c}S(c.y)) → cache["7|Sorted(c.y)"]
+│
+└─ 阶段 (3) Sort enforcer propagation ───────────────────
+    所有 4 个合法 split 枚举完后，在 {a,b,c} 的 Any 计划上加 SortEnforcer
+    补齐可能被上层需要的 Sorted 列（此处为满集，上层无消费者，但仍生成）</code></pre>
 
 <p>
   类似地处理 <code>({a}, {b,c})</code>、<code>({c}, {a,b})</code>、<code>({b,c}, {a})</code>。

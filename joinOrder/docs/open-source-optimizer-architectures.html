@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>开源数据库优化器架构调研：从 System R 到 Cascades 与 Hypergraph</title>
+<title>数据库优化器架构调研：开源项目、商业系统资料与学习路线</title>
 <style>
   :root {
     --bg: #faf9f6;
@@ -94,6 +94,13 @@
   .diagram svg { max-width: 100%; height: auto; }
   .small { font-size: 0.86rem; color: var(--muted); }
   .refs { font-size: 0.9rem; }
+  .link-list {
+    background: #fffdf7; border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.55rem 0.85rem; margin: 0.75rem 0 1rem 0;
+    font-size: 0.9rem;
+  }
+  .link-list li { margin-left: 1.1rem; }
+  .compact td, .compact th { padding: 0.38rem 0.52rem; }
   @media (max-width: 700px) {
     body { padding: 1.5rem 1rem 4rem; }
     pre { font-size: 0.8rem; padding: 0.6rem 0.7rem; }
@@ -103,26 +110,29 @@
 </style>
 </head>
 <body>
-<h1>开源数据库优化器架构调研：从 System R 到 Cascades 与 Hypergraph</h1>
-<p class="meta">调研日期：2026-06-16｜范围：著名开源数据库、SQL 引擎和优化器框架｜资料优先级：官方文档、源码 README、官方博客、论文</p>
+<h1>数据库优化器架构调研：开源项目、商业系统资料与学习路线</h1>
+<p class="meta">调研日期：2026-06-16｜扩展日期：2026-06-19｜范围：著名开源数据库、SQL 引擎、优化器框架和闭源商业优化器资料｜资料优先级：官方文档、源码 README、官方博客、论文</p>
 
 <p class="lead">
   这份文档关心的不是单个 join order 算法，而是“一个可维护的开源优化器通常怎么分层”：
   SQL AST 如何变成逻辑关系代数，规则如何组织，cost 和统计信息如何介入，join reorder 在哪里发生，
-  physical property 如何表达，以及最终怎么落到物理计划。调研对象横跨 PostgreSQL、SQLite、DuckDB、
+  physical property 如何表达，以及最终怎么落到物理计划。开源调研对象横跨 PostgreSQL、SQLite、DuckDB、
   Apache Calcite、Apache DataFusion、Spark Catalyst、Trino、CockroachDB、TiDB、GPORCA、Apache Doris Nereids
-  和 MySQL hypergraph optimizer。
+  和 MySQL hypergraph optimizer，并补充 ClickHouse、RisingWave、CMU optd、BusTub 等学习型项目；
+  对 SQL Server、Oracle、Snowflake、BigQuery 这类闭源名家，则收集项目主页、官方优化器文档和技术博客作为阅读入口。
 </p>
 
 <div class="callout">
   <strong>一句话结论：</strong>著名开源优化器大致分成四类：PostgreSQL/SQLite 式的工程化 System R 后代，
   Spark/DataFusion/DuckDB/Trino 式的规则流水线加局部 CBO，Calcite/Cockroach/ORCA/Doris 式的 memo/Cascades
-  架构，以及 DuckDB/MySQL 新一代 join optimizer 中更直接的 hypergraph/DP 枚举。真实系统往往混合使用这些路线。
+  架构，以及 DuckDB/MySQL 新一代 join optimizer 中更直接的 join graph/hypergraph DP 枚举。闭源系统虽然不能读源码，
+  但 SQL Server/Oracle 的调优指南和 Snowflake/BigQuery 的 query profile 仍能反推出成熟优化器的工程边界。
 </div>
 
 <nav class="toc">
   <ol>
     <li><a href="#taxonomy">架构谱系总览</a></li>
+    <li><a href="#project-index">项目地址与资料入口</a></li>
     <li><a href="#matrix">横向比较表</a></li>
     <li><a href="#postgres">PostgreSQL</a></li>
     <li><a href="#sqlite">SQLite</a></li>
@@ -136,6 +146,16 @@
     <li><a href="#orca">GPORCA</a></li>
     <li><a href="#doris">Apache Doris Nereids</a></li>
     <li><a href="#mysql">MySQL Hypergraph Optimizer</a></li>
+    <li><a href="#more-open">更多学习型开源项目</a></li>
+    <li><a href="#clickhouse">ClickHouse Analyzer</a></li>
+    <li><a href="#risingwave">RisingWave</a></li>
+    <li><a href="#optd">CMU optd</a></li>
+    <li><a href="#bustub">CMU BusTub</a></li>
+    <li><a href="#commercial">闭源名家资料导航</a></li>
+    <li><a href="#sqlserver">SQL Server</a></li>
+    <li><a href="#oracle">Oracle Database</a></li>
+    <li><a href="#snowflake">Snowflake</a></li>
+    <li><a href="#bigquery">BigQuery</a></li>
     <li><a href="#lessons">对本仓库 demo 的启发</a></li>
     <li><a href="#refs">参考资料</a></li>
   </ol>
@@ -177,7 +197,7 @@
   <text x="352" y="178" text-anchor="middle" font-size="13">DuckDB / Trino phases</text>
   <text x="582" y="155" text-anchor="middle" font-size="13">Calcite / CockroachDB</text>
   <text x="582" y="178" text-anchor="middle" font-size="13">GPORCA / Doris Nereids</text>
-  <text x="790" y="155" text-anchor="middle" font-size="13">DuckDB DPccp</text>
+  <text x="790" y="155" text-anchor="middle" font-size="13">DuckDB DPhyp/DP</text>
   <text x="790" y="178" text-anchor="middle" font-size="13">MySQL hypergraph</text>
 
   <rect x="105" y="225" width="690" height="48" rx="7" fill="#fffdf7" stroke="#e0dcd0"></rect>
@@ -202,9 +222,165 @@
   </div>
   <div class="card">
     <h3><span class="tag graph">Graph</span>Hypergraph Join Search</h3>
-    <p>把 join reorder 问题显式建模为 join graph/hypergraph 上的子集枚举，专注解决复杂 join 谓词和 bushy plans。DuckDB DPccp 和 MySQL Hypergraph 是代表。</p>
+    <p>把 join reorder 问题显式建模为 join graph/hypergraph 上的子集枚举，专注解决复杂 join 谓词和 bushy plans。DuckDB connected-subgraph DP 和 MySQL Hypergraph 是代表。</p>
   </div>
 </div>
+</section>
+
+<section id="project-index">
+<h2>项目地址与资料入口</h2>
+<p>
+  下面把本次调研的“可读源码项目”和“闭源但资料充足的商业项目”分开列出。开源项目优先给 GitHub 或官方源码入口；
+  闭源项目则给产品主页、官方优化器/执行计划文档和技术博客入口。
+</p>
+
+<h3>开源项目 GitHub / 源码入口</h3>
+<table class="compact">
+  <thead>
+    <tr>
+      <th>项目</th>
+      <th>GitHub / 源码</th>
+      <th>优化器资料入口</th>
+      <th>学习重点</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>PostgreSQL</td>
+      <td><a href="https://github.com/postgres/postgres">postgres/postgres</a></td>
+      <td><a href="https://github.com/postgres/postgres/blob/master/src/backend/optimizer/README">optimizer README</a></td>
+      <td>RelOptInfo / Path / joinrel DP / PathKeys。</td>
+    </tr>
+    <tr>
+      <td>SQLite</td>
+      <td><a href="https://sqlite.org/src/">官方 Fossil</a>；<a href="https://github.com/sqlite/sqlite">GitHub 镜像</a></td>
+      <td><a href="https://www.sqlite.org/optoverview.html">Optimizer Overview</a>；<a href="https://www.sqlite.org/queryplanner-ng.html">NGQP</a></td>
+      <td>小型嵌入式优化器、nested-loop join order、图算法。</td>
+    </tr>
+    <tr>
+      <td>DuckDB</td>
+      <td><a href="https://github.com/duckdb/duckdb">duckdb/duckdb</a></td>
+      <td><a href="https://duckdb.org/2024/11/14/optimizers.html">optimizer blog</a>；<a href="https://duckdb.org/docs/current/internals/overview.html">internals</a></td>
+      <td>规则流水线与 join graph DP 枚举的组合。</td>
+    </tr>
+    <tr>
+      <td>Apache Calcite</td>
+      <td><a href="https://github.com/apache/calcite">apache/calcite</a></td>
+      <td><a href="https://calcite.apache.org/docs/algebra.html">Algebra</a>；<a href="https://calcite.apache.org/javadocAggregate/org/apache/calcite/plan/RelOptPlanner.html">RelOptPlanner</a></td>
+      <td>可嵌入优化器框架、RelNode、Rule、Trait、Adapter。</td>
+    </tr>
+    <tr>
+      <td>Apache DataFusion</td>
+      <td><a href="https://github.com/apache/datafusion">apache/datafusion</a></td>
+      <td><a href="https://datafusion.apache.org/library-user-guide/query-optimizer.html">Query Optimizer</a></td>
+      <td>Rust 规则管线、LogicalPlan / ExecutionPlan 分层。</td>
+    </tr>
+    <tr>
+      <td>Spark Catalyst</td>
+      <td><a href="https://github.com/apache/spark">apache/spark</a></td>
+      <td><a href="https://github.com/apache/spark/tree/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst">Catalyst source</a>；<a href="https://people.csail.mit.edu/matei/papers/2015/sigmod_spark_sql.pdf">Spark SQL paper</a></td>
+      <td>TreeNode、Scala pattern matching、rule batches。</td>
+    </tr>
+    <tr>
+      <td>Trino</td>
+      <td><a href="https://github.com/trinodb/trino">trinodb/trino</a></td>
+      <td><a href="https://trino.io/docs/current/admin/properties-optimizer.html">Optimizer properties</a></td>
+      <td>MPP SQL、data movement、join distribution、statistics。</td>
+    </tr>
+    <tr>
+      <td>CockroachDB</td>
+      <td><a href="https://github.com/cockroachdb/cockroach">cockroachdb/cockroach</a></td>
+      <td><a href="https://www.cockroachlabs.com/docs/stable/cost-based-optimizer">CBO docs</a>；<a href="https://github.com/cockroachdb/cockroach/blob/master/pkg/sql/opt/doc.go">opt doc.go</a></td>
+      <td>生产级 Cascades、memo、optgen、required properties。</td>
+    </tr>
+    <tr>
+      <td>TiDB</td>
+      <td><a href="https://github.com/pingcap/tidb">pingcap/tidb</a></td>
+      <td><a href="https://pingcap.github.io/tidb-dev-guide/understand-tidb/planner.html">Planner guide</a>；<a href="https://github.com/pingcap/tidb/tree/master/pkg/planner/cascades">cascades source</a></td>
+      <td>MySQL-compatible 分布式 planner、task type、下推边界。</td>
+    </tr>
+    <tr>
+      <td>GPORCA</td>
+      <td><a href="https://github.com/greenplum-db/gporca-archive">greenplum-db/gporca-archive</a></td>
+      <td><a href="https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-greenplum/7/greenplum-database/admin_guide-query-topics-query-piv-opt-overview.html">Greenplum ORCA overview</a>；<a href="https://15721.courses.cs.cmu.edu/spring2016/papers/p337-soliman.pdf">ORCA paper</a></td>
+      <td>MPP Cascades、metadata cache、distribution/order properties。</td>
+    </tr>
+    <tr>
+      <td>Apache Doris Nereids</td>
+      <td><a href="https://github.com/apache/doris">apache/doris</a></td>
+      <td><a href="https://doris.apache.org/docs/dev/query-acceleration/optimization-technology-principle/query-optimizer/">Query optimizer intro</a>；<a href="https://github.com/apache/doris/tree/master/fe/fe-core/src/main/java/org/apache/doris/nereids">Nereids source</a></td>
+      <td>OLAP 系统迁移到 Cascades-like optimizer 的案例。</td>
+    </tr>
+    <tr>
+      <td>MySQL Hypergraph</td>
+      <td><a href="https://github.com/mysql/mysql-server">mysql/mysql-server</a></td>
+      <td><a href="https://github.com/mysql/mysql-server/tree/trunk/sql/join_optimizer">join_optimizer source</a>；<a href="https://blogs.oracle.com/mysql/the-hypergraph-optimizer-is-now-available-in-mysql-9-7-community-edition">official blog</a></td>
+      <td>Join hypergraph、DPhyp、bushy search、access path 结合。</td>
+    </tr>
+    <tr>
+      <td>ClickHouse</td>
+      <td><a href="https://github.com/ClickHouse/ClickHouse">ClickHouse/ClickHouse</a></td>
+      <td><a href="https://clickhouse.com/docs/guides/developer/understanding-query-execution-with-the-analyzer">Analyzer guide</a></td>
+      <td>列存 OLAP 的 analyzer、query tree、pipeline observability。</td>
+    </tr>
+    <tr>
+      <td>RisingWave</td>
+      <td><a href="https://github.com/risingwavelabs/risingwave">risingwavelabs/risingwave</a></td>
+      <td><a href="https://github.com/risingwavelabs/risingwave/tree/main/src/frontend/src/optimizer">frontend optimizer</a>；<a href="https://docs.risingwave.com/performance/serving-optimizations">MV selection</a></td>
+      <td>流数据库、MV rewrite、batch/stream 物理属性。</td>
+    </tr>
+    <tr>
+      <td>CMU optd</td>
+      <td><a href="https://github.com/cmu-db/optd">cmu-db/optd</a></td>
+      <td><a href="https://optd.io/">optd.io</a></td>
+      <td>把优化器做成独立服务/框架，适合实验 memo/rule/property。</td>
+    </tr>
+    <tr>
+      <td>CMU BusTub</td>
+      <td><a href="https://github.com/cmu-db/bustub">cmu-db/bustub</a></td>
+      <td><a href="https://github.com/cmu-db/bustub/tree/master/src/optimizer">optimizer source</a>；<a href="https://15445.courses.cs.cmu.edu/fall2024/project3/">CMU 15-445 project</a></td>
+      <td>教学型 rule optimizer，适合入门 plan node 与执行器集成。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>闭源名家：官方资料入口</h3>
+<table class="compact">
+  <thead>
+    <tr>
+      <th>项目</th>
+      <th>项目主页</th>
+      <th>优化器 / 执行计划资料</th>
+      <th>可学习内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Microsoft SQL Server</td>
+      <td><a href="https://www.microsoft.com/sql-server">SQL Server</a></td>
+      <td><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide?view=sql-server-ver17">Query Processing Architecture Guide</a>；<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/intelligent-query-processing?view=sql-server-ver17">Intelligent Query Processing</a></td>
+      <td>企业级 CBO、Showplan、统计信息、反馈式优化。</td>
+    </tr>
+    <tr>
+      <td>Oracle Database</td>
+      <td><a href="https://www.oracle.com/database/">Oracle Database</a></td>
+      <td><a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/tgsql/">SQL Tuning Guide</a>；<a href="https://blogs.oracle.com/optimizer/">Optimizer Blog</a></td>
+      <td>访问路径、join methods、SQL Plan Management、自适应优化。</td>
+    </tr>
+    <tr>
+      <td>Snowflake</td>
+      <td><a href="https://www.snowflake.com/en/data-cloud/">Snowflake Data Cloud</a></td>
+      <td><a href="https://docs.snowflake.com/en/user-guide/ui-query-profile">Query Profile</a>；<a href="https://docs.snowflake.com/en/guides-overview-performance">Performance Optimization</a></td>
+      <td>云数仓 query profile、micro-partition pruning、服务化加速。</td>
+    </tr>
+    <tr>
+      <td>Google BigQuery</td>
+      <td><a href="https://cloud.google.com/bigquery">BigQuery</a></td>
+      <td><a href="https://cloud.google.com/bigquery/docs/query-plan-explanation">Query plan graph</a>；<a href="https://cloud.google.com/blog/products/data-analytics/new-bigquery-history-based-optimizations-speed-query-performance">History-based optimizations</a></td>
+      <td>stage/step 执行图、shuffle、slot 指标、历史反馈优化。</td>
+    </tr>
+  </tbody>
+</table>
 </section>
 
 <section id="matrix">
@@ -237,7 +413,7 @@
     <tr>
       <td>DuckDB</td>
       <td>Bound tree → logical operators → physical operators</td>
-      <td>规则优化流水线；join order 用 DPccp</td>
+      <td>规则优化流水线；join order 用 connected-subgraph DP</td>
       <td>以 logical/physical operator 转换为主，properties 较轻</td>
       <td>单机 OLAP 中把大量规则优化和高质量 join enumeration 组合起来。</td>
     </tr>
@@ -304,12 +480,45 @@
       <td>访问路径、join order、engine 能力与 cost 结合</td>
       <td>主流关系数据库把 hypergraph join optimizer 产品化的近例。</td>
     </tr>
+    <tr>
+      <td>ClickHouse</td>
+      <td>AST → Query Tree → Query Plan / Pipeline</td>
+      <td>Analyzer passes + OLAP 执行管线优化</td>
+      <td>列裁剪、过滤、聚合、排序、存储层读取与下推</td>
+      <td>列存 OLAP 如何把 query analysis 和执行 pipeline 做成可观察流程。</td>
+    </tr>
+    <tr>
+      <td>RisingWave</td>
+      <td>Batch/stream plan nodes, rules, properties</td>
+      <td>规则改写 + MV selection + 分布式流批计划</td>
+      <td>batch/stream、distribution、MV rewrite、exchange</td>
+      <td>流数据库中优化器如何同时服务临时查询和持续物化视图。</td>
+    </tr>
+    <tr>
+      <td>CMU optd</td>
+      <td>独立 optimizer service / framework IR</td>
+      <td>Cascades-style memo/search/rules</td>
+      <td>logical/physical properties, cost model, connector boundary</td>
+      <td>把优化器从数据库内核中拆出，适合做实验框架。</td>
+    </tr>
+    <tr>
+      <td>CMU BusTub</td>
+      <td>PlanNode tree + rule optimizer</td>
+      <td>教学型 rule-based rewrite</td>
+      <td>catalog/index/stats 与 executor 能力约束</td>
+      <td>低门槛理解 plan node、局部规则和执行器集成。</td>
+    </tr>
   </tbody>
 </table>
 </section>
 
 <section id="postgres">
 <h2>三、PostgreSQL：RelOptInfo / Path 驱动的工程化 System R 后代</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/postgres/postgres">postgres/postgres</a></li>
+  <li>优化器 README：<a href="https://github.com/postgres/postgres/blob/master/src/backend/optimizer/README">src/backend/optimizer/README</a></li>
+  <li>源码入口：<a href="https://github.com/postgres/postgres/tree/master/src/backend/optimizer">src/backend/optimizer</a></li>
+</ul>
 <p>
   PostgreSQL 的优化器不是 Cascades memo，而是围绕 <code>RelOptInfo</code> 和 <code>Path</code> 组织搜索：
   base relation、join relation 都有自己的 <code>RelOptInfo</code>，候选访问路径和 join 路径作为 <code>Path</code>
@@ -330,6 +539,11 @@
 
 <section id="sqlite">
 <h2>四、SQLite：极小内核里的 NGQP 与嵌套循环优化</h2>
+<ul class="link-list">
+  <li>官方源码：<a href="https://sqlite.org/src/">SQLite Fossil repository</a>；GitHub 镜像：<a href="https://github.com/sqlite/sqlite">sqlite/sqlite</a></li>
+  <li>优化器概览：<a href="https://www.sqlite.org/optoverview.html">Query Optimizer Overview</a></li>
+  <li>NGQP：<a href="https://www.sqlite.org/queryplanner-ng.html">The Next Generation Query Planner</a></li>
+</ul>
 <p>
   SQLite 的执行模型以嵌套循环 join 为中心，优化器主要决定表访问顺序、每层循环用什么 index、是否能利用 ORDER BY/GROUP BY 等。
   官方文档把 join reorder 描述为对 FROM 子句中 nested loops 顺序的选择，并说明 SQLite 可以用 polynomial-time graph algorithm
@@ -347,15 +561,20 @@
 </section>
 
 <section id="duckdb">
-<h2>五、DuckDB：规则优化流水线 + DPccp Join Order</h2>
+<h2>五、DuckDB：规则优化流水线 + Connected-subgraph DP Join Order</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/duckdb/duckdb">duckdb/duckdb</a></li>
+  <li>优化器博客：<a href="https://duckdb.org/2024/11/14/optimizers.html">Optimizers: The Low-Key MVP</a></li>
+  <li>内部架构：<a href="https://duckdb.org/docs/current/internals/overview.html">Overview of DuckDB Internals</a></li>
+</ul>
 <p>
   DuckDB 的官方 optimizer 博客把 optimizer 描述为一组逐步应用的优化规则：expression rewriter、filter pull-up/pushdown、
   join order optimizer、top-N optimizer 等。官方文档也列出 DuckDB 有多个 optimizer 阶段。<span class="cite"><a href="#ref-duckdb-optimizer">[4]</a></span>
   <span class="cite"><a href="#ref-duckdb-internals">[5]</a></span>
 </p>
 <p>
-  对 join reorder 来说，DuckDB 著名之处在于使用 DPccp 这类 connected-subgraph DP 枚举方法，面向 join graph
-  直接枚举无交叉积的 connected partitions。它不像 Calcite/ORCA 那样把所有逻辑等价表达式都放入通用 memo，
+  对 join reorder 来说，DuckDB 著名之处在于使用 DPhyp / DPccp 这类 connected-subgraph DP 枚举方法，面向 join graph
+  直接枚举 connected subgraph/complement pair。它不像 Calcite/ORCA 那样把所有逻辑等价表达式都放入通用 memo，
   而是在优化流水线中为 join order 放一个专门的高质量算法。
 </p>
 <p>
@@ -367,6 +586,11 @@
 
 <section id="calcite">
 <h2>六、Apache Calcite：把优化器做成可嵌入框架</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/apache/calcite">apache/calcite</a></li>
+  <li>关系代数文档：<a href="https://calcite.apache.org/docs/algebra.html">Calcite Algebra</a></li>
+  <li>Planner API：<a href="https://calcite.apache.org/javadocAggregate/org/apache/calcite/plan/RelOptPlanner.html">RelOptPlanner</a></li>
+</ul>
 <p>
   Calcite 的定位不是单一数据库，而是查询处理框架。官方文档强调它提供 SQL parser、validator、relational algebra、
   metadata provider、planner rules 和 adapter 机制。它的 optimizer 核心围绕 <code>RelNode</code>、<code>RelOptRule</code>、
@@ -387,6 +611,11 @@
 
 <section id="datafusion">
 <h2>七、Apache DataFusion：Rust 里的阶段化 Optimizer Pipeline</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/apache/datafusion">apache/datafusion</a></li>
+  <li>Logical plan：<a href="https://datafusion.apache.org/library-user-guide/building-logical-plans.html">Building Logical Plans</a></li>
+  <li>优化器文档：<a href="https://datafusion.apache.org/library-user-guide/query-optimizer.html">Query Optimizer</a></li>
+</ul>
 <p>
   DataFusion 官方架构文档把查询执行分成 SQL/DF API、logical plan、logical optimization、physical planning、
   physical optimization 和 execution。文档明确列出 optimizer 是一组规则，并提供自定义 optimizer rules。
@@ -406,6 +635,11 @@
 
 <section id="spark">
 <h2>八、Spark Catalyst：统一的 Tree Transformation 框架</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/apache/spark">apache/spark</a></li>
+  <li>Catalyst 源码：<a href="https://github.com/apache/spark/tree/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst">sql/catalyst package</a></li>
+  <li>论文：<a href="https://people.csail.mit.edu/matei/papers/2015/sigmod_spark_sql.pdf">Relational Data Processing in Spark</a></li>
+</ul>
 <p>
   Spark SQL 的 Catalyst 优化器论文把 Catalyst 描述为基于 Scala pattern matching 的可扩展 optimizer，
   使用 tree transformation rules 处理 analysis、logical optimization、physical planning 和 code generation。
@@ -426,6 +660,11 @@
 
 <section id="trino">
 <h2>九、Trino：分布式 SQL 引擎中的规则优化与数据移动成本</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/trinodb/trino">trinodb/trino</a></li>
+  <li>优化器属性：<a href="https://trino.io/docs/current/admin/properties-optimizer.html">Optimizer properties</a></li>
+  <li>源码入口：<a href="https://github.com/trinodb/trino/tree/master/core/trino-main/src/main/java/io/trino/sql/planner/optimizations">planner/optimizations</a></li>
+</ul>
 <p>
   Trino 文档把 optimizer 暴露为一组可配置的优化能力，例如 join reordering strategy、join distribution type、
   cost-based optimizations 和 table statistics。<span class="cite"><a href="#ref-trino-optimizer">[12]</a></span>
@@ -444,6 +683,11 @@
 
 <section id="cockroach">
 <h2>十、CockroachDB：生产级 Cascades 与 Optgen</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/cockroachdb/cockroach">cockroachdb/cockroach</a></li>
+  <li>官方文档：<a href="https://www.cockroachlabs.com/docs/stable/cost-based-optimizer">Cost-based optimizer</a></li>
+  <li>源码文档：<a href="https://github.com/cockroachdb/cockroach/blob/master/pkg/sql/opt/doc.go">pkg/sql/opt/doc.go</a></li>
+</ul>
 <p>
   CockroachDB 官方文档介绍其 cost-based optimizer 会枚举等价 SQL 表达式，利用统计信息估算成本，并选择最低成本计划。
   官方博客和源码文档进一步说明它借鉴 Cascades，使用 memo 保存等价表达式，并通过 optgen 生成表达式和规则相关代码。
@@ -462,6 +706,11 @@
 
 <section id="tidb">
 <h2>十一、TiDB：MySQL-compatible 分布式数据库的 Planner 分层</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/pingcap/tidb">pingcap/tidb</a></li>
+  <li>开发指南：<a href="https://pingcap.github.io/tidb-dev-guide/understand-tidb/planner.html">TiDB Planner</a></li>
+  <li>Cascades 源码：<a href="https://github.com/pingcap/tidb/tree/master/pkg/planner/cascades">pkg/planner/cascades</a></li>
+</ul>
 <p>
   TiDB developer guide 把 planner 切成逻辑优化和物理优化：逻辑阶段做列裁剪、谓词下推、聚合下推等，
   物理阶段为不同 task type 和存储引擎选择访问路径、join 算法、是否下推到 TiKV/TiFlash。
@@ -481,6 +730,11 @@
 
 <section id="orca">
 <h2>十二、GPORCA：模块化 Cascades 优化器的经典样本</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/greenplum-db/gporca-archive">greenplum-db/gporca-archive</a></li>
+  <li>Greenplum 文档：<a href="https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-greenplum/7/greenplum-database/admin_guide-query-topics-query-piv-opt-overview.html">GPORCA Overview</a></li>
+  <li>论文：<a href="https://15721.courses.cs.cmu.edu/spring2016/papers/p337-soliman.pdf">Orca: A Modular Query Optimizer Architecture for Big Data</a></li>
+</ul>
 <p>
   GPORCA 是 Greenplum 使用的开源 optimizer。ORCA 论文把它定位为 modular query optimizer architecture for big data，
   使用 memo、transformation/implementation rules、metadata cache、required/derived properties 和 cost model。
@@ -498,6 +752,11 @@
 
 <section id="doris">
 <h2>十三、Apache Doris Nereids：OLAP 系统迁移到 Cascades 的案例</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/apache/doris">apache/doris</a></li>
+  <li>优化器介绍：<a href="https://doris.apache.org/docs/dev/query-acceleration/optimization-technology-principle/query-optimizer/">Doris Query Optimizer Introduction</a></li>
+  <li>Nereids 源码：<a href="https://github.com/apache/doris/tree/master/fe/fe-core/src/main/java/org/apache/doris/nereids">fe-core/.../nereids</a></li>
+</ul>
 <p>
   Apache Doris 的 Nereids 是新一代 optimizer，官方设计文档说明它采用 Cascades-style framework，
   以 memo、rule、cost、stats 和 property 组织优化流程。<span class="cite"><a href="#ref-doris-nereids">[19]</a></span>
@@ -513,6 +772,11 @@
 
 <section id="mysql">
 <h2>十四、MySQL Hypergraph Optimizer：主流关系数据库的 Hypergraph 产品化</h2>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/mysql/mysql-server">mysql/mysql-server</a></li>
+  <li>源码入口：<a href="https://github.com/mysql/mysql-server/tree/trunk/sql/join_optimizer">sql/join_optimizer</a></li>
+  <li>官方博客：<a href="https://blogs.oracle.com/mysql/the-hypergraph-optimizer-is-now-available-in-mysql-9-7-community-edition">The hypergraph optimizer is now available in MySQL 9.7 Community Edition</a></li>
+</ul>
 <p>
   MySQL 传统 optimizer 长期以 join order、access path 和 cost-based choices 为核心。近年的 Hypergraph Optimizer
   把 join 查询表示为 hypergraph，能够更系统地处理复杂 join predicates 和 bushy plans。MySQL 9.7 官方 release notes
@@ -525,13 +789,150 @@
   对于 join-heavy workloads，后者可以更精确地表达多表谓词和 bushy search。
 </p>
 <p>
-  和 DuckDB DPccp 一样，MySQL hypergraph optimizer 提醒我们：join reorder 未必只能靠通用 rewrite rules。
+  和 DuckDB 的 connected-subgraph DP 一样，MySQL hypergraph optimizer 提醒我们：join reorder 未必只能靠通用 rewrite rules。
   当研究目标聚焦 join order，显式 join graph/hypergraph IR 可能比通用 logical expression memo 更直接。
 </p>
 </section>
 
+<section id="more-open">
+<h2>十五、更多适合学习的开源优化器项目</h2>
+<p>
+  下面四个项目不一定都是“生产级通用 CBO”的代表，但很适合作为学习入口：有的能观察列存 OLAP 的 analyzer，
+  有的展示流数据库的 MV rewrite，有的把优化器独立成实验框架，有的提供低门槛教学实现。
+</p>
+
+<h3 id="clickhouse">ClickHouse Analyzer：列存 OLAP 的查询分析与执行管线</h3>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/ClickHouse/ClickHouse">ClickHouse/ClickHouse</a></li>
+  <li>官方文档：<a href="https://clickhouse.com/docs/guides/developer/understanding-query-execution-with-the-analyzer">Understanding query execution with the analyzer</a></li>
+</ul>
+<p>
+  ClickHouse 是开源列式 OLAP 数据库，近年引入新的 Analyzer 架构：查询先由 parser 转成 AST，再由 analyzer
+  构建 query tree，解析表、列、别名、类型与作用域，并通过一组 passes 做 query tree 层面的改写与优化。
+</p>
+<p>
+  它的计划形态很适合观察从逻辑到物理执行的过渡：<code>EXPLAIN QUERY TREE</code> 展示投影、函数、列解析和 join tree；
+  <code>EXPLAIN PLAN</code> / <code>EXPLAIN PIPELINE</code> 则能看到读取、表达式、过滤、join、聚合、排序到并行 pipeline
+  的组织方式。它不是 Cascades 教科书样本，但很适合学习列存数据库如何把 SQL 变成高吞吐执行管线。
+</p>
+
+<h3 id="risingwave">RisingWave：流数据库中的优化器与 MV Rewrite</h3>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/risingwavelabs/risingwave">risingwavelabs/risingwave</a></li>
+  <li>优化器源码：<a href="https://github.com/risingwavelabs/risingwave/tree/main/src/frontend/src/optimizer">src/frontend/src/optimizer</a></li>
+  <li>官方文档：<a href="https://docs.risingwave.com/performance/serving-optimizations">Serving queries with materialized views</a></li>
+</ul>
+<p>
+  RisingWave 是开源流数据库 / event streaming 平台，优化器位于 frontend 层，既要生成低延迟 batch 查询计划，
+  也要支撑持续运行的 streaming 作业计划。源码入口按 plan node、rule、property、logical optimization 等模块组织。
+</p>
+<p>
+  Materialized view selection 是很好的切入点：开启后，优化器可以把匹配的 batch 查询改写为扫描已有 MV。
+  这让 MV rewrite、增量维护、分布式 exchange、batch/stream property 和执行计划边界放在同一个真实系统里观察。
+</p>
+
+<h3 id="optd">CMU optd：把优化器做成独立服务与框架</h3>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/cmu-db/optd">cmu-db/optd</a></li>
+  <li>项目主页：<a href="https://optd.io/">optd.io</a></li>
+</ul>
+<p>
+  optd 是 CMU-DB 的查询优化器框架项目，定位更接近 Query Optimizer Service。它把优化器核心抽成相对独立的库与服务，
+  核心模块覆盖 IR、属性、规则、代价模型与基数估计，并提供 catalog、DataFusion connector 与 CLI 等外围组件。
+</p>
+<p>
+  从优化器形态看，optd 适合放在 Cascades-style memo/search 的谱系中理解：用规则驱动逻辑与物理计划空间探索，
+  用 cost model 与 physical properties 比较候选计划。它的价值是把优化器从执行引擎中拆出来，适合做可复用、可实验的基础设施。
+</p>
+
+<h3 id="bustub">CMU BusTub：低门槛的教学型优化器入口</h3>
+<ul class="link-list">
+  <li>GitHub：<a href="https://github.com/cmu-db/bustub">cmu-db/bustub</a></li>
+  <li>优化器源码：<a href="https://github.com/cmu-db/bustub/tree/master/src/optimizer">src/optimizer</a></li>
+  <li>课程项目：<a href="https://15445.courses.cs.cmu.edu/fall2024/project3/">CMU 15-445 Project 3</a></li>
+</ul>
+<p>
+  BusTub 是 CMU 15-445/645 课程使用的教学型关系数据库，目标不是生产可用，而是把 SQL、binder、planner、
+  optimizer、executor 串成可读的端到端系统。它支持基础 SQL 与 EXPLAIN，适合观察查询从绑定树到计划树的转换。
+</p>
+<p>
+  它的优化器以 rule-based rewrite 为主，源码中可以看到合并投影、合并过滤与连接、NLJ 转 Hash Join / Index Join、
+  SeqScan 转 IndexScan、Sort + Limit 转 TopN、列裁剪等规则。它没有复杂 memo 或 Cascades 搜索，但非常适合作为理解
+  plan node、规则优化、catalog/index 约束和执行器集成的第一站。
+</p>
+</section>
+
+<section id="commercial">
+<h2>十六、闭源名家资料导航：从官方文档反推优化器设计</h2>
+<p>
+  闭源优化器不能像开源项目那样顺着源码阅读，但官方调优指南、query profile、execution graph 和技术博客仍很有学习价值。
+  它们能展示成熟系统暴露哪些计划信息、如何组织统计信息、如何处理运行时反馈，以及云数仓如何把优化器扩展成平台能力。
+</p>
+
+<h3 id="sqlserver">Microsoft SQL Server Query Optimizer</h3>
+<ul class="link-list">
+  <li>产品页：<a href="https://www.microsoft.com/sql-server">Microsoft SQL Server</a></li>
+  <li>架构指南：<a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide?view=sql-server-ver17">Query Processing Architecture Guide</a></li>
+  <li>智能查询处理：<a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/intelligent-query-processing?view=sql-server-ver17">Intelligent Query Processing</a></li>
+</ul>
+<p>
+  SQL Server 优化器不开源，但它是企业级代价优化器的经典代表。官方架构指南把 SQL 查询从解析、绑定、优化到执行的链路拆开说明，
+  并覆盖统计信息、Showplan、索引选择和基于代价的计划选择。
+</p>
+<p>
+  它的特色不只在编译期搜索计划，也体现在运行时和反馈式优化上。Intelligent Query Processing 文档展示了 adaptive joins、
+  memory grant feedback、interleaved execution、table variable deferred compilation 等能力。
+</p>
+
+<h3 id="oracle">Oracle Database Optimizer</h3>
+<ul class="link-list">
+  <li>产品页：<a href="https://www.oracle.com/database/">Oracle Database</a></li>
+  <li>调优指南：<a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/tgsql/">Oracle Database SQL Tuning Guide</a></li>
+  <li>官方博客：<a href="https://blogs.oracle.com/optimizer/">Oracle Optimizer Blog</a></li>
+</ul>
+<p>
+  Oracle CBO 是最著名的商业数据库优化器之一。官方 SQL Tuning Guide 虽然不是源码级材料，但系统覆盖 optimizer concepts、
+  统计信息、访问路径、连接方法、自适应查询优化和 SQL Plan Management，适合从产品文档反推成熟优化器的功能边界。
+</p>
+<p>
+  它的特色在于把代价估算、执行计划稳定性、统计信息维护和运行期反馈放在同一套调优体系里讲解。Optimizer Blog 还会持续用具体案例解释
+  统计信息、转换规则、计划管理和新版本行为，是闭源优化器资料里很值得长期跟踪的入口。
+</p>
+
+<h3 id="snowflake">Snowflake Query Processing：云数仓优化器观察窗口</h3>
+<ul class="link-list">
+  <li>产品页：<a href="https://www.snowflake.com/en/data-cloud/">Snowflake Data Cloud</a></li>
+  <li>Query Profile：<a href="https://docs.snowflake.com/en/user-guide/ui-query-profile">Query Profile / Query History</a></li>
+  <li>性能资料：<a href="https://docs.snowflake.com/en/guides-overview-performance">Performance Optimization Overview</a>；<a href="https://docs.snowflake.com/en/user-guide/search-optimization-service">Search Optimization Service</a>；<a href="https://docs.snowflake.com/en/user-guide/query-acceleration-service">Query Acceleration Service</a></li>
+</ul>
+<p>
+  Snowflake 的优化器与执行引擎不开源，但官方 Query Profile 暴露执行计划、算子节点、行集流向、耗时占比、扫描字节数等信息。
+  它适合作为黑盒云数仓研究对象：从可观察的计划与统计指标反推优化器如何选择扫描、过滤、连接和资源使用路径。
+</p>
+<p>
+  官方性能资料把查询优化放在更大的系统边界里讨论：micro-partition pruning、clustering、缓存、warehouse sizing、
+  Search Optimization Service、Query Acceleration Service 共同影响计划效果。这里的“优化器”已经扩展成存储布局、弹性计算和服务化加速的组合。
+</p>
+
+<h3 id="bigquery">Google BigQuery Query Optimizer / Query Execution</h3>
+<ul class="link-list">
+  <li>产品页：<a href="https://cloud.google.com/bigquery">BigQuery</a></li>
+  <li>执行图：<a href="https://cloud.google.com/bigquery/docs/query-plan-explanation">Query plan and execution graph</a></li>
+  <li>性能建议：<a href="https://cloud.google.com/bigquery/docs/best-practices-performance-compute">Optimize query computation</a></li>
+  <li>技术博客：<a href="https://cloud.google.com/blog/products/data-analytics/new-bigquery-history-based-optimizations-speed-query-performance">History-based optimizations</a></li>
+</ul>
+<p>
+  BigQuery 优化器本身闭源，但官方文档把执行侧暴露得相当清楚：SQL 会被转换为由 stage 和 step 组成的 execution graph，
+  stage 之间通过 shuffle 交换数据，并可观察 slot-time、时间线、内存与中间数据流动。
+</p>
+<p>
+  History-based optimizations 是很有学习价值的特色：BigQuery 会利用相似查询的历史执行统计，自动尝试 join pushdown、
+  semijoin reduction、join commutation 和并行度调整。这展示了云数仓如何把运行时反馈变成持续优化机制。
+</p>
+</section>
+
 <section id="lessons">
-<h2>十五、对本仓库 Volcano Demo 的启发</h2>
+<h2>十七、对本仓库 Volcano Demo 的启发</h2>
 <p>
   当前 <code>demos/volcano_join_reorder</code> 已经具备一个最小 Volcano/Cascades 骨架：
   parser boundary、JoinGraph、memo groups、transformation rules、implementation rules、required property、
@@ -542,7 +943,7 @@
 <p>
   Calcite/ORCA/Cockroach 证明 memo framework 很适合表达 rule、property 和 enforcer；
   DuckDB/MySQL 证明 join order 本身最好有专门的 graph/hypergraph 枚举模块。因此后续可以让 demo 保留 memo，
-  但把 join group 的候选 split 来源替换为 DPccp/min-cut/top-down partitioning，而不是只靠交换律和结合律生成。
+  但把 join group 的候选 split 来源替换为 DPhyp/DPccp/min-cut/top-down partitioning，而不是只靠交换律和结合律生成。
 </p>
 
 <h3>2. 扩展 property system，而不是只扩展 join algorithm</h3>
@@ -575,13 +976,15 @@
 </section>
 
 <section>
-<h2>十六、按研究用途推荐阅读顺序</h2>
+<h2>十八、按研究用途推荐阅读顺序</h2>
 <ol>
   <li><strong>想理解传统 CBO：</strong>PostgreSQL optimizer README → SQLite query planner docs。</li>
   <li><strong>想理解规则流水线：</strong>DuckDB optimizer blog → DataFusion optimizer docs → Spark SQL Catalyst paper。</li>
   <li><strong>想理解 Volcano/Cascades：</strong>Calcite planner/trait docs → Cockroach optimizer docs → ORCA paper。</li>
   <li><strong>想理解 join graph/hypergraph：</strong>SQLite NGQP → DuckDB join order optimizer → MySQL Hypergraph Optimizer。</li>
-  <li><strong>想做 demo 下一步：</strong>先把 JoinGraph enumeration 模块化，再扩展 RequiredProperty 和 trace。</li>
+  <li><strong>想找低门槛源码：</strong>BusTub optimizer → optd framework → ClickHouse analyzer / RisingWave optimizer。</li>
+  <li><strong>想看闭源名家资料：</strong>SQL Server query processing guide → Oracle SQL Tuning Guide → Snowflake Query Profile → BigQuery execution graph。</li>
+  <li><strong>想做 demo 下一步：</strong>先把 JoinGraph enumeration 模块化，再扩展 RequiredProperty、MetadataProvider 和 trace。</li>
 </ol>
 </section>
 
@@ -606,8 +1009,27 @@
   <li id="ref-tidb-cascades">TiDB source/design: <a href="https://github.com/pingcap/tidb/tree/master/pkg/planner/cascades">planner/cascades</a>.</li>
   <li id="ref-orca-paper">Soliman et al.: <a href="https://15721.courses.cs.cmu.edu/spring2016/papers/p337-soliman.pdf">Orca: A Modular Query Optimizer Architecture for Big Data</a>.</li>
   <li id="ref-greenplum-orca">VMware Tanzu Greenplum Documentation: <a href="https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-greenplum/7/greenplum-database/admin_guide-query-topics-query-piv-opt-overview.html">GPORCA Overview</a>.</li>
-  <li id="ref-doris-nereids">Apache Doris Documentation: <a href="https://doris.apache.org/docs/dev/query-acceleration/nereids/">Nereids Optimizer</a>.</li>
+  <li id="ref-doris-nereids">Apache Doris Documentation: <a href="https://doris.apache.org/docs/dev/query-acceleration/optimization-technology-principle/query-optimizer/">Doris Query Optimizer Introduction</a>.</li>
   <li id="ref-mysql-hypergraph">MySQL 9.7 Release Notes: <a href="https://dev.mysql.com/doc/relnotes/mysql/9.7/en/news-9-7-0.html">Changes in MySQL 9.7.0</a>.</li>
+  <li id="ref-mysql-join-source">MySQL source: <a href="https://github.com/mysql/mysql-server/tree/trunk/sql/join_optimizer">sql/join_optimizer</a>.</li>
+  <li id="ref-mysql-blog">Oracle MySQL Blog: <a href="https://blogs.oracle.com/mysql/the-hypergraph-optimizer-is-now-available-in-mysql-9-7-community-edition">The hypergraph optimizer is now available in MySQL 9.7 Community Edition</a>.</li>
+  <li id="ref-clickhouse-analyzer">ClickHouse Documentation: <a href="https://clickhouse.com/docs/guides/developer/understanding-query-execution-with-the-analyzer">Understanding query execution with the analyzer</a>.</li>
+  <li id="ref-risingwave-source">RisingWave source: <a href="https://github.com/risingwavelabs/risingwave/tree/main/src/frontend/src/optimizer">frontend optimizer</a>.</li>
+  <li id="ref-risingwave-mv">RisingWave Documentation: <a href="https://docs.risingwave.com/performance/serving-optimizations">Serving queries with materialized views</a>.</li>
+  <li id="ref-optd">CMU-DB optd: <a href="https://github.com/cmu-db/optd">Query Optimizer Service</a> and <a href="https://optd.io/">project documentation</a>.</li>
+  <li id="ref-bustub">CMU-DB BusTub: <a href="https://github.com/cmu-db/bustub">GitHub repository</a> and <a href="https://github.com/cmu-db/bustub/tree/master/src/optimizer">optimizer source</a>.</li>
+  <li id="ref-bustub-course">CMU 15-445/645: <a href="https://15445.courses.cs.cmu.edu/fall2024/project3/">Project 3 Query Execution / Optimization</a>.</li>
+  <li id="ref-sqlserver-architecture">Microsoft Learn: <a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide?view=sql-server-ver17">Query Processing Architecture Guide</a>.</li>
+  <li id="ref-sqlserver-iqp">Microsoft Learn: <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/intelligent-query-processing?view=sql-server-ver17">Intelligent Query Processing</a>.</li>
+  <li id="ref-oracle-tuning">Oracle Documentation: <a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/tgsql/">Oracle Database SQL Tuning Guide</a>.</li>
+  <li id="ref-oracle-blog">Oracle Optimizer Blog: <a href="https://blogs.oracle.com/optimizer/">Optimizer blog</a>.</li>
+  <li id="ref-snowflake-profile">Snowflake Documentation: <a href="https://docs.snowflake.com/en/user-guide/ui-query-profile">Query Profile</a>.</li>
+  <li id="ref-snowflake-performance">Snowflake Documentation: <a href="https://docs.snowflake.com/en/guides-overview-performance">Performance Optimization Overview</a>.</li>
+  <li id="ref-snowflake-search">Snowflake Documentation: <a href="https://docs.snowflake.com/en/user-guide/search-optimization-service">Search Optimization Service</a>.</li>
+  <li id="ref-snowflake-acceleration">Snowflake Documentation: <a href="https://docs.snowflake.com/en/user-guide/query-acceleration-service">Query Acceleration Service</a>.</li>
+  <li id="ref-bigquery-plan">Google Cloud Documentation: <a href="https://cloud.google.com/bigquery/docs/query-plan-explanation">Query plan and execution graph</a>.</li>
+  <li id="ref-bigquery-compute">Google Cloud Documentation: <a href="https://cloud.google.com/bigquery/docs/best-practices-performance-compute">Optimize query computation</a>.</li>
+  <li id="ref-bigquery-history">Google Cloud Blog: <a href="https://cloud.google.com/blog/products/data-analytics/new-bigquery-history-based-optimizations-speed-query-performance">History-based optimizations</a>.</li>
 </ol>
 </section>
 

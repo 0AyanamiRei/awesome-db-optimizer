@@ -591,60 +591,68 @@ lb=B\cap S_L,\qquad rb=B\cap S_R.
 
 <h3>5.7 用 Figure 5 手工跑一遍</h3>
 
-<p>先跑论文 Figure 5 右侧明确列出的状态：</p>
+<p>这一节先把 Figure 5 当作完整的 9-relation join graph 来看。整张图可以拆成四个 blocks，并通过三个 cut vertices 串成一条 block-cut tree：</p>
 
-<pre><code>当前 DP 状态:
-S = {1,2,3,4,5}
+<pre><code>Full graph vertices = {1,2,3,4,5,6,7,8,9}
 
-Find-Blocks(G[S]):
+Blocks:
 B1 = {1,2,3,4}   // 有环 block
-B2 = {4,5}       // bridge block</code></pre>
+B2 = {4,5}       // bridge block
+B3 = {5,9}       // bridge block
+B4 = {6,7,8,9}   // 有环 block
 
-<p>先看 bridge block \(B2=\{4,5\}\)。这里 Algorithm 3 的行为和 tree case 的删边枚举完全一致：</p>
+Block-cut tree:
+B1 - 4 - B2 - 5 - B3 - 9 - B4</code></pre>
+
+<p>Algorithm 3 的外层不是只跑一次 full graph，而是对每个 size \(i\) 的 connected set \(S\) 都跑一遍。为了理解完整 Figure 5 上的流程，可以先想象当前状态就是整张图。下面这组例子是按 Algorithm 3 推出来的 full-graph walkthrough，不是论文 Figure 5 右侧表格原样列出的那个小状态：</p>
+
+<pre><code>S = {1,2,3,4,5,6,7,8,9}</code></pre>
+
+<p>在这个状态下，bridge blocks 会保留 §3.1 的 tree-style 删边优势。比如 \(B2=\{4,5\}\)：</p>
 
 <table>
   <thead>
-    <tr><th>block-local split</th><th>grow</th><th>全局 pair</th><th>含义</th></tr>
+    <tr><th>block-local split</th><th>grow 限制</th><th>full-graph 全局 pair</th><th>含义</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>\(lb=\{4\}, rb=\{5\}\)</td>
-      <td>\(\operatorname{grow}(\{4\}, S\setminus\{5\})\)</td>
-      <td>\((\{1,2,3,4\}, \{5\})\)</td>
-      <td>等价于删掉 bridge edge \((4,5)\) 后取 4 侧。</td>
+      <td>不能经过 5</td>
+      <td>\((\{1,2,3,4\}, \{5,6,7,8,9\})\)</td>
+      <td>等价于切断 block-cut tree 上 4--5 这段桥。</td>
     </tr>
     <tr>
       <td>\(lb=\{5\}, rb=\{4\}\)</td>
-      <td>\(\operatorname{grow}(\{5\}, S\setminus\{4\})\)</td>
-      <td>\((\{5\}, \{1,2,3,4\})\)</td>
+      <td>不能经过 4</td>
+      <td>\((\{5,6,7,8,9\}, \{1,2,3,4\})\)</td>
       <td>同一条切边的对称方向。</td>
     </tr>
   </tbody>
 </table>
 
-<p>这就是 §3.1 的优势在一般图里的保留方式：block-cut tree 上的 bridge 部分不需要枚举 powerset；它退化成“枚举这条桥两侧”。</p>
+<p>同理，bridge block \(B3=\{5,9\}\) 会生成 \((\{1,2,3,4,5\}, \{6,7,8,9\})\) 及其对称方向。这里完全不需要枚举 full graph 的 powerset；它就是 tree case 的“删桥边得到左右连通分量”。</p>
 
-<p>再看有环 block \(B1=\{1,2,3,4\}\)。这里删单条边已经不够，因为 block 内部有多条路径，必须枚举 block-local 的 \(lb/rb\)，再把 block 外挂着的点 5 通过 grow 自动归边：</p>
+<p>真正多出来的工作发生在有环 block。以 \(B1=\{1,2,3,4\}\) 为例，删单条边已经不能覆盖 block 内部的合法切分，所以 Algorithm 3 在这个 block 内枚举 \(lb/rb\)，再由 grow 把 block 外沿 cut vertex 4 挂出去的右侧链条一起带上：</p>
 
 <table>
   <thead>
-    <tr><th>block-local split</th><th>是否通过 block 内 CCP 检查</th><th>grow 后全局 pair</th></tr>
+    <tr><th>block-local split in \(B1\)</th><th>是否通过 block 内 CCP 检查</th><th>full-graph grow 后 pair</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>\((\{1\}, \{2,3,4\})\)</td>
       <td>通过</td>
-      <td>\((\{1\}, \{2,3,4,5\})\)</td>
+      <td>\((\{1\}, \{2,3,4,5,6,7,8,9\})\)</td>
     </tr>
     <tr>
       <td>\((\{4\}, \{1,2,3\})\)</td>
       <td>通过</td>
-      <td>\((\{4,5\}, \{1,2,3\})\)</td>
+      <td>\((\{4,5,6,7,8,9\}, \{1,2,3\})\)</td>
     </tr>
     <tr>
       <td>\((\{1,4\}, \{2,3\})\)</td>
       <td>通过</td>
-      <td>\((\{1,4,5\}, \{2,3\})\)</td>
+      <td>\((\{1,4,5,6,7,8,9\}, \{2,3\})\)</td>
     </tr>
     <tr>
       <td>\((\{1,3\}, \{2,4\})\)</td>
@@ -654,26 +662,27 @@ B2 = {4,5}       // bridge block</code></pre>
   </tbody>
 </table>
 
-<p>这个例子能看出 MPDP 的两个动作分工很清楚：block 内枚举负责发现“切口在有环区域里怎么切”；grow 负责把 5 这种挂在 cut vertex 4 外面的点归到正确一侧。算法没有枚举 \(S\) 的所有 subset，例如不会先枚举全局左侧 \(\{1,4,5\}\)，而是枚举 block 内的 \(\{1,4\}\)，再由 grow 把 5 带进来。</p>
+<p>\(B4=\{6,7,8,9\}\) 是对称的右侧有环 block：它也需要 block-local subset enumeration；而 \(\{4,5\}\)、\(\{5,9\}\) 这些桥接 block 继续保持 tree-style 的低成本枚举。这样看，Algorithm 3 的混合性更明显：<strong>树状骨架按桥切开，有环局部才付出指数枚举。</strong></p>
 
-<p>如果当前 DP 状态换成 Figure 5 的整张 9 点图 \(S=\{1,2,3,4,5,6,7,8,9\}\)，则 block-cut tree 是一条带 cut vertices 的链：</p>
+<p>论文 Figure 5 右侧表格实际列出的是较小的当前状态：</p>
 
-<pre><code>{1,2,3,4} - 4 - {4,5} - 5 - {5,9} - 9 - {6,7,8,9}</code></pre>
+<pre><code>S = {1,2,3,4,5}
+Blocks = {{1,2,3,4}, {4,5}}</code></pre>
 
-<p>这时 \(\{4,5\}\)、\(\{5,9\}\) 这样的 bridge blocks 继续退化成 tree-style 删边枚举；\(\{1,2,3,4\}\) 和 \(\{6,7,8,9\}\) 这两个有环 blocks 才需要局部 subset 枚举。也就是说，MPDP 的收益不来自“把整图变成树后直接删边”，而来自只在真正有环的 block 内支付指数枚举成本。</p>
+<p>在这个小状态里，上表中的右侧链条 \(\{6,7,8,9\}\) 不在 \(S\) 内，所以例如 \((\{4\},\{1,2,3\})\) 只 grow 成 \((\{4,5\},\{1,2,3\})\)，而不是 full graph 状态下的 \((\{4,5,6,7,8,9\},\{1,2,3\})\)。这不是两个不同算法，而是同一个 Algorithm 3 在不同 DP 状态 \(S\) 上的结果不同。</p>
 
 <h3>5.8 为什么这样不会漏候选</h3>
 
 <p>证明可以先记成两句话：</p>
 
 <ol>
-  <li>任何全局 CCP-Pair 的跨边都落在同一个 block 内。如果跨边分布在不同 block，会构造出跨多个 block 的 cycle，违反 block 的 maximality。</li>
+  <li>对当前 connected DP 状态 \(S\) 而言，任意全局 CCP-Pair 的跨边都落在 \(G[S]\) 的同一个 block 内。如果跨边分布在不同 block，会构造出跨多个 block 的 cycle，违反 block 的 maximality。</li>
   <li>一个 block 内 CCP 通过 grow 扩展出的 \(S_{left}\) 和 \(S_{right}\) 必然仍是全局 CCP：两边非空、互斥、连通，并且由 block 内的 \(lb/rb\) 相连。</li>
 </ol>
 
-<p>和原文编号对照：<strong>Lemma 4</strong> 证明 DPSUB 枚举到的每个 CCP-Pair 都会被 MPDP 枚举到；<strong>Lemma 5</strong> 证明由 block 内 \((lb, rb)\) 构造出的全局 \((S_{left}, S_{right})\) 确实是 CCP-Pair；由此得到 <strong>Theorem 6</strong>，即一般图 MPDP 仍找到 optimal join order。随后 <strong>Lemma 7</strong> 比较 MPDP 与 DPSUB 的 subset 评估数量，给出 \(O(B \cdot 2^b)\) 相对 \(O(2^{|S|})\) 的分析；<strong>Lemma 8</strong> 说明同一个 connected set \(S\) 上的 CCP-Pair 不会被重复枚举。</p>
+<p>和原文编号对照：<strong>Lemma 4</strong> 证明 DPSUB 枚举到的每个 CCP-Pair 都会被 MPDP 枚举到；<strong>Lemma 5</strong> 证明由 block 内 \((lb, rb)\) 构造出的全局 \((S_{left}, S_{right})\) 确实是 CCP-Pair；由此得到 <strong>Theorem 6</strong>，即一般图 MPDP 仍找到 no-cross-product/CCP-Pair 搜索空间内的 optimal join order。随后 <strong>Lemma 7</strong> 比较 MPDP 与 DPSUB 的 subset 评估数量，给出 \(O(B \cdot 2^b)\) 相对 \(O(2^{|S|})\) 的分析；<strong>Lemma 8</strong> 说明同一个 connected set \(S\) 上的 CCP-Pair 不会被重复枚举。</p>
 
-<p>复杂度分析里最重要的是：DPSUB 对 set \(S\) 看 \(2^{|S|}\) 级别的 subset；MPDP 只在 block 内做指数枚举，复杂度可以写成 \(O(B \cdot 2^b)\)，其中 \(B\) 是 block 数，\(b\) 是最大 block size。在 Figure 5 的例子中，原文说从 512 个候选降到 32 个。也就是说，MPDP 的收益来自 join graph 可分解性；如果 join graph 是大 clique，block size 接近整个 \(S\)，剪枝空间就小得多。</p>
+<p>复杂度分析里最重要的是：DPSUB 对 set \(S\) 看 \(2^{|S|}\) 级别的 subset；MPDP 只在 block 内做指数枚举，复杂度可以写成 \(O(B \cdot 2^b)\)，其中 \(B\) 是 block 数，\(b\) 是最大 block size。对完整 9-relation Figure 5 图而言，DPSUB 的 full-graph subset 数是 \(2^9=512\)；MPDP 只枚举四个 block 内的 non-empty proper subsets，数量是 \(14+2+2+14=32\)。注意这不是 Figure 5 右侧 \(S=\{1,2,3,4,5\}\) 小表的数字；对那个小状态，DPSUB 侧本来就是 \(2^5=32\)。也就是说，MPDP 的收益来自 join graph 可分解性；如果 join graph 是大 clique，block size 接近整个 \(S\)，剪枝空间就小得多。</p>
 
 <hr>
 

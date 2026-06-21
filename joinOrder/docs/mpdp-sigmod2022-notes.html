@@ -336,7 +336,7 @@ window.MathJax = {
 
 <h3>3.1 Valid Join-Pair / CCP-Pair</h3>
 
-<p>论文把 join query 表示成 \(G(R,E)\)：点是 FROM clause 里的 relation，边是 inner join predicate。对于两个 relation set \(S_{left}\) 和 \(S_{right}\)，它们能组成合法 Join-Pair，需要满足四个条件：</p>
+<p>论文把 join query 表示成 \(G(R,E)\)：R(relation)是 FROM clause 里的 relation，E(edge)是 inner join predicate。对于两个 relation set \(S_{left}\) 和 \(S_{right}\)，它们能组成合法 Join-Pair，需要满足四个条件：</p>
 
 <ol>
   <li>两边都是非空 relation subset。</li>
@@ -406,11 +406,30 @@ window.MathJax = {
 
 <h2 id="s4">5. 原文 §3.2：一般图上的 block + grow</h2>
 
-<div class="callout warn">
-这一节真正要解决的问题是tree 上“删一条边就能得到左右两边”，但一般图里有环，删边不一定能把图切开。MPDP 需要一种新的办法，从有环的 join graph 里生成合法的 \((S_{left}, S_{right})\)。
+<div class="callout info">
+<strong>先把 grow 当成黑盒。</strong>这一节的主问题不是“grow 内部怎么写”，而是：给定一个一般 join graph，MPDP 如何避免像 DPSUB 那样枚举整个 \(S\) 的所有 subset，同时又不漏掉合法 CCP-Pair。
 </div>
 
-<h3>5.1 为什么 tree 上的删边法失效</h3>
+<h3>5.1 先看高层：MPDP general 怎么优化一般图</h3>
+
+<p>对于当前 DP 状态里的 connected set \(S\)，DPSUB 的做法是直接枚举 \(S_{left} \subseteq S\)，再检查它和 \(S \setminus S_{left}\) 是否构成合法 Join-Pair。这个办法简单、好并行，但会产生大量无效候选。</p>
+
+<p>MPDP general 的思路是把“全局枚举 \(S\) 的 subset”改成“只在 block 内枚举局部切口”：</p>
+
+<ol>
+  <li><strong>找结构：</strong>对 \(G[S]\) 做 block decomposition，得到若干 block，以及由 cut vertex 串起来的 block-cut tree。</li>
+  <li><strong>找切口：</strong>合法 Join-Pair 的边界要么落在 bridge-like block 上，要么落在某个有环 block 的内部；所以只需要在每个 block 内枚举局部 \(lb/rb\)。</li>
+  <li><strong>扩成全局：</strong>把 \(lb/rb\) 当作左右锚点，用 grow 把挂在这个切口两侧的 relation 吸进 \(S_{left}\) 和 \(S_{right}\)。</li>
+  <li><strong>照常 DP：</strong>得到全局 \((S_{left}, S_{right})\) 后，调用 cost model 创建候选计划，更新 <code>BestPlan(S)</code>。</li>
+</ol>
+
+<p>因此，MPDP 对一般图的优化点不是“把一般图真的变成树后直接删边”，而是：<strong>利用 block-cut tree 定位哪些 block 可能包含切口，再把指数枚举限制在 block 内部。</strong>如果 \(S\) 很大但最大 block \(b\) 较小，枚举规模就从 DPSUB 的 \(2^{|S|}\) 级别，降到接近 \(B \cdot 2^b\) 的级别，其中 \(B\) 是 block 数。</p>
+
+<div class="callout warn">
+后面的 grow 只是在回答第三步：局部 \(lb/rb\) 已经选好以后，如何把它扩展成当前 \(S\) 上完整的 \(S_{left}/S_{right}\)。
+</div>
+
+<h3>5.2 为什么 tree 上的删边法失效</h3>
 
 <p>在 tree join graph 里，任意一条边都是唯一通路。删掉它，图一定断成左右两个连通部分，所以 Algorithm 2 可以直接用“删边”生成 Join-Pair。</p>
 
@@ -427,7 +446,7 @@ window.MathJax = {
   <figcaption>原文 Figure 5：9 个 relation 的 join graph。原文展示了 block 内 CCP 如何映射为整个 set \(S\) 的 CCP，例如 \((lb, rb) \rightarrow (S_{left}, S_{right})\)。</figcaption>
 </figure>
 
-<h3>5.2 这一节只需要三个术语</h3>
+<h3>5.3 这一节只需要三个术语</h3>
 
 <table>
   <thead>
@@ -459,7 +478,7 @@ Blocks inside S = {{1, 2, 3, 4}, {4, 5}}</code></pre>
 
 <p>这里 `{1,2,3,4}` 是一个有环的 block，`{4,5}` 是一条连接出去的 bridge block。MPDP 的第一步就是：不要枚举 \(S\) 的所有 subset，先只在这些 block 内枚举。</p>
 
-<h3>5.3 为什么不能直接在 block-cut tree 上跑 tree 算法</h3>
+<h3>5.4 为什么不能直接在 block-cut tree 上跑 tree 算法</h3>
 
 <p>你可以把 Figure 5 的 block-cut tree 看成：</p>
 
@@ -507,7 +526,7 @@ S_right = {2,3,4,5}</code></pre>
 再在某个 block 内枚举“这块内部可能怎么切”
 最后用 grow 把 block 外面挂着的部分补到左边或右边</code></pre>
 
-<h3>5.4 grow 到底在做什么</h3>
+<h3>5.5 grow 到底在做什么</h3>
 
 <p>Algorithm 3 里最难读的函数是 <code>grow(lb, S \ rb)</code>。可以把它翻译成一句话：</p>
 
@@ -542,7 +561,7 @@ S_right = {2,3,4,5}</code></pre>
 
 <p>这三个例子就是 Figure 5 里 \((lb, rb) \rightarrow (S_{left}, S_{right})\) 的核心。block 内的 \(lb/rb\) 只决定“切口在哪里”；grow 负责沿着原图连通性，把切口外面挂着的 relation 自动归到对应一侧。</p>
 
-<h3>5.5 现在再读 Algorithm 3</h3>
+<h3>5.6 现在再读 Algorithm 3</h3>
 
 <p>有了上面的直觉，Algorithm 3 可以按四步读：</p>
 
@@ -560,7 +579,7 @@ S_right = {2,3,4,5}</code></pre>
 
 <p>这就是论文说的 hybrid enumeration：在 block 内有点像 vertex-based enumeration，但不是对整个 \(S\) 做；在 block 之间又利用 cut structure，有点像 edge/tree-aware enumeration。它的目的不是改变 DP 的状态，而是让每个状态 \(S\) 的候选 Join-Pair 更少、更接近真正的 CCP-Pair。</p>
 
-<h3>5.6 为什么这样不会漏候选</h3>
+<h3>5.7 为什么这样不会漏候选</h3>
 
 <p>证明可以先记成两句话：</p>
 

@@ -425,6 +425,8 @@ window.MathJax = {
 
 <p>因此，MPDP 对一般图的优化点不是“把一般图真的变成树后直接删边”，而是：<strong>利用 block-cut tree 定位哪些 block 可能包含切口，再把指数枚举限制在 block 内部。</strong>如果 \(S\) 很大但最大 block \(b\) 较小，枚举规模就从 DPSUB 的 \(2^{|S|}\) 级别，降到接近 \(B \cdot 2^b\) 的级别，其中 \(B\) 是 block 数。</p>
 
+<p>换句话说，Algorithm 3 不是放弃了 tree 场景的删边优势，而是把它包含成一个特例：如果某个 block 只是 bridge edge \(\{u,v\}\)，那么 block 内能枚举出的非平凡 \(lb/rb\) 只有 \((\{u\},\{v\})\) 和对称方向；随后 <code>grow(u, S \ {v})</code> 得到的正是删掉边 \((u,v)\) 后 \(u\) 这一侧的连通分量。真正需要 subset 枚举的，只有 size 大于 2 的有环 block。</p>
+
 <div class="callout warn">
 后面的 grow 只是在回答第三步：局部 \(lb/rb\) 已经选好以后，如何把它扩展成当前 \(S\) 上完整的 \(S_{left}/S_{right}\)。
 </div>
@@ -577,7 +579,7 @@ S_right = {2,3,4,5}</code></pre>
 \[
 lb=B\cap S_L,\qquad rb=B\cap S_R.
 \]
-接下来 <code>grow(lb, S \ rb)</code> 的“禁止进入 \(rb\)”就等价于在 block-cut tree 上从 \(lb\) 这一侧向外扩展：所有不需要穿过右侧锚点 \(rb\) 就能到达的挂接分支都会被吸进左边；剩下的补集自然留在右边。所以 MPDP 不需要显式枚举 block 外每个点属于左还是右，这部分归属由 cut vertex 连接性和 <code>grow</code> 自动决定。
+如果 \(B\) 是一条 bridge block，这一步就退化成 §3.1 的删边枚举；如果 \(B\) 是有环 block，才需要在 block 内枚举更多 \(lb/rb\)。接下来 <code>grow(lb, S \ rb)</code> 的“禁止进入 \(rb\)”就等价于在 block-cut tree 上从 \(lb\) 这一侧向外扩展：所有不需要穿过右侧锚点 \(rb\) 就能到达的挂接分支都会被吸进左边；剩下的补集自然留在右边。所以 MPDP 不需要显式枚举 block 外每个点属于左还是右，这部分归属由 cut vertex 连接性和 <code>grow</code> 自动决定。
 </div>
 
 <figure class="paper-figure">

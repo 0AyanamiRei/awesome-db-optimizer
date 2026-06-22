@@ -1,5 +1,6 @@
 #include "volcano/dp_sub.hpp"
 #include "volcano/exporter.hpp"
+#include "volcano/mpdp.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
 #include "volcano/transformational.hpp"
@@ -21,7 +22,7 @@ void PrintUsage() {
   std::cout << "Usage: volcano_join_demo [OPTIONS]\n"
             << "\n"
             << "  --strategy <name>   Run a single strategy\n"
-            << "                      Choices: dpsub, transform, topdown, topdown-mincut\n"
+            << "                      Choices: dpsub, mpdp, transform, topdown, topdown-mincut\n"
             << "  --test <name>       Test case to run\n"
             << "  --compare           Run all strategies and output comparison\n"
             << "  --out <dir>         Output directory for DOT/JSON exports\n"
@@ -51,6 +52,7 @@ volcano::RequiredProperty ParseRequired(const std::string &text) {
 
 std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
   if (name == "dpsub") return std::make_unique<volcano::DPSub>();
+  if (name == "mpdp") return std::make_unique<volcano::MPDP>();
   if (name == "transform") return std::make_unique<volcano::Transformational>();
   if (name == "topdown")
     return std::make_unique<volcano::TopDownPartitioning>(
@@ -59,7 +61,7 @@ std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
     return std::make_unique<volcano::TopDownPartitioning>(
         volcano::PartitionStrategy::Mincut);
   throw std::runtime_error("unknown strategy: " + name +
-                           " (choices: dpsub, transform, topdown, topdown-mincut)");
+                           " (choices: dpsub, mpdp, transform, topdown, topdown-mincut)");
 }
 
 void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTrace>> &results) {
@@ -170,7 +172,7 @@ int main(int argc, char **argv) {
 
     if (compare) {
       // Run all strategies and compare
-      std::vector<std::string> strategy_names = {"dpsub", "transform", "topdown", "topdown-mincut"};
+      std::vector<std::string> strategy_names = {"dpsub", "mpdp", "transform", "topdown", "topdown-mincut"};
       std::vector<std::pair<std::string, volcano::SearchTrace>> results;
 
       std::cout << "Test: " << test_name << " (" << tc.description << ")\n";

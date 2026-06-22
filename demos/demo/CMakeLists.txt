@@ -21,6 +21,7 @@ target_include_directories(volcano_core
 # --- Strategy implementations ---
 add_library(volcano_strategies STATIC
   src/dp_sub.cpp
+  src/mpdp.cpp
   src/mincut.cpp
   src/top_down_partitioning.cpp
   src/transformational.cpp

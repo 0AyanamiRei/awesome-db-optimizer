@@ -1046,6 +1046,7 @@ Cost: 19651.6</code></pre>
 
 Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
 DPSub               10            2             57            0             20            0             0             20            0             19651.56
+MPDP                8             0             57            0             20            0             0             20            0             19651.56
 Transformational    0             0             34            27            12            16            24            0             0             19651.56
 TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56
 TopDown(Mincut)     6             0             25            7             12            0             0             0             0             19651.56</code></pre>
@@ -1055,7 +1056,7 @@ TopDown(Mincut)     6             0             25            7             12  
 </p>
 
 <ul>
-  <li>四种输出 cost 相同，说明都找到了同一个最优计划。</li>
+  <li>五种输出 cost 相同，说明都找到了同一个最优计划。</li>
   <li><code>Transformational</code> 有 <code>duplicates=16</code> 和 <code>rules=24</code>，展示规则变换的重复工作。</li>
   <li><code>Transformational</code> 的 <code>cache_hits=27</code>，说明物理优化阶段大量复用了 <code>(RelSet, Property)</code> 结果。</li>
   <li><code>TopDown(Naive)</code> costed plans 更少，因为它不先构造完整逻辑 memo，而是直接递归划分。</li>
@@ -1213,7 +1214,7 @@ OptimizeGroup()</code></pre>
     <small>
       分析 transformation-based join enumeration 的重复推导复杂度。
       本仓库保存了 PDF 副本：
-      <a href="../../../join%20order/paper/Transformative-vldb1997%20.pdf">join order/paper/Transformative-vldb1997 .pdf</a>。
+      <a href="../../../joinOrder/paper/Transformative-vldb1997.pdf">joinOrder/paper/Transformative-vldb1997.pdf</a>。
     </small>
   </li>
   <li>

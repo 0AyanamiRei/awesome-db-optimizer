@@ -1,5 +1,6 @@
 #include "volcano/dp_sub.hpp"
 #include "volcano/cost_model.hpp"
+#include "volcano/mpdp.hpp"
 #include "volcano/mincut.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
@@ -32,24 +33,30 @@ void CheckNear(double a, double b, double tol, const std::string &msg) {
   }
 }
 
-// Helper: run all three strategies on a test case and verify they produce the same best cost.
+// Helper: run representative strategies on a test case and verify same best cost.
 void VerifyConsistency(const volcano::test::TestCase &tc) {
   volcano::DPSub bu;
+  volcano::MPDP mpdp;
   volcano::Transformational tr;
   volcano::TopDownPartitioning td;
 
   auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+  auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_tr = tr.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_td = td.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
   Check(result_bu.has_plan, tc.name + ": DPSub found a plan");
+  Check(result_mpdp.has_plan, tc.name + ": MPDP found a plan");
   Check(result_tr.has_plan, tc.name + ": Transformational found a plan");
   Check(result_td.has_plan, tc.name + ": TopDown found a plan");
   Check(result_bu.best_plan.cost > 0, tc.name + ": DPSub plan has positive cost");
+  Check(result_mpdp.best_plan.cost > 0, tc.name + ": MPDP plan has positive cost");
   Check(result_tr.best_plan.cost > 0, tc.name + ": Transformational plan has positive cost");
   Check(result_td.best_plan.cost > 0, tc.name + ": TopDown plan has positive cost");
 
-  // All three should produce the same best cost
+  // All strategies should produce the same best cost.
+  CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
+            tc.name + ": DPSub == MPDP cost");
   CheckNear(result_bu.best_plan.cost, result_tr.best_plan.cost, 0.01,
             tc.name + ": DPSub == Transformational cost");
   CheckNear(result_bu.best_plan.cost, result_td.best_plan.cost, 0.01,
@@ -149,28 +156,37 @@ int main() {
 
     const auto property = volcano::RequiredProperty::Sorted({"a", "not_join_key"});
     volcano::DPSub bu;
+    volcano::MPDP mpdp;
     volcano::Transformational tr;
     volcano::TopDownPartitioning td;
     volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
 
     auto result = bu.Search(tc.graph, tc.stats, property);
+    auto result_mpdp = mpdp.Search(tc.graph, tc.stats, property);
     auto result_tr = tr.Search(tc.graph, tc.stats, property);
     auto result_td = td.Search(tc.graph, tc.stats, property);
     auto result_mincut = td_mincut.Search(tc.graph, tc.stats, property);
     auto result_any = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
     Check(result.has_plan, "dpsub sorted fallback: plan found");
+    Check(result_mpdp.has_plan, "mpdp sorted fallback: plan found");
     Check(result_tr.has_plan, "transformational sorted fallback: plan found");
     Check(result_td.has_plan, "topdown sorted fallback: plan found");
     Check(result_mincut.has_plan, "topdown mincut sorted fallback: plan found");
     Check(result.best_plan.op == volcano::PhysicalOp::SortEnforcer,
           "dpsub sorted fallback: root SortEnforcer used");
+    Check(result_mpdp.best_plan.op == volcano::PhysicalOp::SortEnforcer,
+          "mpdp sorted fallback: root SortEnforcer used");
     Check(result.best_plan.property == property,
           "dpsub sorted fallback: required property preserved");
+    Check(result_mpdp.best_plan.property == property,
+          "mpdp sorted fallback: required property preserved");
     Check(result.best_plan.cost >= result_any.best_plan.cost,
           "dpsub sorted fallback: sorted cost >= any cost");
     CheckNear(result.best_plan.cost, result_tr.best_plan.cost, 0.01,
               "sorted fallback: DPSub == Transformational cost");
+    CheckNear(result.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
+              "sorted fallback: DPSub == MPDP cost");
     CheckNear(result.best_plan.cost, result_td.best_plan.cost, 0.01,
               "sorted fallback: DPSub == TopDown cost");
     CheckNear(result_td.best_plan.cost, result_mincut.best_plan.cost, 0.01,
@@ -187,17 +203,21 @@ int main() {
     volcano::StatsCatalog stats;
 
     volcano::DPSub bu;
+    volcano::MPDP mpdp;
     volcano::Transformational tr;
     volcano::TopDownPartitioning td;
 
     auto result_bu = bu.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_mpdp = mpdp.Search(graph, stats, volcano::RequiredProperty::Any());
     auto result_tr = tr.Search(graph, stats, volcano::RequiredProperty::Any());
     auto result_td = td.Search(graph, stats, volcano::RequiredProperty::Any());
 
     Check(!result_bu.has_plan, "empty graph: DPSub reports no plan");
+    Check(!result_mpdp.has_plan, "empty graph: MPDP reports no plan");
     Check(!result_tr.has_plan, "empty graph: Transformational reports no plan");
     Check(!result_td.has_plan, "empty graph: TopDown reports no plan");
     Check(result_bu.trace.best_cost == 0.0, "empty graph: DPSub best_cost is 0");
+    Check(result_mpdp.trace.best_cost == 0.0, "empty graph: MPDP best_cost is 0");
     Check(result_tr.trace.best_cost == 0.0, "empty graph: Transformational best_cost is 0");
     Check(result_td.trace.best_cost == 0.0, "empty graph: TopDown best_cost is 0");
   }
@@ -216,18 +236,23 @@ int main() {
     stats.AddSelectivity({"a", "x"}, {"b", "x"}, 0.1);
 
     volcano::DPSub bu;
+    volcano::MPDP mpdp;
     volcano::Transformational tr;
     volcano::TopDownPartitioning td;
 
     auto result_bu = bu.Search(graph, stats, volcano::RequiredProperty::Any());
+    auto result_mpdp = mpdp.Search(graph, stats, volcano::RequiredProperty::Any());
     auto result_tr = tr.Search(graph, stats, volcano::RequiredProperty::Any());
     auto result_td = td.Search(graph, stats, volcano::RequiredProperty::Any());
 
     Check(result_bu.has_plan, "stats catalog: DPSub found a plan");
+    Check(result_mpdp.has_plan, "stats catalog: MPDP found a plan");
     Check(result_tr.has_plan, "stats catalog: Transformational found a plan");
     Check(result_td.has_plan, "stats catalog: TopDown found a plan");
     CheckNear(result_bu.best_plan.cost, 80.0, 0.01,
               "stats catalog: DPSub uses catalog rows/selectivity");
+    CheckNear(result_mpdp.best_plan.cost, 80.0, 0.01,
+              "stats catalog: MPDP uses catalog rows/selectivity");
     CheckNear(result_tr.best_plan.cost, 80.0, 0.01,
               "stats catalog: Transformational uses catalog rows/selectivity");
     CheckNear(result_td.best_plan.cost, 80.0, 0.01,
@@ -381,6 +406,72 @@ int main() {
       std::cout << "  " << name << ": " << tc.graph.RelationCount()
                 << " relations, " << tc.graph.PredicateCount() << " predicates\n";
     }
+  }
+
+  // --- Test 16: MPDP Figure 5 style graph ---
+  {
+    std::cout << "Test 16: MPDP Figure 5 style graph\n";
+    const auto &tc = volcano::test::TestCase::Lookup("mpdp_fig5");
+
+    volcano::DPSub bu;
+    volcano::MPDP mpdp;
+    volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
+
+    auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mincut = td_mincut.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+
+    Check(result_bu.has_plan, "mpdp_fig5: DPSub found a plan");
+    Check(result_mpdp.has_plan, "mpdp_fig5: MPDP found a plan");
+    Check(result_mincut.has_plan, "mpdp_fig5: TopDown(Mincut) found a plan");
+    CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
+              "mpdp_fig5: DPSub == MPDP cost");
+    CheckNear(result_bu.best_plan.cost, result_mincut.best_plan.cost, 0.01,
+              "mpdp_fig5: DPSub == TopDown(Mincut) cost");
+    Check(result_mpdp.trace.partitions_explored < result_bu.trace.partitions_explored,
+          "mpdp_fig5: MPDP explores fewer candidate partitions than DPSub");
+    Check(result_mpdp.trace.partitions_rejected == 0,
+          "mpdp_fig5: MPDP enumerates CCP pairs without rejected partitions");
+
+    std::cout << "  DPSub partitions=" << result_bu.trace.partitions_explored
+              << " rejected=" << result_bu.trace.partitions_rejected
+              << " cost=" << result_bu.best_plan.cost << "\n";
+    std::cout << "  MPDP partitions=" << result_mpdp.trace.partitions_explored
+              << " rejected=" << result_mpdp.trace.partitions_rejected
+              << " cost=" << result_mpdp.best_plan.cost << "\n";
+  }
+
+  // --- Test 17: MPDP branching block-cut tree ---
+  {
+    std::cout << "Test 17: MPDP branching block-cut tree\n";
+    const auto &tc = volcano::test::TestCase::Lookup("mpdp_branching_blocks");
+
+    volcano::DPSub bu;
+    volcano::MPDP mpdp;
+    volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
+
+    auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mincut = td_mincut.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+
+    Check(result_bu.has_plan, "mpdp_branching_blocks: DPSub found a plan");
+    Check(result_mpdp.has_plan, "mpdp_branching_blocks: MPDP found a plan");
+    Check(result_mincut.has_plan, "mpdp_branching_blocks: TopDown(Mincut) found a plan");
+    CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
+              "mpdp_branching_blocks: DPSub == MPDP cost");
+    CheckNear(result_bu.best_plan.cost, result_mincut.best_plan.cost, 0.01,
+              "mpdp_branching_blocks: DPSub == TopDown(Mincut) cost");
+    Check(result_mpdp.trace.partitions_explored < result_bu.trace.partitions_explored,
+          "mpdp_branching_blocks: MPDP explores fewer candidate partitions than DPSub");
+    Check(result_mpdp.trace.partitions_rejected == 0,
+          "mpdp_branching_blocks: MPDP enumerates CCP pairs without rejected partitions");
+
+    std::cout << "  DPSub partitions=" << result_bu.trace.partitions_explored
+              << " rejected=" << result_bu.trace.partitions_rejected
+              << " cost=" << result_bu.best_plan.cost << "\n";
+    std::cout << "  MPDP partitions=" << result_mpdp.trace.partitions_explored
+              << " rejected=" << result_mpdp.trace.partitions_rejected
+              << " cost=" << result_mpdp.best_plan.cost << "\n";
   }
 
   // --- Summary ---

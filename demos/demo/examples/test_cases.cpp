@@ -23,6 +23,8 @@ struct Init {
     Register(MakeStar4());
     Register(MakeCycle4());
     Register(MakeClique4());
+    Register(MakeMPDPFigure5());
+    Register(MakeMPDPBranchingBlocks());
     Register(MakeTwoTable());
   }
 };
@@ -187,6 +189,79 @@ TestCase MakeClique4() {
   tc.stats.AddSelectivity({"b", "u"}, {"c", "u"}, 0.1);
   tc.stats.AddSelectivity({"b", "v"}, {"d", "v"}, 0.1);
   tc.stats.AddSelectivity({"c", "w"}, {"d", "w"}, 0.1);
+
+  return tc;
+}
+
+TestCase MakeMPDPFigure5() {
+  TestCase tc;
+  tc.name = "mpdp_fig5";
+  tc.description = "MPDP Figure 5 style: two cyclic blocks connected by bridge blocks";
+
+  for (std::size_t i = 1; i <= 9; ++i) {
+    const auto alias = "r" + std::to_string(i);
+    tc.graph.AddRelation(alias, "table_" + alias, 100.0 + static_cast<double>(i * 10),
+                         100.0 + static_cast<double>(i * 10));
+    tc.stats.AddRelationStats(alias, {100.0 + static_cast<double>(i * 10),
+                                      100.0 + static_cast<double>(i * 10)});
+  }
+
+  tc.graph.AddPredicate({"r1", "a"}, {"r2", "a"}, 0.10);
+  tc.graph.AddPredicate({"r2", "b"}, {"r3", "b"}, 0.08);
+  tc.graph.AddPredicate({"r3", "c"}, {"r4", "c"}, 0.07);
+  tc.graph.AddPredicate({"r4", "d"}, {"r1", "d"}, 0.06);
+  tc.graph.AddPredicate({"r4", "e"}, {"r5", "e"}, 0.05);
+  tc.graph.AddPredicate({"r5", "f"}, {"r9", "f"}, 0.04);
+  tc.graph.AddPredicate({"r6", "g"}, {"r7", "g"}, 0.10);
+  tc.graph.AddPredicate({"r7", "h"}, {"r8", "h"}, 0.08);
+  tc.graph.AddPredicate({"r8", "i"}, {"r9", "i"}, 0.07);
+  tc.graph.AddPredicate({"r9", "j"}, {"r6", "j"}, 0.06);
+
+  tc.stats.AddSelectivity({"r1", "a"}, {"r2", "a"}, 0.10);
+  tc.stats.AddSelectivity({"r2", "b"}, {"r3", "b"}, 0.08);
+  tc.stats.AddSelectivity({"r3", "c"}, {"r4", "c"}, 0.07);
+  tc.stats.AddSelectivity({"r4", "d"}, {"r1", "d"}, 0.06);
+  tc.stats.AddSelectivity({"r4", "e"}, {"r5", "e"}, 0.05);
+  tc.stats.AddSelectivity({"r5", "f"}, {"r9", "f"}, 0.04);
+  tc.stats.AddSelectivity({"r6", "g"}, {"r7", "g"}, 0.10);
+  tc.stats.AddSelectivity({"r7", "h"}, {"r8", "h"}, 0.08);
+  tc.stats.AddSelectivity({"r8", "i"}, {"r9", "i"}, 0.07);
+  tc.stats.AddSelectivity({"r9", "j"}, {"r6", "j"}, 0.06);
+
+  return tc;
+}
+
+TestCase MakeMPDPBranchingBlocks() {
+  TestCase tc;
+  tc.name = "mpdp_branching_blocks";
+  tc.description = "MPDP branching block-cut tree: one cut vertex shared by three cycles";
+
+  for (const auto &[alias, rows] : {
+         std::pair{"c", 500.0}, {"a1", 120.0}, {"a2", 130.0},
+         {"b1", 140.0}, {"b2", 150.0}, {"d1", 160.0}, {"d2", 170.0}}) {
+    tc.graph.AddRelation(alias, "table_" + std::string(alias), rows, rows);
+    tc.stats.AddRelationStats(alias, {rows, rows});
+  }
+
+  tc.graph.AddPredicate({"c", "a"}, {"a1", "a"}, 0.05);
+  tc.graph.AddPredicate({"a1", "b"}, {"a2", "b"}, 0.04);
+  tc.graph.AddPredicate({"a2", "c"}, {"c", "c"}, 0.03);
+  tc.graph.AddPredicate({"c", "d"}, {"b1", "d"}, 0.06);
+  tc.graph.AddPredicate({"b1", "e"}, {"b2", "e"}, 0.04);
+  tc.graph.AddPredicate({"b2", "f"}, {"c", "f"}, 0.03);
+  tc.graph.AddPredicate({"c", "g"}, {"d1", "g"}, 0.07);
+  tc.graph.AddPredicate({"d1", "h"}, {"d2", "h"}, 0.04);
+  tc.graph.AddPredicate({"d2", "i"}, {"c", "i"}, 0.03);
+
+  tc.stats.AddSelectivity({"c", "a"}, {"a1", "a"}, 0.05);
+  tc.stats.AddSelectivity({"a1", "b"}, {"a2", "b"}, 0.04);
+  tc.stats.AddSelectivity({"a2", "c"}, {"c", "c"}, 0.03);
+  tc.stats.AddSelectivity({"c", "d"}, {"b1", "d"}, 0.06);
+  tc.stats.AddSelectivity({"b1", "e"}, {"b2", "e"}, 0.04);
+  tc.stats.AddSelectivity({"b2", "f"}, {"c", "f"}, 0.03);
+  tc.stats.AddSelectivity({"c", "g"}, {"d1", "g"}, 0.07);
+  tc.stats.AddSelectivity({"d1", "h"}, {"d2", "h"}, 0.04);
+  tc.stats.AddSelectivity({"d2", "i"}, {"c", "i"}, 0.03);
 
   return tc;
 }

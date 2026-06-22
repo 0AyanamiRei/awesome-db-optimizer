@@ -1,27 +1,15 @@
 #include "volcano/top_down_partitioning.hpp"
 #include "volcano/cost_model.hpp"
 #include "volcano/mincut.hpp"
+#include "volcano/search_helpers.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
 namespace volcano {
-namespace {
-
-std::size_t PopCount(RelSet set) {
-  std::size_t count = 0;
-  while (set != 0) {
-    set &= set - 1;
-    ++count;
-  }
-  return count;
-}
-
-} // namespace
 
 TopDownPartitioning::TopDownPartitioning(PartitionStrategy partition_strategy,
                                          bool allow_cross_products)
@@ -39,13 +27,6 @@ std::string TopDownPartitioning::Name() const {
     return "TopDown(Mincut)";
   }
   return "TopDown(Unknown)";
-}
-
-std::string TopDownPartitioning::MakeKey(RelSet relset,
-                                          const RequiredProperty &property) const {
-  std::ostringstream out;
-  out << relset << "|" << property.ToString();
-  return out.str();
 }
 
 SearchResult TopDownPartitioning::Search(const JoinGraph &graph,
@@ -73,7 +54,7 @@ PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
                                        const RequiredProperty &property,
                                        SearchTrace &trace) {
   // --- Memoization ---
-  const auto key = MakeKey(relset, property);
+  const auto key = detail::MakeMemoKey(relset, property);
   {
     const auto cached = cache_.find(key);
     if (cached != cache_.end()) {
@@ -83,7 +64,7 @@ PlanPtr TopDownPartitioning::BestPlan(const JoinGraph &graph,
   }
 
   // --- Base case: single relation ---
-  if (PopCount(relset) == 1) {
+  if (detail::PopCount(relset) == 1) {
     PlanPtr result;
     // Find the relation
     for (const auto &relation : graph.Relations()) {

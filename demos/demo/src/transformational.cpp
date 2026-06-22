@@ -1,5 +1,6 @@
 #include "volcano/transformational.hpp"
 #include "volcano/cost_model.hpp"
+#include "volcano/search_helpers.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,18 +10,6 @@
 #include <utility>
 
 namespace volcano {
-namespace {
-
-std::size_t PopCount(RelSet set) {
-  std::size_t count = 0;
-  while (set != 0) {
-    set &= set - 1;
-    ++count;
-  }
-  return count;
-}
-
-} // namespace
 
 // --- LogicalExpr ---
 
@@ -184,7 +173,7 @@ void Transformational::SeedInitialExpressions(const JoinGraph &graph, bool allow
   if (full == 0) return;
 
   for (RelSet set = 1; set != 0; ++set) {
-    if ((set & ~full) != 0 || PopCount(set) < 2) {
+    if ((set & ~full) != 0 || detail::PopCount(set) < 2) {
       if (set == full) break;
       continue;
     }

@@ -3,6 +3,9 @@
 ## Repository Expectations
 
 - For changes or reviews under `demos/demo`, use the repo skill `reviewing-db-optimizer-demo`.
+- Treat `demos/demo` as a collection of paper-oriented demos. Do not assume the goal is to force all algorithms into one Volcano-style framework; shared infrastructure is a convenience layer, not the design authority.
+- When implementing a paper demo, optimize for faithful paper semantics and isolated algorithm behavior first. Only keep shared demo abstractions when they do not distort the target algorithm or when the user explicitly asks for cross-strategy uniformity.
+- Code and executable behavior are the source of truth. Do not avoid correct code changes to preserve existing documentation, snapshots, or prose; update docs and snapshots after the implementation settles.
 - Treat `demos/demo/docs/*.html` as human-facing reading material, not agent operating instructions.
 - Treat Markdown files such as `demos/demo/AGENT_CONTENT_MANAGEMENT.md` as agent-facing project management guidance.
 - For documentation credibility work in the demo, read `demos/demo/AGENT_CONTENT_MANAGEMENT.md` before editing or reviewing docs.

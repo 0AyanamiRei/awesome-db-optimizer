@@ -471,18 +471,18 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
 </p>
 
 <p>
-  MPDP 保留 DPSub 的 bottom-up DP 表、物理算子和 cost/property 逻辑，
-  但把候选划分枚举替换成 block-local 的 Join-Pair 生成。
+  MPDP 实现论文中的 block-local Join-Pair 生成，并使用 relation-set-only 的 bottom-up memo。
+  它不在内部传播 DPSub 的 interesting-order property，也不把 MergeJoin 放入 MPDP 的 DP 表。
   它的命令行别名是 <code>mpdp</code>，并在 <code>--compare</code> 中紧跟 <code>DPSub</code> 输出。
 </p>
 
 <h3>6.1 算法</h3>
 
 <pre><code>MPDP::Search(graph, stats, property):
-  cache: map&lt;string, PlanPtr&gt;           // 与 DPSub 相同
+  memo: map&lt;RelSet, PlanPtr&gt;
 
   for each relation r:
-    FillRelation(cache, r)
+    memo[{r}] = MakeScan(r)
 
   connected_by_size = CollectConnectedSubsets(graph)
 
@@ -494,10 +494,13 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
           right = S \ left
           if (left, right) is a new connected CP-free Join-Pair:
             partitions_explored++
-            BuildPhysicalPlans(cache, S, left, right)  // 与 DPSub 相同
+            Cost HashJoin and NestedLoopJoin from memo[left/right]
 
-      AddSortEnforcers(cache, S)
-      dp_cells_filled = cache.size()</code></pre>
+      memo[S] = best local plan
+      dp_cells_filled = memo.size()
+
+  if property is Sorted:
+    wrap final plan with one root SortEnforcer</code></pre>
 
 <h3>6.2 核心特征</h3>
 
@@ -505,15 +508,16 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
   <tr><th>特征</th><th>行为</th></tr>
   <tr><td>枚举顺序</td><td>自底向上 — 与 DPSub 一样按 relation set 大小递增</td></tr>
   <tr><td>候选生成</td><td>先找 <code>G[S]</code> 的 blocks，在 block 内枚举局部 <code>(lb, rb)</code>，再 Grow 成全局 Join-Pair</td></tr>
-  <tr><td>物理计划</td><td>与 DPSub 共享 HashJoin / NestedLoopJoin / MergeJoin / SortEnforcer 逻辑</td></tr>
+  <tr><td>物理计划</td><td>内部只 cost HashJoin / NestedLoopJoin；根 Sorted 需求用最终 SortEnforcer 适配</td></tr>
   <tr><td>Rejected partitions</td><td>候选发出前已经过滤，MPDP 专门用例中 <code>partitions_rejected=0</code></td></tr>
-  <tr><td>教学定位</td><td>当前实现是单线程 CPU 教学实现，不是 GPU runtime 实现</td></tr>
+  <tr><td>CPU 并行</td><td><code>mpdp-parallel</code> 在同一 DP level 内并行处理 connected sets</td></tr>
   <tr><td>深度文档</td><td><a href="mpdp-workflow.html">MPDP Workflow</a></td></tr>
 </table>
 
 <p>
   在 <code>mpdp_fig5</code> 上，DPSub 探索 5166 个 partitions、拒绝 4422 个；
-  MPDP 探索 744 个、拒绝 0 个，并保持同样的 <code>BestCost=1641477.39</code>。
+  MPDP 探索 744 个、拒绝 0 个。由于 MPDP 内部不使用 Sorted/MergeJoin，
+  该 case 的 MPDP <code>BestCost=75903325.79</code>，高于 DPSub 的 <code>1641477.39</code>。
   <code>mpdp_branching_blocks</code> 则覆盖一个 cut vertex 被三个 cycle block 共享的分叉 block-cut tree，
   避免把 Figure 5 风格的链状结构误读成 MPDP 的唯一形状。
 </p>
@@ -855,9 +859,10 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
 
 <table>
   <tr><th>参数</th><th>说明</th></tr>
-  <tr><td><code>--strategy &lt;name&gt;</code></td><td>策略：<code>dpsub</code> | <code>mpdp</code> | <code>transform</code> | <code>topdown</code> | <code>topdown-mincut</code></td></tr>
+  <tr><td><code>--strategy &lt;name&gt;</code></td><td>策略：<code>dpsub</code> | <code>mpdp</code> | <code>mpdp-parallel</code> | <code>transform</code> | <code>topdown</code> | <code>topdown-mincut</code></td></tr>
   <tr><td><code>--test &lt;name&gt;</code></td><td>测试用例名（<code>--list</code> 查看全部）</td></tr>
-  <tr><td><code>--compare</code></td><td>运行全部五种策略并输出对比表</td></tr>
+  <tr><td><code>--threads &lt;n&gt;</code></td><td><code>mpdp-parallel</code> 的 CPU worker 数，必须为正整数</td></tr>
+  <tr><td><code>--compare</code></td><td>运行 canonical 五种策略并输出对比表；并行 MPDP 用 <code>--strategy mpdp-parallel</code> 单独运行</td></tr>
   <tr><td><code>--out &lt;dir&gt;</code></td><td>导出 DOT/JSON 的输出目录</td></tr>
   <tr><td><code>--required &lt;prop&gt;</code></td><td>默认 <code>any</code>；或 <code>sorted:alias.column</code></td></tr>
   <tr><td><code>--list</code></td><td>列出所有测试用例</td></tr>
@@ -956,7 +961,7 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   </tr>
   <tr>
     <td>7</td><td>Sorted root property fallback across strategies</td>
-    <td>非 interesting-order 的根 Sorted 需求由最终 SortEnforcer 满足，且跨策略同 cost</td>
+    <td>非 interesting-order 的根 Sorted 需求由最终 SortEnforcer 满足；MPDP 额外检查串并行同 cost</td>
   </tr>
   <tr>
     <td>8</td><td>SearchResult no-plan state</td>
@@ -992,15 +997,15 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   </tr>
   <tr>
     <td>16</td><td>MPDP Figure 5 style graph</td>
-    <td><code>mpdp_fig5</code> 上 MPDP 与 DPSub / TopDown(Mincut) cost 一致，且 MPDP explored 少于 DPSub、rejected=0</td>
+    <td><code>mpdp_fig5</code> 上 MPDP explored 少于 DPSub、rejected=0，且串并行同 cost</td>
   </tr>
   <tr>
     <td>17</td><td>MPDP branching block-cut tree</td>
-    <td><code>mpdp_branching_blocks</code> 覆盖分叉 block-cut tree，同样验证 cost 一致与 rejected=0</td>
+    <td><code>mpdp_branching_blocks</code> 覆盖分叉 block-cut tree，同样验证 rejected=0 与串并行一致</td>
   </tr>
 </table>
 
-<p>关键不变量：<strong>核心搜索策略在同一 query 上必须产生相同的最优代价</strong>；Mincut 作为 TopDown 的分区策略，还必须与 Naive TopDown cost 一致。</p>
+<p>关键不变量：<strong>property-aware 策略在同一 query 上必须产生相同的最优代价</strong>；MPDP 作为独立论文实现，验证自身串并行一致，并且 best cost 不应低于 DPSub 的更大物理计划空间。</p>
 
 <!-- ================================================================== -->
 <h2 id="build">13. 构建与运行</h2>
@@ -1080,7 +1085,7 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   <tr>
     <td>可扩展性</td>
     <td>规则不易添加</td>
-    <td>候选枚举可替换，物理 DP 逻辑稳定</td>
+    <td>block-local 枚举可并行；物理 DP 保持 relation-set-only</td>
     <td>变换规则易扩展</td>
     <td>划分策略可替换</td>
     <td>划分策略可替换，减少无效分区</td>
@@ -1111,12 +1116,12 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   计算无用的子问题。
 </p>
 
-<h4>4. MPDP 隔离了候选枚举差异</h4>
+<h4>4. MPDP 独立实现 block-local join-pair 枚举</h4>
 <p>
-  MPDP 与 DPSub 使用相同的物理计划生成逻辑，因此在 <code>mpdp_fig5</code> 和
-  <code>mpdp_branching_blocks</code> 上 <code>PlansCosted</code>、<code>Cached</code>、
-  <code>DPCells</code> 与 DPSub 一致；变化集中在 <code>Partitions</code> 与
-  <code>Rejected</code>。这让它很适合作为"只替换 join-pair generator"的教学对照。
+  MPDP 与 DPSub 的主要对比是 join-pair 生成路径：DPSub 先枚举全局 subset 再过滤，
+  MPDP 先在 block 内找局部 CCP pair，再 Grow 成全局 Join-Pair。
+  当前 MPDP 的 memo 只有 <code>RelSet</code> 维度，因此 <code>PlansCosted</code>、
+  <code>Cached</code>、<code>DPCells</code> 不会与 DPSub 相同。
 </p>
 
 <h4>5. Branch-and-Bound 的实际效果</h4>
@@ -1134,7 +1139,7 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               46         10         264           0          69       0      0     69       0       14800
-MPDP                36          0         264           0          69       0      0     69       0       14800
+MPDP                36          0          76           0          13       0      0     13       0       14800
 Transformational     0          0         136         132          33     164    196      0       0       14800
 TopDown(Naive)      43          9          86          52          33       0      0      0       0       14800
 TopDown(Mincut)     34          0          86          52          33       0      0      0       0       14800
@@ -1144,8 +1149,9 @@ TopDown(Mincut)     34          0          86          52          33       0   
 <ul>
   <li><strong>BestCost 一致</strong>（14800）→ 五种策略都找到了真正的最优计划</li>
   <li><strong>MPDP 减少无效划分</strong>：相对 DPSub，cycle_4 上 partitions 46→36，rejected 10→0。</li>
+  <li><strong>MPDP 的 memo 更窄</strong>：relation-set-only memo 让 cycle_4 的 cached cells 从 69 降到 13。</li>
   <li><strong>Transformational 的 Duplicates 164</strong> — 虽然有去重，但每次去重都是一次失败的 insert 尝试</li>
-  <li><strong>TopDown 的 PlansCosted 最少</strong>（86 vs 264）— 因为只有被递归到的路径才被评估</li>
+  <li><strong>TopDown 少于 property-aware bottom-up</strong>（86 vs DPSub 264）— 因为只有被递归到的路径才被评估</li>
   <li><strong>Mincut 减少无效划分</strong>：TopDown(Naive) 探索 43 个分区、拒绝 9 个；TopDown(Mincut) 探索 34 个、拒绝 0 个。</li>
 </ul>
 

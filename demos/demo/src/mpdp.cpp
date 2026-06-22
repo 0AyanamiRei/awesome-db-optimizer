@@ -3,14 +3,19 @@
 
 #include <algorithm>
 #include <functional>
+#include <mutex>
 #include <queue>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace volcano {
 namespace {
+
+using MemoTable = std::unordered_map<RelSet, PlanPtr>;
 
 struct JoinPairKey {
   RelSet left = 0;
@@ -27,15 +32,77 @@ struct JoinPairKeyHash {
   }
 };
 
+struct StateCell {
+  PlanPtr best;
+  SearchTrace trace;
+};
+
+void MergeTrace(SearchTrace &target, const SearchTrace &source) {
+  target.partitions_explored += source.partitions_explored;
+  target.partitions_rejected += source.partitions_rejected;
+  target.plans_costed += source.plans_costed;
+  target.cache_hits += source.cache_hits;
+  target.duplicates_generated += source.duplicates_generated;
+  target.rule_applications += source.rule_applications;
+  target.branches_pruned += source.branches_pruned;
+}
+
+RelSet LowestSubset(RelSet set) {
+  return set & (~set + 1);
+}
+
+RelSet NextSubset(RelSet subset, RelSet set) {
+  return (subset - set) & set;
+}
+
+void BuildPlansForPairIntoCell(const MemoTable &memo,
+                               StateCell &cell,
+                               const JoinGraph &graph,
+                               const StatsCatalog &stats,
+                               RelSet S_left,
+                               RelSet S_right) {
+  const auto predicates = graph.CrossingPredicates(S_left, S_right);
+  const auto *predicate = predicates.empty() ? nullptr : &predicates.front();
+
+  const auto left_plan = memo.find(S_left);
+  const auto right_plan = memo.find(S_right);
+  if (left_plan != memo.end() && left_plan->second &&
+      right_plan != memo.end() && right_plan->second) {
+    auto hash_join = MakeJoin(PhysicalOp::HashJoin,
+                              left_plan->second, right_plan->second,
+                              graph, stats, predicate, RequiredProperty::Any());
+    ++cell.trace.plans_costed;
+    detail::TryUpdate(cell.best, hash_join);
+
+    auto nested_loop = MakeJoin(PhysicalOp::NestedLoopJoin,
+                                left_plan->second, right_plan->second,
+                                graph, stats, predicate, RequiredProperty::Any());
+    ++cell.trace.plans_costed;
+    detail::TryUpdate(cell.best, nested_loop);
+  }
+}
+
+void MergeCell(MemoTable &memo, RelSet set, const StateCell &cell) {
+  if (cell.best) {
+    auto &entry = memo[set];
+    detail::TryUpdate(entry, cell.best);
+  }
+}
+
 } // namespace
+
+MPDP::MPDP(std::size_t thread_count)
+    : thread_count_(std::max<std::size_t>(1, thread_count)) {}
+
+std::string MPDP::Name() const {
+  return thread_count_ > 1 ? "MPDP(Parallel)" : "MPDP";
+}
 
 SearchResult MPDP::Search(const JoinGraph &graph,
                           const StatsCatalog &stats,
                           const RequiredProperty &property) {
-  using CacheTable = std::unordered_map<std::string, PlanPtr>;
-
   SearchTrace trace;
-  CacheTable cache;
+  MemoTable memo;
 
   const auto full = graph.FullSet();
   if (full == 0) {
@@ -46,7 +113,9 @@ SearchResult MPDP::Search(const JoinGraph &graph,
 
   for (const auto &relation : graph.Relations()) {
     const RelSet singleton = RelSet{1} << relation.id;
-    detail::FillRelation(cache, graph, singleton, relation, stats, trace);
+    memo[singleton] = MakeScan(relation, stats);
+    ++trace.plans_costed;
+    trace.dp_cells_filled = memo.size();
   }
 
   const auto connected_by_size = detail::CollectConnectedSubsets(graph);
@@ -55,36 +124,69 @@ SearchResult MPDP::Search(const JoinGraph &graph,
   for (std::size_t i = 2; i <= n; ++i) {
     const auto &Si = connected_by_size[i];
 
-    for (RelSet S : Si) {
+    std::vector<StateCell> cells(Si.size());
+
+    auto fill_cell = [&](std::size_t index) {
+      const RelSet S = Si[index];
       const auto join_pairs = EnumerateJoinPairs(graph, S);
       for (const auto &[S_left, S_right] : join_pairs) {
-        ++trace.partitions_explored;
-        detail::BuildPhysicalPlansForPair(cache, graph, stats, S, S_left, S_right, trace);
+        ++cells[index].trace.partitions_explored;
+        BuildPlansForPairIntoCell(memo, cells[index], graph, stats, S_left, S_right);
+      }
+    };
+
+    if (thread_count_ <= 1 || Si.size() <= 1) {
+      for (std::size_t index = 0; index < Si.size(); ++index) {
+        fill_cell(index);
+      }
+    } else {
+      std::size_t next_index = 0;
+      std::mutex mutex;
+      const std::size_t worker_count = std::min(thread_count_, Si.size());
+      std::vector<std::thread> workers;
+      workers.reserve(worker_count);
+
+      for (std::size_t worker = 0; worker < worker_count; ++worker) {
+        workers.emplace_back([&]() {
+          while (true) {
+            std::size_t index = 0;
+            {
+              std::lock_guard<std::mutex> lock(mutex);
+              if (next_index >= Si.size()) {
+                return;
+              }
+              index = next_index++;
+            }
+            fill_cell(index);
+          }
+        });
       }
 
-      detail::AddSortEnforcers(cache, graph, S, trace);
-      trace.dp_cells_filled = cache.size();
+      for (auto &worker : workers) {
+        worker.join();
+      }
+    }
+
+    for (std::size_t index = 0; index < cells.size(); ++index) {
+      MergeCell(memo, Si[index], cells[index]);
+      const auto had_plan = cells[index].best != nullptr;
+      MergeTrace(trace, cells[index].trace);
+      if (had_plan) {
+        trace.dp_cells_filled = memo.size();
+      }
     }
   }
 
   SearchResult result;
-  const auto key = detail::MakeMemoKey(full, property);
   PlanPtr best;
-  auto it = cache.find(key);
-  if (it != cache.end() && it->second) {
+  auto it = memo.find(full);
+  if (it != memo.end() && it->second) {
     best = it->second;
   }
 
-  if (!property.IsAny()) {
-    auto any_it = cache.find(detail::MakeMemoKey(full, RequiredProperty::Any()));
-    if (any_it != cache.end() && any_it->second) {
-      auto sorted = MakeSort(any_it->second, property.sort_key);
-      ++trace.plans_costed;
-      if (Better(sorted, best)) {
-        best = sorted;
-        cache[key] = sorted;
-      }
-    }
+  if (!property.IsAny() && best) {
+    best = MakeSort(best, property.sort_key);
+    ++trace.plans_costed;
   }
 
   if (best) {
@@ -92,7 +194,7 @@ SearchResult MPDP::Search(const JoinGraph &graph,
     result.best_plan = *best;
     trace.best_cost = result.best_plan.cost;
   }
-  trace.plans_cached = cache.size();
+  trace.plans_cached = memo.size();
   result.trace = trace;
   return result;
 }
@@ -103,13 +205,14 @@ std::vector<MPDP::JoinPair> MPDP::EnumerateJoinPairs(const JoinGraph &graph,
   std::unordered_set<JoinPairKey, JoinPairKeyHash> emitted;
 
   for (RelSet block : FindBlocks(graph, set)) {
-    for (RelSet lb = (block - 1) & block; lb != 0; lb = (lb - 1) & block) {
+    for (RelSet lb = LowestSubset(block); lb != block; lb = NextSubset(lb, block)) {
       const RelSet rb = block ^ lb;
       if (!graph.IsConnected(lb) || !graph.IsConnected(rb)) continue;
       if (!graph.HasPredicateAcross(lb, rb)) continue;
 
       const RelSet left = Grow(graph, lb, set & ~rb);
-      const RelSet right = set ^ left;
+      const RelSet right = Grow(graph, rb, set & ~lb);
+      if ((left | right) != set || (left & right) != 0) continue;
       if (!graph.IsConnected(left) || !graph.IsConnected(right)) continue;
       if (!graph.HasPredicateAcross(left, right)) continue;
 

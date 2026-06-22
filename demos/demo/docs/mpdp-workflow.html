@@ -102,8 +102,8 @@
 <h1>MPDP Workflow</h1>
 <p>
   <code>demos/demo/src/mpdp.cpp</code> 的算法说明：
-  当前 demo 的 MPDP 如何复用 DPSub 的 bottom-up DP 框架，并把候选划分枚举替换成
-  "block-local CCP pair → global Join-Pair" 的流程。
+  当前 demo 的 MPDP 如何实现论文中的 general-graph join-pair 枚举，
+  并把它落到 relation-set-only 的 bottom-up DP 与 CPU level-parallel 执行路径上。
 </p>
 
 <div class="toc">
@@ -129,8 +129,8 @@
 <p>
   当前 demo 中，<code>MPDP</code> 是一个新的可比较 search strategy，
   命令行别名是 <code>mpdp</code>，并且在 <code>--compare</code> 输出中紧跟
-  <code>DPSub</code>。它的目标不是替代 cost model 或物理算子，而是隔离一个问题：
-  <strong>如果 DPSub 的物理计划生成逻辑不变，只换候选 join-pair 的枚举方式，会发生什么？</strong>
+  <code>DPSub</code>。它的目标是尽量贴近论文中的 block-local join-pair 枚举，
+  而不是把 DPSub 的 interesting-order/property memo 原样搬进 MPDP。
 </p>
 
 <div class="grid-3">
@@ -140,19 +140,19 @@
   </div>
   <div class="card">
     <h4>Demo 定位</h4>
-    <p>当前实现是单线程 CPU 教学实现，用来展示候选枚举逻辑；它不是 GPU 运行时实现。</p>
+    <p>默认 <code>mpdp</code> 是 CPU 串行教学实现；<code>mpdp-parallel</code> 展示同一枚举逻辑的 CPU level-parallel 版本。</p>
   </div>
   <div class="card">
     <h4>对比对象</h4>
-    <p>最直接的对照是 <code>DPSub</code>：二者的 DP 表、cost model、physical property 处理保持一致。</p>
+    <p><code>DPSub</code> 是全局 subset 枚举 baseline；二者共享基础 cost helper，但 memo 维度和 property 传播不同。</p>
   </div>
 </div>
 
 <div class="callout callout-warn">
   <strong>不要把本文读成性能承诺：</strong>
   SIGMOD 论文讨论的是 massively parallel join optimization。这个 demo 只实现了同一思想的候选枚举形状，
-  运行时仍是普通 C++ 单线程教学代码。本文中的收益主要体现在 trace 计数器上：少生成无效划分，
-  而不是展示 GPU 加速。
+  运行时仍是普通 C++ CPU 教学代码。并行入口只在同一 DP level 内分发 connected set，
+  本文中的收益主要体现在 trace 计数器上：少生成无效划分，而不是展示 GPU 加速。
 </div>
 
 <!-- ================================================================== -->
@@ -186,7 +186,7 @@ Grow lb inside S \ rb
 Emit global Join-Pair (left, right = S \ left)
       │
       ▼
-Use the same physical plan generation as DPSub</div>
+Cost HashJoin / NestedLoopJoin into relation-set memo</div>
 
 <p>
   直观地说，DPSub 是"先枚举全局候选，再问它合不合法"；
@@ -198,7 +198,7 @@ Use the same physical plan generation as DPSub</div>
 <h2 id="data-model">3. 数据模型</h2>
 
 <p>
-  MPDP 与 DPSub 使用同一组核心数据结构：
+  MPDP 复用 demo 的基础结构，但 memo contract 与 DPSub 不同：
 </p>
 
 <table>
@@ -219,16 +219,21 @@ Use the same physical plan generation as DPSub</div>
     <td>只在 <code>MakeScan</code> / <code>MakeJoin</code> 中参与 cost 计算，不决定候选枚举。</td>
   </tr>
   <tr>
-    <td><code>CacheTable</code></td>
-    <td><code>"RelSet|Property" → PlanPtr</code></td>
-    <td>与 DPSub 相同，保存每个状态和 required property 的当前最优物理计划。</td>
+    <td><code>MemoTable</code></td>
+    <td><code>RelSet → PlanPtr</code></td>
+    <td>只保存每个 relation set 的当前最优 unordered plan，不在内部传播 Sorted property。</td>
+  </tr>
+  <tr>
+    <td><code>StateCell</code></td>
+    <td>单个 DP 状态的本地候选结果</td>
+    <td>MPDP 先在本地 cell 内选择一个最优 plan，再按 level 合并到 <code>MemoTable</code>。</td>
   </tr>
 </table>
 
 <p>
-  这也是为什么 MPDP 和 DPSub 的 <code>PlansCosted</code>、<code>Cached</code>、
-  <code>DPCells</code> 在专门用例中相同：它们最终填的 DP 表和尝试的物理计划集合一致；
-  不同的是候选 split 从哪里来。
+  因此 MPDP 的 <code>PlansCosted</code>、<code>Cached</code>、<code>DPCells</code>
+  会低于 property-aware 的 DPSub。这里的差异是实现边界的一部分：
+  MPDP 文档和测试关注 block-local join-pair 枚举、串并行一致性，以及 relation-set memo 的行为。
 </p>
 
 <!-- ================================================================== -->
@@ -237,30 +242,31 @@ Use the same physical plan generation as DPSub</div>
 <h3>4.1 顶层控制流</h3>
 
 <pre><code>MPDP::Search(graph, stats, required_property):
-  cache = {}
+  memo = {}
 
   if graph is empty:
     return no-plan
 
   for each relation r:
-    FillRelation(cache, r)
+    memo[{r}] = MakeScan(r)
 
   connected_by_size = CollectConnectedSubsets(graph)
 
   for size = 2 to n:
-    for each connected set S with |S| = size:
+    for each connected set S with |S| = size:   // mpdp-parallel can distribute this loop
+      cell = {}
       join_pairs = EnumerateJoinPairs(graph, S)
 
       for each (left, right) in join_pairs:
         partitions_explored++
-        BuildPhysicalPlansExactlyLikeDPSub(cache, S, left, right)
+        BuildPlansForPairIntoCell(memo, cell, left, right)
 
-      AddSortEnforcersForInterestingOrders(cache, S)
-      dp_cells_filled = cache.size()
+      MergeCell(memo, S, cell)
+      dp_cells_filled = memo.size()
 
-  best = cache[full_set|required_property]
-  if required_property is Sorted and best is absent:
-    best = SortEnforcer(cache[full_set|Any])
+  best = memo[full_set]
+  if required_property is Sorted and best exists:
+    best = SortEnforcer(best, required_property.sort_key)
 
   return best</code></pre>
 
@@ -268,6 +274,8 @@ Use the same physical plan generation as DPSub</div>
   注意这里没有 <code>partitions_rejected++</code> 的路径。
   MPDP 的候选生成器在发出 join-pair 前已经检查了局部和全局连通性；
   如果某个候选不能成为 CP-free join，它不会进入输出列表。
+  <code>mpdp-parallel</code> 只并行同一 <code>size</code> 内的 <code>S</code>；
+  下一层 <code>size + 1</code> 会等当前层全部 cell 合并完成后才开始。
 </p>
 
 <h3>4.2 Join-Pair 枚举</h3>
@@ -395,14 +403,14 @@ Conceptually:
 <h2 id="physical">6. 物理计划与 DP 表</h2>
 
 <p>
-  一旦 MPDP 发出 <code>(left, right)</code>，后续步骤与 DPSub 保持一致：
+  一旦 MPDP 发出 <code>(left, right)</code>，当前实现只在 relation-set memo 中 cost unordered join plan：
 </p>
 
 <table>
   <tr><th>步骤</th><th>行为</th><th>Trace 影响</th></tr>
   <tr>
     <td>HashJoin</td>
-    <td>读取 <code>left|Any</code> 和 <code>right|Any</code>，尝试更新 <code>S|Any</code>。</td>
+    <td>读取 <code>memo[left]</code> 和 <code>memo[right]</code>，尝试更新本地 <code>cell.best</code>。</td>
     <td><code>plans_costed++</code></td>
   </tr>
   <tr>
@@ -411,21 +419,17 @@ Conceptually:
     <td><code>plans_costed++</code></td>
   </tr>
   <tr>
-    <td>MergeJoin</td>
-    <td>读取 predicate 两侧的 Sorted 子计划，生成 Any 或 Sorted 输出。</td>
+    <td>Root SortEnforcer</td>
+    <td>只有调用方要求根输出 <code>Sorted(...)</code> 时，在最终 best plan 外层追加一次排序。</td>
     <td><code>plans_costed++</code></td>
-  </tr>
-  <tr>
-    <td>SortEnforcer</td>
-    <td>对 <code>S|Any</code> 追加 interesting-order 变体。</td>
-    <td><code>plans_costed++</code>，更新 <code>dp_cells_filled</code></td>
   </tr>
 </table>
 
 <div class="callout callout-info">
   <strong>关键对照：</strong>
-  MPDP 的搜索结果应该和 DPSub 在 best cost 上一致。若二者 cost 不一致，
-  首先怀疑的是 join-pair 枚举是否漏掉了合法候选，而不是 cost model。
+  MPDP 不在内部生成 Sorted interesting orders，也不 cost MergeJoin。
+  因此它的 best cost 可以高于 DPSub；这不是 join-pair 枚举错误。
+  正确性测试关注是否找到合法计划、是否不低于 DPSub 的更大物理计划空间、以及串行/并行结果是否一致。
 </div>
 
 <!-- ================================================================== -->
@@ -480,7 +484,7 @@ Conceptually:
   </tr>
   <tr>
     <td><code>plans_costed</code></td>
-    <td>物理计划代价计算次数。因为物理逻辑匹配 DPSub，专门用例中与 DPSub 相同。</td>
+    <td>物理计划代价计算次数。MPDP 每个 join-pair cost HashJoin 和 NestedLoopJoin；根 Sorted 请求会额外 cost 一次 SortEnforcer。</td>
   </tr>
   <tr>
     <td><code>cache_hits</code></td>
@@ -488,11 +492,11 @@ Conceptually:
   </tr>
   <tr>
     <td><code>dp_cells_filled</code></td>
-    <td>DP 表中填充的 <code>(RelSet, Property)</code> 条目数，与 DPSub 的缓存维度一致。</td>
+    <td>DP 表中填充的 <code>RelSet</code> 条目数，不含 property 维度。</td>
   </tr>
   <tr>
     <td><code>best_cost</code></td>
-    <td>最优计划 cost，应该与 DPSub、Transformational、TopDown 结果一致。</td>
+    <td>MPDP 自身物理计划空间内的最优 cost。它可能高于 property-aware 策略。</td>
   </tr>
 </table>
 
@@ -502,6 +506,7 @@ Conceptually:
 <p>从 <code>demos/demo</code> 目录运行：</p>
 
 <pre><code>$ ./build/volcano_join_demo --strategy mpdp --test mpdp_fig5
+$ ./build/volcano_join_demo --strategy mpdp-parallel --threads 4 --test mpdp_fig5
 $ ./build/volcano_join_demo --compare --test mpdp_fig5
 $ ./build/volcano_join_demo --compare --test mpdp_branching_blocks</code></pre>
 
@@ -516,14 +521,14 @@ $ ./build/volcano_join_demo --compare --test mpdp_branching_blocks</code></pre>
 
 Strategy            Partitions    Rejected      BestCost
 DPSub               5166          4422          1641477.39
-MPDP                744           0             1641477.39
+MPDP                744           0             75903325.79
 Transformational    0             0             1641477.39
 TopDown(Naive)      7089          5933          1641477.39
 TopDown(Mincut)     1156          0             1641477.39</code></pre>
 
 <p>
-  MPDP 与 DPSub 的 best cost 一致，但 explored partitions 从 5166 降到 744，
-  rejected partitions 从 4422 降到 0。
+  MPDP explored partitions 从 5166 降到 744，rejected partitions 从 4422 降到 0。
+  这里 best cost 高于 DPSub，是因为 MPDP 内部不传播 Sorted property，也不选择 MergeJoin。
 </p>
 
 <h3>9.2 Branching block-cut tree case</h3>
@@ -537,7 +542,8 @@ TopDown(Mincut)     822           0             11811.99</code></pre>
 
 <p>
   这个 case 说明 MPDP 的 block-local 枚举同样适用于分叉 block-cut tree。
-  MPDP 比 DPSub 少枚举 850 个会被拒绝的候选，同时保持相同 best cost。
+  MPDP 比 DPSub 少枚举 850 个会被拒绝的候选；在这个数据分布下，即便没有内部 Sorted/MergeJoin，
+  best cost 仍与 DPSub 相同。
 </p>
 
 <!-- ================================================================== -->
@@ -566,21 +572,22 @@ TopDown(Mincut)     822           0             11811.99</code></pre>
   <tr>
     <td>物理计划生成</td>
     <td>自底向上填 DP 表</td>
-    <td>与 DPSub 相同</td>
+    <td>relation-set memo；HashJoin / NestedLoopJoin；根 Sorted 适配</td>
     <td>递归求解并 memoize</td>
   </tr>
   <tr>
     <td>教学重点</td>
     <td>完整、直接、容易理解的 baseline</td>
-    <td>同一 DP 框架下的候选枚举优化</td>
+    <td>MPDP 论文中的 block-local join-pair 枚举</td>
     <td>自顶向下划分和按需 memoization</td>
   </tr>
 </table>
 
 <p>
-  一句话总结：<strong>MPDP 是 DPSub 的候选枚举实验组</strong>。
-  它保留 bottom-up DP 的表填充方式，也保留 DPSub 的 cost/property 行为；
-  读 trace 时，最应该对比的是 <code>Partitions</code> 和 <code>Rejected</code>。
+  一句话总结：<strong>MPDP 是独立的 block-local join-pair 枚举实现</strong>。
+  串行和 CPU 并行入口共享同一套 relation-set memo、block-local join-pair 枚举与 cell 合并逻辑；
+  读 trace 时，最应该对比的是 <code>Partitions</code>、<code>Rejected</code>、
+  以及因物理计划空间不同而变化的 <code>PlansCosted</code> / <code>Cached</code>。
 </p>
 
 <!-- ================================================================== -->

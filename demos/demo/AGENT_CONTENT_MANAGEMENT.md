@@ -22,6 +22,9 @@ This file is for agents managing `demos/demo`. The HTML files under `docs/` are 
 
 ## Source Of Truth
 
+- The demo is paper-oriented: each strategy should primarily preserve the semantics and claims of its source paper or explicitly documented adaptation.
+- Shared infrastructure is optional scaffolding, not a mandate. Do not force a new paper implementation to keep Volcano-style properties, memo contracts, trace fields, CLI shape, or cross-strategy behavior merely for uniformity.
+- If shared demo features would obscure or distort the target paper algorithm, isolate the algorithm first and then adapt only the smallest necessary boundary for tests, CLI, and comparison.
 - Executable behavior comes from the current C++ binary and tests, not copied HTML snippets.
 - Built-in case names come from `volcano_join_demo --list`.
 - Strategy comparison numbers come from `volcano_join_demo --compare --test <case>`.
@@ -65,42 +68,42 @@ Last refreshed in this thread on 2026-06-22 from `demos/demo` after `cmake --bui
 | Case | Strategy | Partitions | Rejected | PlansCosted | CacheHits | Cached | Dups | Rules | DPCells | Pruned | BestCost |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `two_table` | DPSub | 2 | 0 | 16 | 0 | 7 | 0 | 0 | 7 | 0 | 3200.00 |
-| `two_table` | MPDP | 2 | 0 | 16 | 0 | 7 | 0 | 0 | 7 | 0 | 3200.00 |
+| `two_table` | MPDP | 2 | 0 | 6 | 0 | 3 | 0 | 0 | 3 | 0 | 3200.00 |
 | `two_table` | Transformational | 0 | 0 | 10 | 6 | 5 | 2 | 2 | 0 | 0 | 3200.00 |
 | `two_table` | TopDown(Naive) | 1 | 0 | 9 | 0 | 5 | 0 | 0 | 0 | 0 | 3200.00 |
 | `two_table` | TopDown(Mincut) | 1 | 0 | 9 | 0 | 5 | 0 | 0 | 0 | 0 | 3200.00 |
 | `chain_3` | DPSub | 10 | 2 | 57 | 0 | 20 | 0 | 0 | 20 | 0 | 19651.56 |
-| `chain_3` | MPDP | 8 | 0 | 57 | 0 | 20 | 0 | 0 | 20 | 0 | 19651.56 |
+| `chain_3` | MPDP | 8 | 0 | 19 | 0 | 6 | 0 | 0 | 6 | 0 | 30200.00 |
 | `chain_3` | Transformational | 0 | 0 | 34 | 27 | 12 | 16 | 24 | 0 | 0 | 19651.56 |
 | `chain_3` | TopDown(Naive) | 7 | 1 | 25 | 7 | 12 | 0 | 0 | 0 | 0 | 19651.56 |
 | `chain_3` | TopDown(Mincut) | 6 | 0 | 25 | 7 | 12 | 0 | 0 | 0 | 0 | 19651.56 |
 | `chain_4` | DPSub | 32 | 12 | 136 | 0 | 42 | 0 | 0 | 42 | 0 | 41500.24 |
-| `chain_4` | MPDP | 20 | 0 | 136 | 0 | 42 | 0 | 0 | 42 | 0 | 41500.24 |
+| `chain_4` | MPDP | 20 | 0 | 44 | 0 | 10 | 0 | 0 | 10 | 0 | 109600.00 |
 | `chain_4` | Transformational | 0 | 0 | 78 | 71 | 22 | 60 | 100 | 0 | 0 | 41500.24 |
 | `chain_4` | TopDown(Naive) | 26 | 8 | 52 | 25 | 22 | 0 | 0 | 0 | 0 | 41500.24 |
 | `chain_4` | TopDown(Mincut) | 18 | 0 | 52 | 25 | 22 | 0 | 0 | 0 | 0 | 41500.24 |
 | `star_4` | DPSub | 38 | 14 | 163 | 0 | 50 | 0 | 0 | 50 | 0 | 24360.00 |
-| `star_4` | MPDP | 24 | 0 | 163 | 0 | 50 | 0 | 0 | 50 | 0 | 24360.00 |
+| `star_4` | MPDP | 24 | 0 | 52 | 0 | 11 | 0 | 0 | 11 | 0 | 24360.00 |
 | `star_4` | Transformational | 0 | 0 | 93 | 86 | 26 | 72 | 120 | 0 | 0 | 24360.00 |
 | `star_4` | TopDown(Naive) | 34 | 10 | 61 | 32 | 26 | 0 | 0 | 0 | 0 | 24360.00 |
 | `star_4` | TopDown(Mincut) | 24 | 0 | 61 | 32 | 26 | 0 | 0 | 0 | 0 | 24360.00 |
 | `cycle_4` | DPSub | 46 | 10 | 264 | 0 | 69 | 0 | 0 | 69 | 0 | 14800.00 |
-| `cycle_4` | MPDP | 36 | 0 | 264 | 0 | 69 | 0 | 0 | 69 | 0 | 14800.00 |
+| `cycle_4` | MPDP | 36 | 0 | 76 | 0 | 13 | 0 | 0 | 13 | 0 | 14800.00 |
 | `cycle_4` | Transformational | 0 | 0 | 136 | 132 | 33 | 164 | 196 | 0 | 0 | 14800.00 |
 | `cycle_4` | TopDown(Naive) | 43 | 9 | 86 | 52 | 33 | 0 | 0 | 0 | 0 | 14800.00 |
 | `cycle_4` | TopDown(Mincut) | 34 | 0 | 86 | 52 | 33 | 0 | 0 | 0 | 0 | 14800.00 |
 | `clique_4` | DPSub | 50 | 0 | 466 | 0 | 111 | 0 | 0 | 111 | 0 | 4900.00 |
-| `clique_4` | MPDP | 50 | 0 | 466 | 0 | 111 | 0 | 0 | 111 | 0 | 4900.00 |
+| `clique_4` | MPDP | 50 | 0 | 104 | 0 | 15 | 0 | 0 | 15 | 0 | 4900.00 |
 | `clique_4` | Transformational | 0 | 0 | 190 | 186 | 43 | 290 | 290 | 0 | 0 | 4900.00 |
 | `clique_4` | TopDown(Naive) | 49 | 0 | 119 | 74 | 43 | 0 | 0 | 0 | 0 | 4900.00 |
 | `clique_4` | TopDown(Mincut) | 49 | 0 | 119 | 74 | 43 | 0 | 0 | 0 | 0 | 4900.00 |
 | `mpdp_fig5` | DPSub | 5166 | 4422 | 5103 | 0 | 1032 | 0 | 0 | 1032 | 0 | 1641477.39 |
-| `mpdp_fig5` | MPDP | 744 | 0 | 5103 | 0 | 1032 | 0 | 0 | 1032 | 0 | 1641477.39 |
+| `mpdp_fig5` | MPDP | 744 | 0 | 1497 | 0 | 90 | 0 | 0 | 90 | 0 | 75903325.79 |
 | `mpdp_fig5` | Transformational | 0 | 0 | 2466 | 2887 | 304 | 8240 | 14008 | 0 | 0 | 1641477.39 |
 | `mpdp_fig5` | TopDown(Naive) | 7089 | 5933 | 1359 | 1379 | 304 | 0 | 0 | 0 | 0 | 1641477.39 |
 | `mpdp_fig5` | TopDown(Mincut) | 1156 | 0 | 1359 | 1379 | 304 | 0 | 0 | 0 | 0 | 1641477.39 |
 | `mpdp_branching_blocks` | DPSub | 1336 | 850 | 3805 | 0 | 865 | 0 | 0 | 865 | 0 | 11811.99 |
-| `mpdp_branching_blocks` | MPDP | 486 | 0 | 3805 | 0 | 865 | 0 | 0 | 865 | 0 | 11811.99 |
+| `mpdp_branching_blocks` | MPDP | 486 | 0 | 979 | 0 | 73 | 0 | 0 | 73 | 0 | 11811.99 |
 | `mpdp_branching_blocks` | Transformational | 0 | 0 | 1683 | 1872 | 280 | 4038 | 6438 | 0 | 0 | 11811.99 |
 | `mpdp_branching_blocks` | TopDown(Naive) | 1937 | 1115 | 961 | 882 | 280 | 0 | 0 | 0 | 0 | 11811.99 |
 | `mpdp_branching_blocks` | TopDown(Mincut) | 822 | 0 | 961 | 882 | 280 | 0 | 0 | 0 | 0 | 11811.99 |
@@ -113,9 +116,10 @@ Last refreshed in this thread on 2026-06-22 from `demos/demo` after `cmake --bui
 
 ## Editing Rules For Agents
 
-1. Do not edit HTML numbers from memory. Refresh or quote the relevant command output first.
-2. Keep HTML reader-focused: explain the idea, then show evidence. Do not add agent process notes to HTML.
-3. Keep Markdown agent-focused: inventories, rules, known drift, verification commands, and TODO-style management state belong here.
-4. When a doc changes algorithm behavior claims, run the CLI command proving that claim and record it in the final response.
-5. When a doc changes only layout/prose/navigation, use document-level checks from the repo review skill instead of running CMake mechanically.
-6. When fixing drift, prefer replacing large copied output blocks with smaller excerpts plus a source command, unless the full table is central to the lesson.
+1. Implement the paper-faithful behavior first; then update docs, snapshots, and prose to match. Do not preserve docs by weakening code changes.
+2. Do not edit HTML numbers from memory. Refresh or quote the relevant command output first.
+3. Keep HTML reader-focused: explain the idea, then show evidence. Do not add agent process notes to HTML.
+4. Keep Markdown agent-focused: inventories, rules, known drift, verification commands, and TODO-style management state belong here.
+5. When a doc changes algorithm behavior claims, run the CLI command proving that claim and record it in the final response.
+6. When a doc changes only layout/prose/navigation, use document-level checks from the repo review skill instead of running CMake mechanically.
+7. When fixing drift, prefer replacing large copied output blocks with smaller excerpts plus a source command, unless the full table is central to the lesson.

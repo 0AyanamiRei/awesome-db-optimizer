@@ -33,30 +33,48 @@ void CheckNear(double a, double b, double tol, const std::string &msg) {
   }
 }
 
-// Helper: run representative strategies on a test case and verify same best cost.
+// Helper: run representative strategies on a test case.  DPSub,
+// Transformational, and TopDown cover the property-aware Volcano-style plan
+// space.  MPDP is intentionally relation-set-only internally, so it is checked
+// for valid output and serial/parallel determinism rather than cost equality
+// with the property-aware strategies.
 void VerifyConsistency(const volcano::test::TestCase &tc) {
   volcano::DPSub bu;
   volcano::MPDP mpdp;
+  volcano::MPDP mpdp_parallel(4);
   volcano::Transformational tr;
   volcano::TopDownPartitioning td;
 
   auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+  auto result_mpdp_parallel =
+      mpdp_parallel.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_tr = tr.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
   auto result_td = td.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
   Check(result_bu.has_plan, tc.name + ": DPSub found a plan");
   Check(result_mpdp.has_plan, tc.name + ": MPDP found a plan");
+  Check(result_mpdp_parallel.has_plan, tc.name + ": MPDP parallel found a plan");
   Check(result_tr.has_plan, tc.name + ": Transformational found a plan");
   Check(result_td.has_plan, tc.name + ": TopDown found a plan");
   Check(result_bu.best_plan.cost > 0, tc.name + ": DPSub plan has positive cost");
   Check(result_mpdp.best_plan.cost > 0, tc.name + ": MPDP plan has positive cost");
+  Check(result_mpdp_parallel.best_plan.cost > 0, tc.name + ": MPDP parallel plan has positive cost");
   Check(result_tr.best_plan.cost > 0, tc.name + ": Transformational plan has positive cost");
   Check(result_td.best_plan.cost > 0, tc.name + ": TopDown plan has positive cost");
 
-  // All strategies should produce the same best cost.
-  CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
-            tc.name + ": DPSub == MPDP cost");
+  Check(result_mpdp.best_plan.cost + 0.01 >= result_bu.best_plan.cost,
+        tc.name + ": MPDP cost is not below DPSub's larger physical plan space");
+  CheckNear(result_mpdp.best_plan.cost, result_mpdp_parallel.best_plan.cost, 0.01,
+            tc.name + ": MPDP serial == parallel cost");
+  Check(result_mpdp.trace.partitions_explored ==
+            result_mpdp_parallel.trace.partitions_explored,
+        tc.name + ": MPDP serial == parallel partitions");
+  Check(result_mpdp.trace.partitions_rejected ==
+            result_mpdp_parallel.trace.partitions_rejected,
+        tc.name + ": MPDP serial == parallel rejected partitions");
+  Check(result_mpdp.trace.plans_costed == result_mpdp_parallel.trace.plans_costed,
+        tc.name + ": MPDP serial == parallel plans costed");
   CheckNear(result_bu.best_plan.cost, result_tr.best_plan.cost, 0.01,
             tc.name + ": DPSub == Transformational cost");
   CheckNear(result_bu.best_plan.cost, result_td.best_plan.cost, 0.01,
@@ -157,19 +175,23 @@ int main() {
     const auto property = volcano::RequiredProperty::Sorted({"a", "not_join_key"});
     volcano::DPSub bu;
     volcano::MPDP mpdp;
+    volcano::MPDP mpdp_parallel(4);
     volcano::Transformational tr;
     volcano::TopDownPartitioning td;
     volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
 
     auto result = bu.Search(tc.graph, tc.stats, property);
     auto result_mpdp = mpdp.Search(tc.graph, tc.stats, property);
+    auto result_mpdp_parallel = mpdp_parallel.Search(tc.graph, tc.stats, property);
     auto result_tr = tr.Search(tc.graph, tc.stats, property);
     auto result_td = td.Search(tc.graph, tc.stats, property);
     auto result_mincut = td_mincut.Search(tc.graph, tc.stats, property);
     auto result_any = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mpdp_any = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
     Check(result.has_plan, "dpsub sorted fallback: plan found");
     Check(result_mpdp.has_plan, "mpdp sorted fallback: plan found");
+    Check(result_mpdp_parallel.has_plan, "mpdp parallel sorted fallback: plan found");
     Check(result_tr.has_plan, "transformational sorted fallback: plan found");
     Check(result_td.has_plan, "topdown sorted fallback: plan found");
     Check(result_mincut.has_plan, "topdown mincut sorted fallback: plan found");
@@ -177,16 +199,22 @@ int main() {
           "dpsub sorted fallback: root SortEnforcer used");
     Check(result_mpdp.best_plan.op == volcano::PhysicalOp::SortEnforcer,
           "mpdp sorted fallback: root SortEnforcer used");
+    Check(result_mpdp_parallel.best_plan.op == volcano::PhysicalOp::SortEnforcer,
+          "mpdp parallel sorted fallback: root SortEnforcer used");
     Check(result.best_plan.property == property,
           "dpsub sorted fallback: required property preserved");
     Check(result_mpdp.best_plan.property == property,
           "mpdp sorted fallback: required property preserved");
+    Check(result_mpdp_parallel.best_plan.property == property,
+          "mpdp parallel sorted fallback: required property preserved");
     Check(result.best_plan.cost >= result_any.best_plan.cost,
           "dpsub sorted fallback: sorted cost >= any cost");
+    Check(result_mpdp.best_plan.cost >= result_mpdp_any.best_plan.cost,
+          "mpdp sorted fallback: sorted cost >= any cost");
     CheckNear(result.best_plan.cost, result_tr.best_plan.cost, 0.01,
               "sorted fallback: DPSub == Transformational cost");
-    CheckNear(result.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
-              "sorted fallback: DPSub == MPDP cost");
+    CheckNear(result_mpdp.best_plan.cost, result_mpdp_parallel.best_plan.cost, 0.01,
+              "sorted fallback: MPDP serial == parallel cost");
     CheckNear(result.best_plan.cost, result_td.best_plan.cost, 0.01,
               "sorted fallback: DPSub == TopDown cost");
     CheckNear(result_td.best_plan.cost, result_mincut.best_plan.cost, 0.01,
@@ -415,17 +443,23 @@ int main() {
 
     volcano::DPSub bu;
     volcano::MPDP mpdp;
+    volcano::MPDP mpdp_parallel(4);
     volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
 
     auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
     auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mpdp_parallel =
+        mpdp_parallel.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
     auto result_mincut = td_mincut.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
     Check(result_bu.has_plan, "mpdp_fig5: DPSub found a plan");
     Check(result_mpdp.has_plan, "mpdp_fig5: MPDP found a plan");
+    Check(result_mpdp_parallel.has_plan, "mpdp_fig5: MPDP parallel found a plan");
     Check(result_mincut.has_plan, "mpdp_fig5: TopDown(Mincut) found a plan");
-    CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
-              "mpdp_fig5: DPSub == MPDP cost");
+    Check(result_mpdp.best_plan.cost + 0.01 >= result_bu.best_plan.cost,
+          "mpdp_fig5: MPDP cost is not below DPSub's larger physical plan space");
+    CheckNear(result_mpdp.best_plan.cost, result_mpdp_parallel.best_plan.cost, 0.01,
+              "mpdp_fig5: MPDP serial == parallel cost");
     CheckNear(result_bu.best_plan.cost, result_mincut.best_plan.cost, 0.01,
               "mpdp_fig5: DPSub == TopDown(Mincut) cost");
     Check(result_mpdp.trace.partitions_explored < result_bu.trace.partitions_explored,
@@ -448,17 +482,24 @@ int main() {
 
     volcano::DPSub bu;
     volcano::MPDP mpdp;
+    volcano::MPDP mpdp_parallel(4);
     volcano::TopDownPartitioning td_mincut(volcano::PartitionStrategy::Mincut);
 
     auto result_bu = bu.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
     auto result_mpdp = mpdp.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
+    auto result_mpdp_parallel =
+        mpdp_parallel.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
     auto result_mincut = td_mincut.Search(tc.graph, tc.stats, volcano::RequiredProperty::Any());
 
     Check(result_bu.has_plan, "mpdp_branching_blocks: DPSub found a plan");
     Check(result_mpdp.has_plan, "mpdp_branching_blocks: MPDP found a plan");
+    Check(result_mpdp_parallel.has_plan,
+          "mpdp_branching_blocks: MPDP parallel found a plan");
     Check(result_mincut.has_plan, "mpdp_branching_blocks: TopDown(Mincut) found a plan");
-    CheckNear(result_bu.best_plan.cost, result_mpdp.best_plan.cost, 0.01,
-              "mpdp_branching_blocks: DPSub == MPDP cost");
+    Check(result_mpdp.best_plan.cost + 0.01 >= result_bu.best_plan.cost,
+          "mpdp_branching_blocks: MPDP cost is not below DPSub's larger physical plan space");
+    CheckNear(result_mpdp.best_plan.cost, result_mpdp_parallel.best_plan.cost, 0.01,
+              "mpdp_branching_blocks: MPDP serial == parallel cost");
     CheckNear(result_bu.best_plan.cost, result_mincut.best_plan.cost, 0.01,
               "mpdp_branching_blocks: DPSub == TopDown(Mincut) cost");
     Check(result_mpdp.trace.partitions_explored < result_bu.trace.partitions_explored,

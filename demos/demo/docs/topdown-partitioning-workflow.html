@@ -1284,7 +1284,7 @@ SortEnforcer fallback:
 <h2 id="empirical">7. 实验数据</h2>
 
 <p>
-  以下是四种策略在同一 Join Graph 上的 trace 输出对比。
+  以下是五种策略在同一 Join Graph 上的 trace 输出对比。
   关键看点：<strong>best_cost</strong>（交叉验证正确性）、
   <strong>partitions_rejected</strong>（Naive vs Mincut 的差异——Mincut 恒为 0）、
   <strong>plans_costed</strong>（TopDown 最少，展示按需计算优势）。
@@ -1298,6 +1298,7 @@ SortEnforcer fallback:
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               10          2         57            0          20       0      0     20       0       19651.56
+MPDP                8           0         57            0          20       0      0     20       0       19651.56
 Transformational    0           0         34           27          12      16     24      0       0       19651.56
 TopDown(Naive)      7           1         25            7          12       0      0      0       0       19651.56
 TopDown(Mincut)     6          <strong>0</strong>         25            7          12       0      0      0       0       19651.56</code></pre>
@@ -1316,6 +1317,7 @@ TopDown(Mincut)     6          <strong>0</strong>         25            7       
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               32          12        136           0          42       0      0     42       0       41500.24
+MPDP                20           0        136           0          42       0      0     42       0       41500.24
 Transformational    0           0          78          71          22      60    100      0       0       41500.24
 TopDown(Naive)      26           8          52          25          22       0      0      0       0       41500.24
 TopDown(Mincut)     18          <strong>0</strong>          52          25          22       0      0      0       0       41500.24</code></pre>
@@ -1334,6 +1336,7 @@ TopDown(Mincut)     18          <strong>0</strong>          52          25      
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               38         14         163           0          50       0      0     50       0       24360.00
+MPDP                24          0         163           0          50       0      0     50       0       24360.00
 Transformational    0          0           93          86          26      72    120      0       0       24360.00
 TopDown(Naive)      34        10           61          32          26       0      0      0       0       24360.00
 TopDown(Mincut)     24        <strong>0</strong>           61          32          26       0      0      0       0       24360.00</code></pre>
@@ -1351,6 +1354,7 @@ TopDown(Mincut)     24        <strong>0</strong>           61          32       
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               46         10         264           0          69       0      0     69       0       14800.00
+MPDP                36          0         264           0          69       0      0     69       0       14800.00
 Transformational    0          0          136         132          33     164    196      0       0       14800.00
 TopDown(Naive)      43          9          86          52          33       0      0      0       0       14800.00
 TopDown(Mincut)     34         <strong>0</strong>          86          52          33       0      0      0       0       14800.00</code></pre>
@@ -1369,6 +1373,7 @@ TopDown(Mincut)     34         <strong>0</strong>          86          52       
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               50           0        466           0         111       0      0    111       0       4900.00
+MPDP                50           0        466           0         111       0      0    111       0       4900.00
 Transformational    0            0        190         186          43     290    290      0       0       4900.00
 TopDown(Naive)      49           0        119          74          43       0      0      0       0       4900.00
 TopDown(Mincut)     49           0        119          74          43       0      0      0       0       4900.00</code></pre>

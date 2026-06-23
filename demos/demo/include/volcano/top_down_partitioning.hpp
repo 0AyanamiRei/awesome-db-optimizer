@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace volcano {
 
@@ -66,8 +67,6 @@ private:
   // Predicted-cost lower bound for branch-and-bound.
   double LowerBound(const JoinGraph &graph, const StatsCatalog &stats, RelSet relset,
                     const RequiredProperty &property) const;
-
-  std::string MakeKey(RelSet relset, const RequiredProperty &property) const;
 
   PartitionStrategy partition_strategy_;
   bool allow_cross_products_;

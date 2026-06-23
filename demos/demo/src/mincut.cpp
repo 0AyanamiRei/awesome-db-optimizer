@@ -1,4 +1,5 @@
 #include "volcano/mincut.hpp"
+#include "volcano/search_helpers.hpp"
 
 #include <algorithm>
 #include <queue>
@@ -9,20 +10,6 @@
 namespace volcano {
 
 namespace {
-
-std::size_t PopCount(RelSet set) {
-  std::size_t count = 0;
-  while (set != 0) {
-    set &= set - 1;
-    ++count;
-  }
-  return count;
-}
-
-// Index of the lowest set bit (undefined for set==0).
-std::size_t Ctz(RelSet set) {
-  return static_cast<std::size_t>(__builtin_ctzll(set));
-}
 
 // Isolate the lowest set bit.
 RelSet LowBit(RelSet set) {
@@ -111,7 +98,7 @@ void MincutPartitioner::BuildBCTree() {
   for (std::size_t i = 0; i < bicomponents_.size(); ++i) {
     RelSet v = bicomponents_[i].vertices;
     while (v != 0) {
-      std::size_t idx = Ctz(v);
+      std::size_t idx = detail::Ctz(v);
       v &= v - 1;
       vertex_to_bicomponents_[idx].push_back(i);
     }
@@ -128,7 +115,7 @@ void MincutPartitioner::TarjanDFS(
 
   RelSet neighbors = adjacency_[u];
   while (neighbors != 0) {
-    const std::size_t v = Ctz(neighbors);
+    const std::size_t v = detail::Ctz(neighbors);
     neighbors &= neighbors - 1;
 
     if (v == parent) continue;
@@ -172,7 +159,7 @@ void MincutPartitioner::TarjanDFS(
 }
 
 std::size_t MincutPartitioner::ArticulationPointCount() const {
-  return PopCount(all_articulation_pts_);
+  return detail::PopCount(all_articulation_pts_);
 }
 
 // ============================================================================
@@ -222,7 +209,7 @@ std::vector<RelSet> MincutPartitioner::EnumerateConnectedSubsets(RelSet relset) 
     {
       RelSet c = cur;
       while (c != 0) {
-        const std::size_t v = Ctz(c);
+        const std::size_t v = detail::Ctz(c);
         c &= c - 1;
         nbor_union |= adjacency_[v];
       }
@@ -249,14 +236,14 @@ bool MincutPartitioner::IsConnectedFast(RelSet set) const {
   if ((set & (set - 1)) == 0) return true; // singleton — trivially connected
 
   // BFS within `set` using precomputed adjacency bitsets.
-  const std::size_t start = Ctz(set);
+  const std::size_t start = detail::Ctz(set);
   RelSet visited = RelSet{1} << start;
   RelSet frontier = adjacency_[start] & set & ~visited;
 
   while (frontier != 0) {
     const RelSet v_bit = LowBit(frontier);
     frontier ^= v_bit;
-    const std::size_t v = Ctz(v_bit);
+    const std::size_t v = detail::Ctz(v_bit);
     visited |= v_bit;
     frontier |= adjacency_[v] & set & ~visited;
   }
@@ -267,7 +254,7 @@ bool MincutPartitioner::IsConnectedFast(RelSet set) const {
 std::vector<std::pair<RelSet, RelSet>>
 MincutPartitioner::EnumeratePartitions(RelSet relset) const {
   std::vector<std::pair<RelSet, RelSet>> result;
-  if (PopCount(relset) <= 1) return result;
+  if (detail::PopCount(relset) <= 1) return result;
 
   // Step 1: enumerate all non-empty proper connected subsets of `relset`.
   const auto connected_subsets = EnumerateConnectedSubsets(relset);

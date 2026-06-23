@@ -2,11 +2,6 @@
 
 #include "volcano/search_strategy.hpp"
 
-#include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-
 namespace volcano {
 
 // DPSUB: Dynamic Programming Subset-driven join enumeration.
@@ -33,23 +28,6 @@ public:
   SearchResult Search(const JoinGraph &graph,
                       const StatsCatalog &stats,
                       const RequiredProperty &property) override;
-
-private:
-  // DP table key: (RelSet, RequiredProperty) -> best plan
-  using CacheTable = std::unordered_map<std::string, PlanPtr>;
-
-  std::string MakeKey(RelSet relset, const RequiredProperty &property) const;
-
-  // Collect all connected subsets, bucketed by size.
-  // connected_by_size[0] and connected_by_size[1] are populated for
-  // convenience (size-0 is empty, size-1 has singletons).
-  std::vector<std::vector<RelSet>> CollectConnectedSubsets(const JoinGraph &graph) const;
-
-  // Seed singleton plans (size-1 base cases).
-  void FillRelation(CacheTable &cache, const JoinGraph &graph,
-                    RelSet singleton, const Relation &relation,
-                    const StatsCatalog &stats,
-                    SearchTrace &trace);
 };
 
 } // namespace volcano

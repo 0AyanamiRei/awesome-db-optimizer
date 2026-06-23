@@ -47,6 +47,17 @@ TestCase MakeCycle4();
 //   All rows=100, all selectivities=0.1
 TestCase MakeClique4();
 
+// MPDP paper Figure 5 inspired graph: two cyclic blocks connected by bridges.
+//   Left block: r1-r2-r3-r4-r1
+//   Bridges: r4-r5-r9
+//   Right block: r6-r7-r8-r9-r6
+TestCase MakeMPDPFigure5();
+
+// Branching block-cut tree: three cyclic blocks share one cut vertex.
+// This guards against treating Figure 5's chain-shaped block-cut tree as
+// a required MPDP shape.
+TestCase MakeMPDPBranchingBlocks();
+
 // Two tables (simplest non-trivial case)
 TestCase MakeTwoTable();
 

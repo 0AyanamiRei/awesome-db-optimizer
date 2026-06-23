@@ -97,7 +97,7 @@
 <p>
   <code>demos/volcano_join_reorder</code> —
   一个面向学习与研究的 Join Order 优化算法对比实验室。
-  在同一套基础设施（JoinGraph / StatsCatalog / Cost Model）上运行三种不同的 Join Enumeration 策略，
+  在同一套基础设施（JoinGraph / StatsCatalog / Cost Model）上运行多种 Join Enumeration 策略，
   输出可对比的搜索轨迹（Search Trace），直观展示各算法的核心行为。
 </p>
 
@@ -109,8 +109,9 @@
   <li><a href="#datastructures">核心数据结构</a></li>
   <li><a href="#costmodel">代价模型</a></li>
   <li><a href="#strategy-dpsub">策略一：DPSub</a></li>
-  <li><a href="#strategy-transform">策略二：Transformational</a></li>
-  <li><a href="#strategy-topdown">策略三：TopDownPartitioning</a></li>
+  <li><a href="#strategy-mpdp">策略二：MPDP</a></li>
+  <li><a href="#strategy-transform">策略三：Transformational</a></li>
+  <li><a href="#strategy-topdown">策略四：TopDownPartitioning</a></li>
   <li><a href="#testcases">测试用例</a></li>
   <li><a href="#cli">CLI 使用</a></li>
   <li><a href="#exporter">导出与可视化</a></li>
@@ -165,16 +166,18 @@ E 是 join predicate 的集合。每个关系有行数 (rows) 和扫描代价 (s
 │   ├── search_strategy.hpp                 ← SearchStrategy 抽象接口 + SearchTrace
 │   ├── cost_model.hpp                      ← 统一代价模型
 │   ├── dp_sub.hpp                          ← 策略一
-│   ├── transformational.hpp                ← 策略二
-│   ├── top_down_partitioning.hpp           ← 策略三
+│   ├── mpdp.hpp                            ← 策略二
+│   ├── transformational.hpp                ← 策略三
+│   ├── top_down_partitioning.hpp           ← 策略四
 │   └── exporter.hpp                        ← DOT/JSON 导出
 ├── src/
 │   ├── types.cpp                           ← JoinGraph 连通性 / partition 逻辑
 │   ├── stats.cpp                           ← StatsCatalog + JSON 解析（可选）
 │   ├── cost_model.cpp                      ← MakeScan / MakeSort / MakeJoin
 │   ├── dp_sub.cpp                          ← 策略一实现
-│   ├── transformational.cpp                ← 策略二实现
-│   ├── top_down_partitioning.cpp           ← 策略三实现
+│   ├── mpdp.cpp                            ← 策略二实现
+│   ├── transformational.cpp                ← 策略三实现
+│   ├── top_down_partitioning.cpp           ← 策略四实现
 │   ├── exporter.cpp                        ← 导出实现
 │   └── main.cpp                            ← CLI 入口
 ├── examples/
@@ -194,7 +197,7 @@ E 是 join predicate 的集合。每个关系有行数 (rows) 和扫描代价 (s
   </tr>
   <tr>
     <td><code>volcano_strategies</code></td>
-    <td><code>dp_sub</code> + <code>transformational</code> + <code>top_down_partitioning</code></td>
+    <td><code>dp_sub</code> + <code>mpdp</code> + <code>transformational</code> + <code>top_down_partitioning</code></td>
     <td><code>volcano_core</code></td>
   </tr>
   <tr>
@@ -253,7 +256,7 @@ public:
   每个策略实现 <code>SearchStrategy</code> 接口，
   返回 <code>SearchResult { bool has_plan; PhysicalPlan best_plan; SearchTrace trace; }</code>。
   调用方必须先检查 <code>has_plan</code>，再读取或导出 <code>best_plan</code>。
-  通过统一的 <code>SearchTrace</code>，四种输出策略可以在同一张对比表中直接比较。
+  通过统一的 <code>SearchTrace</code>，五种输出策略可以在同一张对比表中直接比较。
 </p>
 
 <div class="grid-2">
@@ -264,7 +267,7 @@ public:
   </div>
   <div class="card">
     <h4><span class="badge badge-accent">设计原则</span> Cost Model 共享</h4>
-    <p>三个策略调用同一个 <code>MakeScan</code> / <code>MakeSort</code> / <code>MakeJoin</code>，
+    <p>所有策略调用同一个 <code>MakeScan</code> / <code>MakeSort</code> / <code>MakeJoin</code>，
     保证同一 query 不同策略得到相同 best cost（正确性验证）。</p>
   </div>
 </div>
@@ -459,7 +462,68 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
 </p>
 
 <!-- ================================================================== -->
-<h2 id="strategy-transform">6. 策略二：Transformational（变换式搜索 / Volcano 风格）</h2>
+<h2 id="strategy-mpdp">6. 策略二：MPDP（Block-local bottom-up DP）</h2>
+
+<p>
+  <span class="badge badge-accent">SIGMOD 2022 风格</span>
+  <span class="badge badge-purple">Block-local CCP</span>
+  <span class="badge badge-green">零 rejected 候选</span>
+</p>
+
+<p>
+  MPDP 实现论文中的 block-local Join-Pair 生成，并使用 relation-set-only 的 bottom-up memo。
+  它不在内部传播 DPSub 的 interesting-order property，也不把 MergeJoin 放入 MPDP 的 DP 表。
+  它的命令行别名是 <code>mpdp</code>，并在 <code>--compare</code> 中紧跟 <code>DPSub</code> 输出。
+</p>
+
+<h3>6.1 算法</h3>
+
+<pre><code>MPDP::Search(graph, stats, property):
+  memo: map&lt;RelSet, PlanPtr&gt;
+
+  for each relation r:
+    memo[{r}] = MakeScan(r)
+
+  connected_by_size = CollectConnectedSubsets(graph)
+
+  for size = 2 to n:
+    for each connected set S of |S| = size:
+      for each block B in induced graph G[S]:
+        for each local CCP pair (lb, rb) in B:
+          left = Grow(lb, allowed = S \ rb)
+          right = S \ left
+          if (left, right) is a new connected CP-free Join-Pair:
+            partitions_explored++
+            Cost HashJoin and NestedLoopJoin from memo[left/right]
+
+      memo[S] = best local plan
+      dp_cells_filled = memo.size()
+
+  if property is Sorted:
+    wrap final plan with one root SortEnforcer</code></pre>
+
+<h3>6.2 核心特征</h3>
+
+<table>
+  <tr><th>特征</th><th>行为</th></tr>
+  <tr><td>枚举顺序</td><td>自底向上 — 与 DPSub 一样按 relation set 大小递增</td></tr>
+  <tr><td>候选生成</td><td>先找 <code>G[S]</code> 的 blocks，在 block 内枚举局部 <code>(lb, rb)</code>，再 Grow 成全局 Join-Pair</td></tr>
+  <tr><td>物理计划</td><td>内部只 cost HashJoin / NestedLoopJoin；根 Sorted 需求用最终 SortEnforcer 适配</td></tr>
+  <tr><td>Rejected partitions</td><td>候选发出前已经过滤，MPDP 专门用例中 <code>partitions_rejected=0</code></td></tr>
+  <tr><td>CPU 并行</td><td><code>mpdp-parallel</code> 在同一 DP level 内并行处理 connected sets</td></tr>
+  <tr><td>深度文档</td><td><a href="mpdp-workflow.html">MPDP Workflow</a></td></tr>
+</table>
+
+<p>
+  在 <code>mpdp_fig5</code> 上，DPSub 探索 5166 个 partitions、拒绝 4422 个；
+  MPDP 探索 744 个、拒绝 0 个。由于 MPDP 内部不使用 Sorted/MergeJoin，
+  该 case 的 MPDP <code>BestCost=75903325.79</code>，高于 DPSub 的 <code>1641477.39</code>。
+  <code>mpdp_branching_blocks</code> 则覆盖一个 cut vertex 被三个 cycle block 共享的分叉 block-cut tree，
+  避免把 Figure 5 风格的链状结构误读成 MPDP 的唯一形状。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="strategy-transform">7. 策略三：Transformational（变换式搜索 / Volcano 风格）</h2>
 
 <p>
   <span class="badge badge-accent">Volcano/Cascades 风格</span>
@@ -467,7 +531,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
   <span class="badge badge-amber">两阶段搜索</span>
 </p>
 
-<h3>6.1 两阶段架构</h3>
+<h3>7.1 两阶段架构</h3>
 
 <div class="diagram">
 ┌─────────────────────────────────────────────────────────────────┐
@@ -496,7 +560,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
 │   使用 (RelSet, Property) → PlanPtr 缓存避免重复物理优化        │
 └─────────────────────────────────────────────────────────────────┘</div>
 
-<h3>6.2 MemoStore 去重机制</h3>
+<h3>7.2 MemoStore 去重机制</h3>
 
 <pre><code>class MemoStore {
   std::vector&lt;MemoGroup&gt; groups_;                    // 按 RelSet 分组的逻辑表达式
@@ -512,7 +576,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
     return true
 };</code></pre>
 
-<h3>6.3 变换规则</h3>
+<h3>7.3 变换规则</h3>
 
 <table>
   <tr><th>规则</th><th>模式</th><th>生成</th></tr>
@@ -541,7 +605,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
 4 表查询的 duplicates 远超 3 表，增长趋势清晰地展示了 O(4<sup>n</sup>) 行为。
 </div>
 
-<h3>6.4 核心特征</h3>
+<h3>7.4 核心特征</h3>
 
 <table>
   <tr><th>特征</th><th>行为</th></tr>
@@ -553,7 +617,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
 </table>
 
 <!-- ================================================================== -->
-<h2 id="strategy-topdown">7. 策略三：TopDownPartitioning（自顶向下划分搜索）</h2>
+<h2 id="strategy-topdown">8. 策略四：TopDownPartitioning（自顶向下划分搜索）</h2>
 
 <p>
   <span class="badge badge-accent">DeHaan &amp; Tompa 2007 风格</span>
@@ -567,7 +631,7 @@ MergeJoin 在某谓词列天然有序（如索引扫描）时体现优势。
   利用预测代价下界进行 branch-and-bound 剪枝。
 </p>
 
-<h3>7.1 算法</h3>
+<h3>8.1 算法</h3>
 
 <pre><code>TopDownPartitioning::Search(graph, stats, property):
   cache.clear()
@@ -616,7 +680,7 @@ BestPlan(S, required_prop):
 
   cache[key] = best; return best</code></pre>
 
-<h3>7.2 划分策略</h3>
+<h3>8.2 划分策略</h3>
 
 <table>
   <tr><th>策略</th><th>方法</th><th>复杂度</th><th>状态</th></tr>
@@ -634,14 +698,14 @@ BestPlan(S, required_prop):
   </tr>
 </table>
 
-<h3>7.3 Branch-and-Bound 下界</h3>
+<h3>8.3 Branch-and-Bound 下界</h3>
 
 <pre><code>LowerBound(S, property):
   return sum of scan_cost for each relation in S   // 忽略 property（简单下界）
   // 这个下界总是 ≤ 真实最优代价，保证正确性
   // 但可能太弱无法触发剪枝（对 toy 数据尤甚）</code></pre>
 
-<h3>7.4 核心特征</h3>
+<h3>8.4 核心特征</h3>
 
 <table>
   <tr><th>特征</th><th>行为</th></tr>
@@ -655,7 +719,7 @@ BestPlan(S, required_prop):
 </table>
 
 <!-- ================================================================== -->
-<h2 id="testcases">8. 预定义测试用例</h2>
+<h2 id="testcases">9. 预定义测试用例</h2>
 
 <p>测试用例完全在 C++ 代码中构造（<code>examples/test_cases.cpp</code>），无需 SQL 或 JSON 输入。</p>
 
@@ -699,6 +763,20 @@ all rows=100, sel=0.1</pre>
 b-c, b-d, c-d
 all rows=100, sel=0.1</pre>
   </div>
+  <div class="card">
+    <h4>mpdp_fig5</h4>
+    <p>Figure 5-style：两个 cyclic blocks 由 bridge blocks 连接</p>
+    <pre>cycle(r1-r2-r3-r4)
+       → r5 → r9
+cycle(r6-r7-r8-r9)</pre>
+  </div>
+  <div class="card">
+    <h4>mpdp_branching_blocks</h4>
+    <p>分叉 block-cut tree：一个 cut vertex 被三个 cycles 共享</p>
+    <pre>cycle(c,a1,a2)
+cycle(c,b1,b2)
+cycle(c,d1,d2)</pre>
+  </div>
 </div>
 
 <p>
@@ -709,20 +787,22 @@ all rows=100, sel=0.1</pre>
 </p>
 
 <!-- ================================================================== -->
-<h2 id="cli">9. CLI 使用</h2>
+<h2 id="cli">10. CLI 使用</h2>
 
-<h3>9.1 列出所有测试用例</h3>
+<h3>10.1 列出所有测试用例</h3>
 <pre><code>$ ./volcano_join_demo --list
 
 Available test cases:
   two_table — Two tables: a(1000 rows) JOIN b(100 rows) ON a.x=b.x, sel=0.01
+  mpdp_branching_blocks — MPDP branching block-cut tree: one cut vertex shared by three cycles
+  mpdp_fig5 — MPDP Figure 5 style: two cyclic blocks connected by bridge blocks
   clique_4 — Clique: 4 fully-connected tables, all rows=100, all sel=0.1
   cycle_4 — Cycle: a-b-c-d-a, all rows=100, all sel=0.1
   star_4 — Star: center(10000) connected to a(100), b(200), c(300)
   chain_4 — Chain: a-b-c-d, 4 tables
   chain_3 — Chain: a(1000)-b(100)-c(500), a.x=b.x(0.01), b.y=c.y(0.05)</code></pre>
 
-<h3>9.2 运行单个策略</h3>
+<h3>10.2 运行单个策略</h3>
 <pre><code>$ ./volcano_join_demo --strategy topdown --test chain_3
 
 Strategy: TopDown(Naive)
@@ -736,23 +816,27 @@ Cost: 19651.56
 Strategy            Partitions    Rejected      PlansCosted   CacheHits     ...
 TopDown(Naive)      7             1             25            7             ...</code></pre>
 
-<h3>9.3 对比模式（--compare）</h3>
+<h3>10.3 对比模式（--compare）</h3>
 <pre><code>$ ./volcano_join_demo --compare --test cycle_4
 
 Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               46            10            264           0             69            0             0             69            0             14800.00
+MPDP                36            0             264           0             69            0             0             69            0             14800.00
 Transformational    0             0             136           132           33            164           196           0             0             14800.00
 TopDown(Naive)      43            9             86            52            33            0             0             0             0             14800.00
 TopDown(Mincut)     34            0             86            52            33            0             0             0             0             14800.00</code></pre>
 
-<h3>9.4 导出模式</h3>
+<h3>10.4 导出模式</h3>
 <pre><code>$ ./volcano_join_demo --compare --test clique_4 --out /tmp/out
 
 # 生成:
 #   /tmp/out/dpsub/join_graph.dot
 #   /tmp/out/dpsub/best_plan.dot
 #   /tmp/out/dpsub/DPSub_trace.json
+#   /tmp/out/mpdp/join_graph.dot
+#   /tmp/out/mpdp/best_plan.dot
+#   /tmp/out/mpdp/MPDP_trace.json
 #   /tmp/out/transform/join_graph.dot
 #   /tmp/out/transform/best_plan.dot
 #   /tmp/out/transform/Transformational_trace.json
@@ -764,20 +848,21 @@ TopDown(Mincut)     34            0             86            52            33  
 #   /tmp/out/topdown-mincut/TopDown_Mincut__trace.json
 #   /tmp/out/strategy_comparison.json</code></pre>
 
-<h3>9.5 物理属性需求</h3>
+<h3>10.5 物理属性需求</h3>
 <pre><code># 默认 required=Any
 $ ./volcano_join_demo --strategy topdown --test chain_3
 
 # 请求最终结果按 b.x 排序
 $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</code></pre>
 
-<h3>9.6 CLI 参数完整列表</h3>
+<h3>10.6 CLI 参数完整列表</h3>
 
 <table>
   <tr><th>参数</th><th>说明</th></tr>
-  <tr><td><code>--strategy &lt;name&gt;</code></td><td>策略：<code>dpsub</code> | <code>transform</code> | <code>topdown</code> | <code>topdown-mincut</code></td></tr>
+  <tr><td><code>--strategy &lt;name&gt;</code></td><td>策略：<code>dpsub</code> | <code>mpdp</code> | <code>mpdp-parallel</code> | <code>transform</code> | <code>topdown</code> | <code>topdown-mincut</code></td></tr>
   <tr><td><code>--test &lt;name&gt;</code></td><td>测试用例名（<code>--list</code> 查看全部）</td></tr>
-  <tr><td><code>--compare</code></td><td>运行全部四种策略并输出对比表</td></tr>
+  <tr><td><code>--threads &lt;n&gt;</code></td><td><code>mpdp-parallel</code> 的 CPU worker 数，必须为正整数</td></tr>
+  <tr><td><code>--compare</code></td><td>运行 canonical 五种策略并输出对比表；并行 MPDP 用 <code>--strategy mpdp-parallel</code> 单独运行</td></tr>
   <tr><td><code>--out &lt;dir&gt;</code></td><td>导出 DOT/JSON 的输出目录</td></tr>
   <tr><td><code>--required &lt;prop&gt;</code></td><td>默认 <code>any</code>；或 <code>sorted:alias.column</code></td></tr>
   <tr><td><code>--list</code></td><td>列出所有测试用例</td></tr>
@@ -785,9 +870,9 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
 </table>
 
 <!-- ================================================================== -->
-<h2 id="exporter">10. 导出与可视化</h2>
+<h2 id="exporter">11. 导出与可视化</h2>
 
-<h3>10.1 DOT 文件</h3>
+<h3>11.1 DOT 文件</h3>
 
 <p>每次运行可以生成两个 Graphviz DOT 文件：</p>
 
@@ -807,7 +892,7 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
 
 <p>DOT 节点标注了算子类型、行数估计、代价和物理属性。</p>
 
-<h3>10.2 Trace JSON</h3>
+<h3>11.2 Trace JSON</h3>
 
 <p>每个策略导出一个 <code>&lt;策略名&gt;_trace.json</code>：</p>
 
@@ -825,7 +910,7 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   "best_cost": 14800.00
 }</code></pre>
 
-<h3>10.3 对比 JSON</h3>
+<h3>11.3 对比 JSON</h3>
 
 <p><code>strategy_comparison.json</code> 汇总了所有策略的结果：</p>
 
@@ -833,6 +918,7 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   "query": "cycle_4",
   "strategies": [
     { "name": "DPSub",             ... },
+    { "name": "MPDP",              ... },
     { "name": "Transformational",  ... },
     { "name": "TopDown(Naive)",    ... },
     { "name": "TopDown(Mincut)",   ... }
@@ -840,10 +926,10 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
 }</code></pre>
 
 <!-- ================================================================== -->
-<h2 id="tests">11. 单元测试</h2>
+<h2 id="tests">12. 单元测试</h2>
 
 <p>
-  <code>tests/test_join_search.cpp</code> 包含 <strong>15 个测试块</strong>，
+  <code>tests/test_join_search.cpp</code> 包含 <strong>17 个测试块</strong>，
   覆盖正确性、跨策略一致性和算法特性。
 </p>
 
@@ -855,7 +941,7 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   </tr>
   <tr>
     <td>2</td><td>Cross-strategy (chain_3)</td>
-    <td>三种核心策略同 query 同 cost；Transformational 有 duplicates &amp; rules；TopDown 有 cache hits</td>
+    <td>核心策略同 query 同 cost；Transformational 有 duplicates &amp; rules；TopDown 有 cache hits</td>
   </tr>
   <tr>
     <td>3</td><td>Cross-strategy (star_4)</td>
@@ -875,15 +961,15 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
   </tr>
   <tr>
     <td>7</td><td>Sorted root property fallback across strategies</td>
-    <td>非 interesting-order 的根 Sorted 需求由最终 SortEnforcer 满足，且跨策略同 cost</td>
+    <td>非 interesting-order 的根 Sorted 需求由最终 SortEnforcer 满足；MPDP 额外检查串并行同 cost</td>
   </tr>
   <tr>
     <td>8</td><td>SearchResult no-plan state</td>
-    <td>空图在三种策略下显式返回 <code>has_plan=false</code>，BestCost=0</td>
+    <td>空图在核心策略下显式返回 <code>has_plan=false</code>，BestCost=0</td>
   </tr>
   <tr>
     <td>9</td><td>StatsCatalog drives cost estimates</td>
-    <td>三种策略的 rows、scan_cost、selectivity 均来自 <code>StatsCatalog</code></td>
+    <td>核心策略的 rows、scan_cost、selectivity 均来自 <code>StatsCatalog</code></td>
   </tr>
   <tr>
     <td>10</td><td>Duplicates scale</td>
@@ -909,12 +995,20 @@ $ ./volcano_join_demo --strategy topdown --test chain_3 --required sorted:b.x</c
     <td>15</td><td>All test cases load</td>
     <td>所有预定义测试用例可加载，关系数 ∈ [2, 63]</td>
   </tr>
+  <tr>
+    <td>16</td><td>MPDP Figure 5 style graph</td>
+    <td><code>mpdp_fig5</code> 上 MPDP explored 少于 DPSub、rejected=0，且串并行同 cost</td>
+  </tr>
+  <tr>
+    <td>17</td><td>MPDP branching block-cut tree</td>
+    <td><code>mpdp_branching_blocks</code> 覆盖分叉 block-cut tree，同样验证 rejected=0 与串并行一致</td>
+  </tr>
 </table>
 
-<p>关键不变量：<strong>核心搜索策略在同一 query 上必须产生相同的最优代价</strong>；Mincut 作为 TopDown 的分区策略，还必须与 Naive TopDown cost 一致。</p>
+<p>关键不变量：<strong>property-aware 策略在同一 query 上必须产生相同的最优代价</strong>；MPDP 作为独立论文实现，验证自身串并行一致，并且 best cost 不应低于 DPSub 的更大物理计划空间。</p>
 
 <!-- ================================================================== -->
-<h2 id="build">12. 构建与运行</h2>
+<h2 id="build">13. 构建与运行</h2>
 
 <pre><code># 构建
 cmake -S demos/volcano_join_reorder -B demos/volcano_join_reorder/build \
@@ -934,14 +1028,15 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
 </div>
 
 <!-- ================================================================== -->
-<h2 id="comparison">13. 策略对比与关键洞察</h2>
+<h2 id="comparison">14. 策略对比与关键洞察</h2>
 
-<h3>13.1 对比维度</h3>
+<h3>14.1 对比维度</h3>
 
 <table>
-  <tr><th>维度</th><th>DPSub</th><th>Transformational</th><th>TopDown(Naive)</th><th>TopDown(Mincut)</th></tr>
+  <tr><th>维度</th><th>DPSub</th><th>MPDP</th><th>Transformational</th><th>TopDown(Naive)</th><th>TopDown(Mincut)</th></tr>
   <tr>
     <td>搜索方向</td>
+    <td>Bottom-up<br>(singleton → full)</td>
     <td>Bottom-up<br>(singleton → full)</td>
     <td>Bottom-up 逻辑 + Top-down 物理</td>
     <td>Top-down<br>(full → singleton)</td>
@@ -950,19 +1045,22 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   <tr>
     <td>枚举机制</td>
     <td>按 size 递增遍历所有子集</td>
+    <td>按 size 递增遍历连通子集，block-local CCP pair + Grow</td>
     <td>子集枚举 + 变换规则 work-queue</td>
     <td>递归划分（Naive 枚举子集）</td>
     <td>递归划分（Mincut 生成 CP-free 分区）</td>
   </tr>
   <tr>
     <td>重复工作</td>
-    <td>✅ 无</td>
-    <td>❌ duplicates &gt; 0 (O(4<sup>n</sup>))</td>
-    <td>✅ 无（memoization）</td>
-    <td>✅ 无（memoization）</td>
+    <td>无</td>
+    <td>无</td>
+    <td>duplicates &gt; 0 (O(4<sup>n</sup>))</td>
+    <td>无（memoization）</td>
+    <td>无（memoization）</td>
   </tr>
   <tr>
     <td>Cache 行为</td>
+    <td>cache_hits = 0<br>（全预计算）</td>
     <td>cache_hits = 0<br>（全预计算）</td>
     <td>cache_hits &gt; 0<br>（物理优化阶段）</td>
     <td>cache_hits &gt; 0<br>（按需 + 命中多）</td>
@@ -971,6 +1069,7 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   <tr>
     <td>剪枝</td>
     <td>无</td>
+    <td>无；通过候选生成减少 rejected partitions</td>
     <td>无</td>
     <td>Branch-and-Bound<br>（下界质量决定效果）</td>
     <td>Branch-and-Bound<br>（下界质量决定效果）</td>
@@ -978,6 +1077,7 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   <tr>
     <td>预计算</td>
     <td>全量（所有子问题）</td>
+    <td>全量（所有连通 DP 状态）</td>
     <td>全量（所有逻辑表达式）</td>
     <td>按需（仅被递归到的）</td>
     <td>按需（仅被递归到的）</td>
@@ -985,13 +1085,14 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   <tr>
     <td>可扩展性</td>
     <td>规则不易添加</td>
-    <td>✅ 变换规则易扩展</td>
+    <td>block-local 枚举可并行；物理 DP 保持 relation-set-only</td>
+    <td>变换规则易扩展</td>
     <td>划分策略可替换</td>
     <td>划分策略可替换，减少无效分区</td>
   </tr>
 </table>
 
-<h3>13.2 核心洞察</h3>
+<h3>14.2 核心洞察</h3>
 
 <h4>1. 变换式搜索的 O(4<sup>n</sup>) 问题</h4>
 <p>
@@ -1015,7 +1116,15 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   计算无用的子问题。
 </p>
 
-<h4>4. Branch-and-Bound 的实际效果</h4>
+<h4>4. MPDP 独立实现 block-local join-pair 枚举</h4>
+<p>
+  MPDP 与 DPSub 的主要对比是 join-pair 生成路径：DPSub 先枚举全局 subset 再过滤，
+  MPDP 先在 block 内找局部 CCP pair，再 Grow 成全局 Join-Pair。
+  当前 MPDP 的 memo 只有 <code>RelSet</code> 维度，因此 <code>PlansCosted</code>、
+  <code>Cached</code>、<code>DPCells</code> 不会与 DPSub 相同。
+</p>
+
+<h4>5. Branch-and-Bound 的实际效果</h4>
 <p>
   当前 <code>LowerBound</code> 实现非常保守（仅 sum of scan costs），
   在 toy 数据上可能不触发剪枝（branches_pruned = 0）。
@@ -1024,12 +1133,13 @@ ctest --test-dir demos/volcano_join_reorder/build --output-on-failure
   是理解 advanced top-down optimization 的下一步。
 </p>
 
-<h3>13.3 典型对比输出（cycle_4）</h3>
+<h3>14.3 典型对比输出（cycle_4）</h3>
 
 <div class="diagram">
 Strategy            Partitions  Rejected  PlansCosted  CacheHits  Cached  Dups  Rules  DPCells  Pruned  BestCost
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 DPSub               46         10         264           0          69       0      0     69       0       14800
+MPDP                36          0          76           0          13       0      0     13       0       14800
 Transformational     0          0         136         132          33     164    196      0       0       14800
 TopDown(Naive)      43          9          86          52          33       0      0      0       0       14800
 TopDown(Mincut)     34          0          86          52          33       0      0      0       0       14800
@@ -1037,14 +1147,16 @@ TopDown(Mincut)     34          0          86          52          33       0   
 
 <p>关键观察：</p>
 <ul>
-  <li><strong>BestCost 一致</strong>（14800）→ 四种策略都找到了真正的最优计划 ✅</li>
+  <li><strong>BestCost 一致</strong>（14800）→ 五种策略都找到了真正的最优计划</li>
+  <li><strong>MPDP 减少无效划分</strong>：相对 DPSub，cycle_4 上 partitions 46→36，rejected 10→0。</li>
+  <li><strong>MPDP 的 memo 更窄</strong>：relation-set-only memo 让 cycle_4 的 cached cells 从 69 降到 13。</li>
   <li><strong>Transformational 的 Duplicates 164</strong> — 虽然有去重，但每次去重都是一次失败的 insert 尝试</li>
-  <li><strong>TopDown 的 PlansCosted 最少</strong>（86 vs 264）— 因为只有被递归到的路径才被评估</li>
+  <li><strong>TopDown 少于 property-aware bottom-up</strong>（86 vs DPSub 264）— 因为只有被递归到的路径才被评估</li>
   <li><strong>Mincut 减少无效划分</strong>：TopDown(Naive) 探索 43 个分区、拒绝 9 个；TopDown(Mincut) 探索 34 个、拒绝 0 个。</li>
 </ul>
 
 <!-- ================================================================== -->
-<h2 id="references">14. 参考文献</h2>
+<h2 id="references">15. 参考文献</h2>
 
 <ol>
   <li>
@@ -1072,6 +1184,12 @@ TopDown(Mincut)     34          0          86          52          33       0   
     <br><small>自顶向下划分搜索 + minimal cut (biconnection tree) 实现最优 CP-free bushy join 枚举。</small>
   </li>
   <li>
+    <strong>R. Mancini et al.</strong> —
+    <em>"Efficient Massively Parallel Join Optimization for Large Queries."</em>
+    SIGMOD 2022.
+    <br><small>MPDP 的理论来源；当前 demo 使用其候选枚举思想做 CPU 教学实现。</small>
+  </li>
+  <li>
     <strong>G. Moerkotte, T. Neumann</strong> —
     <em>"Analysis of Two Existing and One New Dynamic Programming Algorithm for the Generation of Optimal Bushy Join Trees without Cross Products."</em>
     VLDB 2006.
@@ -1079,7 +1197,7 @@ TopDown(Mincut)     34          0          86          52          33       0   
   </li>
 </ol>
 
-<h2 id="deep-dive-docs">15. 深度文档</h2>
+<h2 id="deep-dive-docs">16. 深度文档</h2>
 
 <p>
   每种策略的算法详解、流程模拟和设计讨论见独立文档：
@@ -1087,6 +1205,7 @@ TopDown(Mincut)     34          0          86          52          33       0   
 
 <ul>
   <li><a href="dpsub-workflow.html"><strong>DPSub (Bottom-Up DP) Workflow</strong></a> — 自底向上动态规划，CCP block 枚举、interesting order 支持、并行化潜力</li>
+  <li><a href="mpdp-workflow.html"><strong>MPDP Workflow</strong></a> — block-local CCP pair、Grow 生成全局 Join-Pair、Figure 5-style 与 branching block-cut tree 用例</li>
   <li><a href="transformational-search.html"><strong>Transformational Search Workflow</strong></a> — 两阶段变换式搜索，memo 构造、规则重写与重复推导</li>
   <li><a href="topdown-partitioning-workflow.html"><strong>TopDown Partitioning Workflow</strong></a> — 自顶向下划分搜索，Naive 与 Mincut（双连通树）分区策略</li>
 </ul>

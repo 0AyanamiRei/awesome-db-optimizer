@@ -9,6 +9,8 @@ description: Use when reviewing, accepting, or completing generated changes to t
 
 Review generated demo changes by their risk surface. Optimizer behavior needs executable evidence; pure documentation layout, navigation, and diagrams need document-level checks.
 
+`demos/demo` is a paper-oriented demo collection. Shared Volcano-style infrastructure is scaffolding, not the design authority. For new or revised paper implementations, prefer faithful paper semantics and isolated algorithm behavior over forced cross-strategy uniformity unless the user explicitly requests a uniform framework.
+
 ## Workflow
 
 1. Check the worktree first with `git status --short`; treat existing unrelated changes as user work.
@@ -28,6 +30,7 @@ When the human points out that a review or verification rule is too broad, too n
 - Treat Markdown management files, especially `demos/demo/AGENT_CONTENT_MANAGEMENT.md`, as agent-facing project governance.
 - For documentation credibility work, read `demos/demo/AGENT_CONTENT_MANAGEMENT.md` before editing or reviewing HTML docs.
 - Do not put agent process rules into HTML pages; keep them in Markdown.
+- Treat code and executable behavior as the source of truth. Do not avoid correct source changes to keep existing docs or snapshots stable; update documentation after the implementation settles.
 
 ## Required Gates
 
@@ -69,6 +72,7 @@ Focus on these risks:
 | Cost/statistics contract | `JoinGraph` owns topology; `StatsCatalog` owns cost inputs. Strategies and cost-model code must read rows, scan costs, and predicate selectivity from `StatsCatalog`, with tests proving divergent graph/catalog values use the catalog. |
 | Join graph invariants | Validate relation count, alias uniqueness, positive rows/scan costs, selectivity bounds, unknown aliases, empty graphs, disconnected graphs, and cross products. |
 | Partition enumeration | Check duplicate/symmetric partitions, CP-free assumptions, mincut equivalence to naive enumeration, and exponential loops against the claimed demo scale. |
+| Paper fidelity | Check whether shared demo abstractions distort the target paper algorithm. If they do, prefer isolating the paper implementation and adapting only the minimum CLI/test boundary. |
 | Branch-and-bound | Pruning bounds must be proven lower bounds for the current cost model; suspicious constants or unused lower-bound variables are review findings. |
 | CLI/export behavior | User-facing commands must fail loudly on invalid requests and avoid writing misleading DOT/JSON for absent plans. |
 | Tests | Add focused regression tests for every behavior change; include at least one negative or edge case, not only happy-path examples. |

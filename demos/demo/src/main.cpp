@@ -1,5 +1,6 @@
 #include "volcano/dp_sub.hpp"
 #include "volcano/exporter.hpp"
+#include "volcano/mpdp.hpp"
 #include "volcano/search_strategy.hpp"
 #include "volcano/top_down_partitioning.hpp"
 #include "volcano/transformational.hpp"
@@ -12,6 +13,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -21,8 +23,9 @@ void PrintUsage() {
   std::cout << "Usage: volcano_join_demo [OPTIONS]\n"
             << "\n"
             << "  --strategy <name>   Run a single strategy\n"
-            << "                      Choices: dpsub, transform, topdown, topdown-mincut\n"
+            << "                      Choices: dpsub, mpdp, mpdp-parallel, transform, topdown, topdown-mincut\n"
             << "  --test <name>       Test case to run\n"
+            << "  --threads <n>       Worker threads for mpdp-parallel (default: hardware concurrency)\n"
             << "  --compare           Run all strategies and output comparison\n"
             << "  --out <dir>         Output directory for DOT/JSON exports\n"
             << "  --list              List all available test cases\n"
@@ -49,8 +52,23 @@ volcano::RequiredProperty ParseRequired(const std::string &text) {
   throw std::runtime_error("--required must be either 'any' or 'sorted:alias.column'");
 }
 
-std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
+std::size_t ParsePositiveSize(const std::string &text, const std::string &option_name) {
+  if (text.empty() || text.front() == '-' || text.front() == '+') {
+    throw std::runtime_error(option_name + " must be a positive integer");
+  }
+  std::size_t consumed = 0;
+  const auto parsed = std::stoull(text, &consumed);
+  if (consumed != text.size() || parsed == 0) {
+    throw std::runtime_error(option_name + " must be a positive integer");
+  }
+  return static_cast<std::size_t>(parsed);
+}
+
+std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name,
+                                                       std::size_t thread_count) {
   if (name == "dpsub") return std::make_unique<volcano::DPSub>();
+  if (name == "mpdp") return std::make_unique<volcano::MPDP>();
+  if (name == "mpdp-parallel") return std::make_unique<volcano::MPDP>(thread_count);
   if (name == "transform") return std::make_unique<volcano::Transformational>();
   if (name == "topdown")
     return std::make_unique<volcano::TopDownPartitioning>(
@@ -59,7 +77,7 @@ std::unique_ptr<volcano::SearchStrategy> MakeStrategy(const std::string &name) {
     return std::make_unique<volcano::TopDownPartitioning>(
         volcano::PartitionStrategy::Mincut);
   throw std::runtime_error("unknown strategy: " + name +
-                           " (choices: dpsub, transform, topdown, topdown-mincut)");
+                           " (choices: dpsub, mpdp, mpdp-parallel, transform, topdown, topdown-mincut)");
 }
 
 void PrintTraceTable(const std::vector<std::pair<std::string, volcano::SearchTrace>> &results) {
@@ -123,6 +141,7 @@ int main(int argc, char **argv) {
     std::string test_name;
     std::string out_dir;
     std::string required_str = "any";
+    std::size_t thread_count = std::max(1u, std::thread::hardware_concurrency());
     bool compare = false;
     bool list = false;
 
@@ -140,13 +159,17 @@ int main(int argc, char **argv) {
         list = true;
         continue;
       }
-      if (arg == "--strategy" || arg == "--test" || arg == "--out" || arg == "--required") {
+      if (arg == "--strategy" || arg == "--test" || arg == "--out" ||
+          arg == "--required" || arg == "--threads") {
         if (i + 1 >= argc) throw std::runtime_error("missing value for " + arg);
         const std::string value = argv[++i];
         if (arg == "--strategy") strategy_name = value;
         else if (arg == "--test") test_name = value;
         else if (arg == "--out") out_dir = value;
         else if (arg == "--required") required_str = value;
+        else if (arg == "--threads") {
+          thread_count = ParsePositiveSize(value, "--threads");
+        }
         continue;
       }
       throw std::runtime_error("unknown argument: " + arg);
@@ -170,7 +193,7 @@ int main(int argc, char **argv) {
 
     if (compare) {
       // Run all strategies and compare
-      std::vector<std::string> strategy_names = {"dpsub", "transform", "topdown", "topdown-mincut"};
+      std::vector<std::string> strategy_names = {"dpsub", "mpdp", "transform", "topdown", "topdown-mincut"};
       std::vector<std::pair<std::string, volcano::SearchTrace>> results;
 
       std::cout << "Test: " << test_name << " (" << tc.description << ")\n";
@@ -179,7 +202,7 @@ int main(int argc, char **argv) {
       std::cout << "Required property: " << property.ToString() << "\n\n";
 
       for (const auto &name : strategy_names) {
-        auto strategy = MakeStrategy(name);
+        auto strategy = MakeStrategy(name, thread_count);
         auto result = strategy->Search(tc.graph, tc.stats, property);
         if (!result.has_plan) {
           throw std::runtime_error(strategy->Name() + " produced no plan for " + test_name);
@@ -207,7 +230,7 @@ int main(int argc, char **argv) {
         throw std::runtime_error("--strategy is required (or use --compare)");
       }
 
-      auto strategy = MakeStrategy(strategy_name);
+      auto strategy = MakeStrategy(strategy_name, thread_count);
       auto result = strategy->Search(tc.graph, tc.stats, property);
       if (!result.has_plan) {
         throw std::runtime_error(strategy->Name() + " produced no plan for " + test_name);

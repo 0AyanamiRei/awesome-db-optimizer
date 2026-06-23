@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPDP Workflow — Volcano Join Demo</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --border: #e5e7eb;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+    --ok-bg: #ecfdf5;
+    --ok-border: #6ee7b7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --border: #334155; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+      --ok-bg: #064e3b; --ok-border: #059669;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 980px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.15rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.5rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; color: var(--accent-2); }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: left; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+  .small { color: var(--subtle); font-size: .9rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>MPDP Workflow</h1>
+<p>
+  <code>demos/demo/src/mpdp.cpp</code> 的算法说明：
+  重点不是再复述一个串行 join enumerator，而是说明如何把 MPDP / BiCC 风格的
+  bottom-up DP 写成可并行的 CPU 算法：每一层怎么切任务、memo 怎么避免并发冲突、
+  worker 怎么汇总结果。
+</p>
+
+<div class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#scope">文档定位</a></li>
+  <li><a href="#idea">原作者实现里的并行骨架</a></li>
+  <li><a href="#data-model">数据模型</a></li>
+  <li><a href="#workflow">当前 demo 的多线程模型</a></li>
+  <li><a href="#blocks">单个任务内部：Blocks 与 Grow</a></li>
+  <li><a href="#physical">物理计划与 DP 表</a></li>
+  <li><a href="#examples">两个 MPDP 用例</a></li>
+  <li><a href="#trace">Trace 计数器</a></li>
+  <li><a href="#run">运行命令</a></li>
+  <li><a href="#comparison">与其他策略对比</a></li>
+  <li><a href="#references">参考资料</a></li>
+</ol>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="scope">1. 文档定位</h2>
+
+<p>
+  当前 demo 中，<code>MPDP</code> 是一个新的可比较 search strategy，
+  命令行别名是 <code>mpdp</code>，并且在 <code>--compare</code> 输出中紧跟
+  <code>DPSub</code>。它的目标是尽量贴近论文中的 block-local join-pair 枚举，
+  同时把并行化边界写清楚：并行发生在同一个 DP level 内，不跨 level。
+</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>算法来源</h4>
+    <p>MPDP 来自 Mancini et al., SIGMOD 2022 中面向大规模 join optimization 的思路。</p>
+  </div>
+  <div class="card">
+    <h4>Demo 定位</h4>
+    <p>默认 <code>mpdp</code> 走同一套代码的单线程路径；<code>mpdp-parallel</code> 用多个 CPU worker 处理同一 level 的不同 connected set。</p>
+  </div>
+  <div class="card">
+    <h4>对比对象</h4>
+    <p><code>DPSub</code> 是全局 subset 枚举 baseline；二者共享基础 cost helper，但 memo 维度和 property 传播不同。</p>
+  </div>
+</div>
+
+<div class="callout callout-warn">
+  <strong>不要把本文读成性能承诺：</strong>
+  SIGMOD 论文讨论的是 massively parallel join optimization。这个 demo 只实现了同一思想的候选枚举形状，
+  运行时仍是普通 C++ CPU 教学代码。这里讨论的是线程模型和依赖边界，不声称复现 GPU runtime 的吞吐。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="idea">2. 原作者实现里的并行骨架</h2>
+
+<p>
+  参考实现来自
+  <a href="https://github.com/Manciukic/postgres-gpuqo"><code>Manciukic/postgres-gpuqo</code></a>。
+  这里最值得读的不是 PostgreSQL 集成层，而是 <code>src/backend/optimizer/gpuqo</code>
+  下几组文件：
+</p>
+
+<table>
+  <tr><th>文件</th><th>本文关注点</th></tr>
+  <tr>
+    <td><code>gpuqo_cpu_dpsub_parallel.cu</code></td>
+    <td>CPU 并行 DPSub：长生命周期 pthread worker、按 level 广播开始、用共享 <code>next_sid</code> 分 chunk、层末 barrier。</td>
+  </tr>
+  <tr>
+    <td><code>gpuqo_cpu_dpsub_bicc.cu</code></td>
+    <td>CPU BiCC 枚举：对单个 join set 找 biconnected components，在 block 内枚举局部分割，再 two-sided grow。</td>
+  </tr>
+  <tr>
+    <td><code>gpuqo_cpu_level_hashtable.cuh</code></td>
+    <td>memo 按 relation-set size 分 bucket，降低不同 DP level 之间的依赖耦合。</td>
+  </tr>
+  <tr>
+    <td><code>gpuqo_dpsub_bicc.cuh</code></td>
+    <td>GPU BiCC 版本：把一个 join set 内的 block-subset 候选继续拆给 warp lanes，并在 shared memory 中做局部最优。</td>
+  </tr>
+</table>
+
+<p>
+  抽象出来的 CPU 并行模式是：
+</p>
+
+<div class="diagram">
+main thread:
+  initialize memo with level-1 base relations
+
+  for level = 2..N:
+    publish current level
+    reset shared work cursor
+    wake workers
+
+workers:
+  wait until level advances
+  while work cursor still has join sets:
+    claim a chunk of set ids
+    enumerate/cost each set using only previous memo levels
+    keep results in local output
+  merge local output into memo under synchronization
+  signal "this worker finished the level"
+
+main thread:
+  wait until every worker finished this level
+  move to next level</div>
+
+<p>
+  这个模型的关键不是“用了线程”本身，而是 <strong>level barrier</strong>：
+  大小为 <code>k</code> 的 join set 只依赖更小的 set，所以同一层里的多个
+  <code>S</code> 可以并行；但 <code>k + 1</code> 层必须等 <code>k</code> 层全部写入 memo 后才能开始。
+  原作者 CPU parallel 版本用 pthread condition variable 做这个 barrier；
+  当前 demo 用更直接的方式：每个 level 创建一组 <code>std::thread</code>，join 全部 worker 后再进入下一层。
+</p>
+
+<div class="callout callout-info">
+  <strong>和原作者实现的差异：</strong>
+  <code>postgres-gpuqo</code> 的 CPU parallel 版本按 binomial rank 枚举所有大小为
+  <code>level</code> 的 set，并用 <code>next_sid.fetch_add(skip)</code> 分 chunk。
+  当前 demo 先调用 <code>CollectConnectedSubsets</code> 得到每层 connected sets，
+  再用共享 <code>next_index</code> 分发 <code>Si[index]</code>。这少了 unrank/rank 逻辑，
+  但保留了同一个并行边界：同层任务并行，层间严格同步。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="data-model">3. 数据模型</h2>
+
+<p>
+  多线程版本要先把共享状态和线程私有状态分清楚。当前 demo 的 MPDP 复用基础结构，
+  但 memo contract 与 DPSub 不同：
+</p>
+
+<table>
+  <tr><th>结构</th><th>共享/私有</th><th>MPDP 中的角色</th></tr>
+  <tr>
+    <td><code>RelSet</code></td>
+    <td>值类型</td>
+    <td>表示 DP 状态 <code>S</code>、block <code>B</code>、局部 pair <code>lb/rb</code> 和全局 <code>left/right</code>。</td>
+  </tr>
+  <tr>
+    <td><code>JoinGraph</code></td>
+    <td>只读共享</td>
+    <td>提供 <code>IsConnected</code>、<code>HasPredicateAcross</code>、<code>CrossingPredicates</code> 等图查询；worker 可并发读。</td>
+  </tr>
+  <tr>
+    <td><code>StatsCatalog</code></td>
+    <td>只读共享</td>
+    <td>只在 <code>MakeScan</code> / <code>MakeJoin</code> 中参与 cost 计算，不决定候选枚举；worker 可并发读。</td>
+  </tr>
+  <tr>
+    <td><code>MemoTable</code></td>
+    <td>level 内只读，level 末写入</td>
+    <td><code>RelSet → PlanPtr</code>。worker 枚举当前 level 时只读取已完成的更小 level；本层结果等 worker 完成后统一合并。</td>
+  </tr>
+  <tr>
+    <td><code>StateCell</code></td>
+    <td>每个 <code>S</code> 独占</td>
+    <td>保存单个 DP 状态的 <code>best</code> 和 <code>trace</code>。这就是避免多个线程同时 <code>TryUpdate</code> 同一个 memo entry 的核心。</td>
+  </tr>
+  <tr>
+    <td><code>cells</code></td>
+    <td>按 index 分片</td>
+    <td><code>std::vector&lt;StateCell&gt;</code>，每个 worker 只写自己 claim 到的 <code>cells[index]</code>。</td>
+  </tr>
+  <tr>
+    <td><code>next_index</code> + <code>mutex</code></td>
+    <td>共享调度状态</td>
+    <td>当前 demo 的 work cursor。它对应原作者 CPU parallel 里的 <code>next_sid.fetch_add(skip)</code>，只是粒度从 set-id chunk 变成 connected-set index。</td>
+  </tr>
+</table>
+
+<p>
+  因此并行安全性来自三个约束：
+  <strong>memo 在当前 level 计算期间只读</strong>，
+  <strong>每个 <code>StateCell</code> 只由一个 worker 写</strong>，
+  <strong>memo 写入和全局 trace 汇总只发生在 level barrier 后</strong>。
+  这比给 <code>unordered_map</code> 的每次读写都加锁更简单，也更接近 DP 的依赖结构。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="workflow">4. 当前 demo 的多线程模型</h2>
+
+<h3>4.1 串行路径和并行路径共享同一套 DP</h3>
+
+<pre><code>MPDP::Search(graph, stats, required_property):
+  memo = {}
+
+  if graph is empty:
+    return no-plan
+
+  for each relation r:
+    memo[{r}] = MakeScan(r)
+
+  connected_by_size = CollectConnectedSubsets(graph)
+
+  for size = 2 to n:
+    Si = connected_by_size[size]
+    cells = vector&lt;StateCell&gt;(Si.size())
+
+    fill_cell(index):
+      S = Si[index]
+      for each (left, right) in EnumerateJoinPairs(graph, S):
+        cells[index].trace.partitions_explored++
+        BuildPlansForPairIntoCell(memo, cells[index], left, right)
+
+    if thread_count == 1:
+      for index in [0, Si.size()):
+        fill_cell(index)
+    else:
+      run worker threads over indexes in [0, Si.size())
+
+    // level barrier: all workers are done here
+    for index in [0, Si.size()):
+      MergeCell(memo, Si[index], cells[index])
+      MergeTrace(global_trace, cells[index].trace)
+
+  best = memo[full_set]
+  if required_property is Sorted and best exists:
+    best = SortEnforcer(best, required_property.sort_key)
+
+  return best</code></pre>
+
+<p>
+  串行和并行路径只差在 <code>fill_cell(index)</code> 的调用方式。
+  这点很重要：并行版不是另一套算法，只是把同一 level 内互不依赖的 cell 填充拆给多个 worker。
+</p>
+
+<h3>4.2 Worker 调度</h3>
+
+<pre><code>worker():
+  loop:
+    lock(mutex)
+    if next_index == Si.size():
+      unlock(mutex)
+      return
+    index = next_index
+    next_index++
+    unlock(mutex)
+
+    fill_cell(index)</code></pre>
+
+<p>
+  当前 demo 用 <code>std::mutex</code> 保护 <code>next_index</code>，实现最直接的动态调度。
+  原作者 CPU parallel 版本使用 <code>atomic&lt;uint_t&gt; next_sid</code> 和 <code>skip</code>
+  一次 claim 一段 set ids，减少调度开销。两者是同一个设计：worker 不预先固定拿哪一段工作，
+  而是干完一块再去共享 cursor 领下一块，避免不同 connected set 枚举代价差异导致负载不均。
+</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4>为什么不用并发写 memo</h4>
+    <p>
+      一个 <code>S</code> 的候选计划可能很多，如果每个候选都直接写
+      <code>memo[S]</code>，就需要保护 <code>unordered_map</code> 和同一个 best entry。
+      当前 demo 先写线程私有的 <code>cells[index]</code>，层末再合并，锁粒度变成调度 cursor。
+    </p>
+  </div>
+  <div class="card">
+    <h4>为什么不跨 level 并行</h4>
+    <p>
+      <code>|S| = k + 1</code> 的计划依赖多个更小 subset 的 best plan。
+      只要 <code>k</code> 层还没完全写入 memo，下一层就可能读到缺失结果。
+      所以 level barrier 是正确性边界，不只是实现方便。
+    </p>
+  </div>
+</div>
+
+<h3>4.3 Join-Pair 枚举</h3>
+
+<pre><code>EnumerateJoinPairs(graph, S):
+  result = {}
+  emitted = {}
+
+  for each block B in FindBlocks(G[S]):
+    for each non-empty proper subset lb of B:
+      rb = B - lb
+
+      if lb or rb is disconnected:
+        continue
+      if no predicate crosses lb/rb:
+        continue
+
+      left = Grow(lb, allowed = S - rb)
+      right = Grow(rb, allowed = S - lb)
+
+      if left/right is disjoint, exactly covers S, connected,
+         has a crossing predicate, and ordered pair is not emitted:
+        emit (left, right)</code></pre>
+
+<p>
+  这个流程有三个层次：
+</p>
+
+<ol>
+  <li><strong>Block-local：</strong><code>lb</code> 和 <code>rb</code> 都来自同一个 block。</li>
+  <li><strong>Global growth：</strong><code>lb</code> 和 <code>rb</code> 都不是直接作为最终两侧，而是分别在 <code>S \ rb</code> 与 <code>S \ lb</code> 中向外生长。</li>
+  <li><strong>Cover check：</strong>只有当 grow 后的 <code>left</code> 与 <code>right</code> 不相交、且 <code>left | right == S</code> 时，这个局部分割才覆盖了当前 DP 状态。</li>
+  <li><strong>Dedup：</strong>不同 block 或不同局部 pair 可能映射到同一个 global join-pair，需要用 ordered pair <code>(left, right)</code> 去重；不能用 <code>left | right</code>，因为合法候选的并集总是 <code>S</code>。</li>
+</ol>
+
+<div class="callout">
+  <strong>源码边界：</strong>
+  这里对齐的是 block 枚举 + two-sided grow 的工作流。当前 demo 为了让教学 trace 更直接，
+  把局部连通性和 crossing-predicate 检查显式前置；GPU-QO 的 BICC 实现会更宽地枚举 block subset，
+  再依赖 two-sided grow、覆盖检查和 join/memo 检查淘汰候选。因此不要把这段伪代码读成源码逐行移植。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="blocks">5. 单个任务内部：Blocks 与 Grow</h2>
+
+<h3>5.1 Block 是什么</h3>
+
+<p>
+  本文中的 block 指 <strong>biconnected component</strong>：一个在删除任意单个顶点后仍保持连通的最大子图。
+  Bridge edge 也会形成一个二点 block。Block-cut tree 把这些 block 和 articulation point 组织成一棵树，
+  是 MPDP 能够从局部分割恢复全局 join-pair 的结构基础。
+  在并行模型里，找 blocks 和 grow 都发生在单个 <code>fill_cell(index)</code> 内部；
+  它们不需要和其他 worker 通信。
+</p>
+
+<div class="diagram">
+Figure 5-style shape:
+
+  r1 -- r2 -- r3 -- r4
+  |                 |
+  +-----------------+
+                    \
+                     r5 -- r9
+                           / \
+                         r8 -- r6
+                          \   /
+                           r7
+
+Block-cut tree intuition:
+  cyclic block -- bridge block -- bridge block -- cyclic block</div>
+
+<p>
+  这个形状很适合解释论文里的链式 block-cut tree：左边一个 cycle block，
+  中间两个 bridge block，右边一个 cycle block。当前 demo 的 <code>mpdp_fig5</code>
+  就是这种 Figure 5-style case。
+</p>
+
+<h3>5.2 Block-cut tree 不一定是链</h3>
+
+<p>
+  只看 Figure 5-style case 容易形成误解，以为 MPDP 只适用于链状 block-cut tree。
+  因此 demo 还加入了 <code>mpdp_branching_blocks</code>：
+  一个中心 cut vertex <code>c</code> 被三个 cycle block 共享，block-cut tree 是分叉形状。
+</p>
+
+<div class="diagram">
+Branching block-cut tree shape:
+
+          a1
+        /    \
+       c ---- a2
+      / \    / \
+    b1   d1    |
+    | \ / |    |
+    b2   d2 --+
+
+Conceptually:
+        cycle A
+           |
+          cut vertex c
+        /      \
+   cycle B    cycle D</div>
+
+<p>
+  这个用例的目的不是引入新的 cost model，而是防止把某一种图形当成算法前提。
+  MPDP 的枚举逻辑要能处理 block-cut tree 的分叉，而不只是线性桥接。
+</p>
+
+<h3>5.3 Grow 的作用</h3>
+
+<p>
+  <code>Grow(graph, seeds, allowed)</code> 是一个 BFS。
+  MPDP 会对局部 pair 的两侧各做一次 grow：
+  从 <code>lb</code> 出发，只在 <code>allowed = S \ rb</code> 内沿 join graph 扩展得到 <code>left</code>；
+  从 <code>rb</code> 出发，只在 <code>allowed = S \ lb</code> 内扩展得到 <code>right</code>。
+</p>
+
+<pre><code>Grow(seeds, allowed):
+  visited = seeds
+  queue = seeds
+
+  while queue not empty:
+    current = pop(queue)
+    for each predicate edge current -- next:
+      if next is in allowed and next not visited:
+        visited += next
+        push(next)
+
+  return visited</code></pre>
+
+<p>
+  最终不是简单令 <code>right = S \ left</code>，而是检查 grow 出来的
+  <code>left</code> 与 <code>right</code> 是否不相交、并集是否等于 <code>S</code>。
+  如果二者不能覆盖 <code>S</code>，或任一侧不连通，或二者之间没有 predicate，
+  这个候选会被丢弃。由于丢弃发生在发出结果前，trace 中不会把它记为 rejected partition。
+</p>
+
+<div class="callout callout-info">
+  <strong>和 GPU 版本的关系：</strong>
+  原作者的 <code>gpuqo_dpsub_bicc.cuh</code> 会把一个 <code>relid</code>
+  内的 block-subset 候选继续拆给 warp lanes，并用 shared memory 存 blocks 和局部候选。
+  当前 demo 不模拟 warp 内并行；它只把更粗的 <code>S</code> 级任务分给 CPU worker。
+  这更适合作为普通 C++ 多线程实现的阅读起点。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="physical">6. 物理计划与 DP 表</h2>
+
+<p>
+  一旦 MPDP 发出 <code>(left, right)</code>，当前实现只在 relation-set memo 中 cost unordered join plan：
+</p>
+
+<table>
+  <tr><th>步骤</th><th>行为</th><th>Trace 影响</th></tr>
+  <tr>
+    <td>HashJoin</td>
+    <td>读取 <code>memo[left]</code> 和 <code>memo[right]</code>，尝试更新本地 <code>cell.best</code>。</td>
+    <td><code>plans_costed++</code></td>
+  </tr>
+  <tr>
+    <td>NestedLoopJoin</td>
+    <td>同样读取 Any 子计划，按 nested-loop cost 公式生成候选。</td>
+    <td><code>plans_costed++</code></td>
+  </tr>
+  <tr>
+    <td>Root SortEnforcer</td>
+    <td>只有调用方要求根输出 <code>Sorted(...)</code> 时，在最终 best plan 外层追加一次排序。</td>
+    <td><code>plans_costed++</code></td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>关键对照：</strong>
+  MPDP 不在内部生成 Sorted interesting orders，也不 cost MergeJoin。
+  因此它的 best cost 可以高于 DPSub；这不是 join-pair 枚举错误。
+  正确性测试关注是否找到合法计划、是否不低于 DPSub 的更大物理计划空间、以及串行/并行结果是否一致。
+</div>
+
+<!-- ================================================================== -->
+<h2 id="examples">7. 两个 MPDP 用例</h2>
+
+<h3>7.1 <code>mpdp_fig5</code></h3>
+
+<p>
+  <code>mpdp_fig5</code> 有 9 个关系、10 条 predicate。
+  图形是两个 cyclic blocks，中间通过 bridge blocks 连接。这对应论文 Figure 5 风格的教学形状：
+  MPDP 可以从 block-local CCP pair 直接生成全局 join-pair，避免 DPSub 的大量无效 subset。
+</p>
+
+<h3>7.2 <code>mpdp_branching_blocks</code></h3>
+
+<p>
+  <code>mpdp_branching_blocks</code> 有 7 个关系、9 条 predicate。
+  一个中心关系 <code>c</code> 同时属于三个 cycle block。这个 case 强调：
+  block-cut tree 可以分叉，MPDP 不应只针对链形 bridge 结构工作。
+</p>
+
+<table>
+  <tr><th>Case</th><th>图形目的</th><th>重点观察</th></tr>
+  <tr>
+    <td><code>mpdp_fig5</code></td>
+    <td>两个 cycle blocks 通过 bridge blocks 相连</td>
+    <td>展示 Figure 5-style 的链式 block-cut tree。</td>
+  </tr>
+  <tr>
+    <td><code>mpdp_branching_blocks</code></td>
+    <td>一个 cut vertex 被三个 cycles 共享</td>
+    <td>展示 branching block-cut tree，避免把链形结构误当成算法限制。</td>
+  </tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="trace">8. Trace 计数器</h2>
+
+<p>
+  MPDP 使用和其他策略相同的 <code>SearchTrace</code>，但并行版不能让多个 worker
+  直接递增同一个普通整数。因此当前实现让每个 <code>StateCell</code> 带自己的 trace，
+  层末由主线程调用 <code>MergeTrace</code> 汇总。最值得关注的字段如下：
+</p>
+
+<table>
+  <tr><th>字段</th><th>MPDP 中的含义</th></tr>
+  <tr>
+    <td><code>partitions_explored</code></td>
+    <td>每个 cell 内最终发出的 global join-pair 数；层末汇总。它通常少于 DPSub 的 explored partitions。</td>
+  </tr>
+  <tr>
+    <td><code>partitions_rejected</code></td>
+    <td>当前 MPDP 发出前就过滤候选，因此专门用例中为 0。</td>
+  </tr>
+  <tr>
+    <td><code>plans_costed</code></td>
+    <td>每个 cell 内的物理计划代价计算次数。MPDP 每个 join-pair cost HashJoin 和 NestedLoopJoin；根 Sorted 请求会额外 cost 一次 SortEnforcer。</td>
+  </tr>
+  <tr>
+    <td><code>cache_hits</code></td>
+    <td>bottom-up DP 不按需递归查 cache，保持为 0。</td>
+  </tr>
+  <tr>
+    <td><code>dp_cells_filled</code></td>
+    <td>层末 merge 后的 memo 条目数，不含 property 维度。</td>
+  </tr>
+  <tr>
+    <td><code>best_cost</code></td>
+    <td>MPDP 自身物理计划空间内的最优 cost。它可能高于 property-aware 策略。</td>
+  </tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="run">9. 运行命令</h2>
+
+<p>从 <code>demos/demo</code> 目录运行：</p>
+
+<pre><code>$ ./build/volcano_join_demo --strategy mpdp --test mpdp_fig5
+$ ./build/volcano_join_demo --strategy mpdp-parallel --threads 4 --test mpdp_fig5
+$ ./build/volcano_join_demo --strategy mpdp-parallel --threads 8 --test mpdp_branching_blocks
+$ ./build/volcano_join_demo --compare --test mpdp_fig5
+$ ./build/volcano_join_demo --compare --test mpdp_branching_blocks</code></pre>
+
+<p>
+  <code>--compare</code> 表默认展示 canonical 五种策略，不包含 <code>MPDP(Parallel)</code>。
+  想看并行路径，需要单独使用 <code>--strategy mpdp-parallel --threads N</code>。
+  正确性上，串行 <code>mpdp</code> 和并行 <code>mpdp-parallel</code> 应该有相同
+  <code>BestCost</code>、<code>Partitions</code> 和 <code>PlansCosted</code>；
+  线程数只影响调度方式，不应改变搜索结果。
+</p>
+
+<p>
+  下面的表只保留 <code>Partitions</code>、<code>Rejected</code> 和 <code>BestCost</code>，
+  方便聚焦 MPDP 的候选枚举差异。
+</p>
+
+<h3>9.1 Figure 5-style case</h3>
+
+<pre><code>$ ./build/volcano_join_demo --compare --test mpdp_fig5
+
+Strategy            Partitions    Rejected      BestCost
+DPSub               5166          4422          1641477.39
+MPDP                744           0             75903325.79
+Transformational    0             0             1641477.39
+TopDown(Naive)      7089          5933          1641477.39
+TopDown(Mincut)     1156          0             1641477.39</code></pre>
+
+<p>
+  MPDP explored partitions 从 5166 降到 744，rejected partitions 从 4422 降到 0。
+  这里 best cost 高于 DPSub，是因为 MPDP 内部不传播 Sorted property，也不选择 MergeJoin。
+</p>
+
+<h3>9.2 Branching block-cut tree case</h3>
+
+<pre><code>$ ./build/volcano_join_demo --compare --test mpdp_branching_blocks
+
+Strategy            Partitions    Rejected      BestCost
+DPSub               1336          850           11811.99
+MPDP                486           0             11811.99
+TopDown(Mincut)     822           0             11811.99</code></pre>
+
+<p>
+  这个 case 说明 MPDP 的 block-local 枚举同样适用于分叉 block-cut tree。
+  MPDP 比 DPSub 少枚举 850 个会被拒绝的候选；在这个数据分布下，即便没有内部 Sorted/MergeJoin，
+  best cost 仍与 DPSub 相同。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="comparison">10. 与其他策略对比</h2>
+
+<table>
+  <tr><th>维度</th><th>DPSub</th><th>MPDP</th><th>TopDown(Mincut)</th></tr>
+  <tr>
+    <td>搜索方向</td>
+    <td>Bottom-up</td>
+    <td>Bottom-up</td>
+    <td>Top-down</td>
+  </tr>
+  <tr>
+    <td>候选生成</td>
+    <td>全局 subset 枚举 + 过滤</td>
+    <td>Block-local CCP pair + Grow</td>
+    <td>递归调用中的 Mincut partitioner</td>
+  </tr>
+  <tr>
+    <td>无效候选</td>
+    <td>会计入 <code>partitions_rejected</code></td>
+    <td>发出前过滤，专门用例中为 0</td>
+    <td>直接生成 CP-free partitions，rejected 为 0</td>
+  </tr>
+  <tr>
+    <td>物理计划生成</td>
+    <td>自底向上填 DP 表</td>
+    <td>relation-set memo；HashJoin / NestedLoopJoin；根 Sorted 适配</td>
+    <td>递归求解并 memoize</td>
+  </tr>
+  <tr>
+    <td>教学重点</td>
+    <td>完整、直接、容易理解的 baseline</td>
+    <td>MPDP 论文中的 block-local join-pair 枚举</td>
+    <td>自顶向下划分和按需 memoization</td>
+  </tr>
+</table>
+
+<p>
+  一句话总结：<strong>MPDP 是独立的 block-local join-pair 枚举实现</strong>。
+  串行和 CPU 并行入口共享同一套 relation-set memo、block-local join-pair 枚举与 cell 合并逻辑；
+  读 trace 时，最应该对比的是 <code>Partitions</code>、<code>Rejected</code>、
+  以及因物理计划空间不同而变化的 <code>PlansCosted</code> / <code>Cached</code>。
+</p>
+
+<!-- ================================================================== -->
+<h2 id="references">11. 参考资料</h2>
+
+<ol>
+  <li>
+    <strong>Mancini, R., Karthik, S., Chandra, B., et al.</strong> —
+    <em>Efficient Massively Parallel Join Optimization for Large Queries</em>.
+    SIGMOD 2022.
+    <br><small>
+      MPDP 思想来源。本文只说明 demo 中的 CPU 教学实现，不声称实现论文的 GPU runtime。
+      <a href="https://dl.acm.org/doi/10.1145/3514221.3517875">ACM DL</a>
+    </small>
+  </li>
+  <li>
+    <strong>Manciukic/postgres-gpuqo</strong> —
+    原作者开源实现。
+    <br><small>
+      本文并行模型主要参考
+      <code>src/backend/optimizer/gpuqo/gpuqo_cpu_dpsub_parallel.cu</code>、
+      <code>gpuqo_cpu_dpsub_bicc.cu</code>、
+      <code>gpuqo_cpu_level_hashtable.cuh</code> 和
+      <code>gpuqo_dpsub_bicc.cuh</code>。
+      <a href="https://github.com/Manciukic/postgres-gpuqo">GitHub</a>
+    </small>
+  </li>
+  <li>
+    <strong>G. Moerkotte, T. Neumann</strong> —
+    <em>Analysis of Two Existing and One New Dynamic Programming Algorithm for the Generation of Optimal Bushy Join Trees without Cross Products</em>.
+    VLDB 2006.
+    <br><small>DPSub / DPccp 背景，用来理解 bottom-up CP-free join enumeration 的基线。</small>
+  </li>
+  <li>
+    <strong>D. DeHaan, F. W. Tompa</strong> —
+    <em>Optimal Top-Down Join Enumeration</em>. SIGMOD 2007.
+    <br><small>TopDown(Mincut) 对照组的理论来源。</small>
+  </li>
+  <li>
+    <strong>本项目源码</strong> —
+    <a href="../src/mpdp.cpp"><code>mpdp.cpp</code></a>,
+    <a href="../include/volcano/mpdp.hpp"><code>mpdp.hpp</code></a>,
+    <a href="../src/dp_sub.cpp"><code>dp_sub.cpp</code></a>,
+    <a href="../examples/test_cases.cpp"><code>test_cases.cpp</code></a>,
+    <a href="../tests/test_join_search.cpp"><code>test_join_search.cpp</code></a>。
+  </li>
+  <li>
+    <strong>本项目相关文档</strong> —
+    <a href="index.html">Join Order Algorithm Laboratory</a> ·
+    <a href="dpsub-workflow.html">DPSub Workflow</a> ·
+    <a href="transformational-search.html">Transformational Search Workflow</a> ·
+    <a href="topdown-partitioning-workflow.html">TopDown Partitioning Workflow</a>
+  </li>
+</ol>
+
+<hr>
+
+<p style="text-align:center; color:var(--subtle); font-size:.9rem;">
+  <strong>MPDP Workflow</strong> —
+  关联源码：
+  <a href="../src/mpdp.cpp"><code>mpdp.cpp</code></a> ·
+  <a href="../include/volcano/mpdp.hpp"><code>mpdp.hpp</code></a> ·
+  <a href="../src/dp_sub.cpp"><code>dp_sub.cpp</code></a> ·
+  <a href="../src/cost_model.cpp"><code>cost_model.cpp</code></a> ·
+  <a href="../examples/test_cases.cpp"><code>test_cases.cpp</code></a>
+  <br>
+  <a href="index.html">← Back to Lab Index</a>
+  &nbsp;|&nbsp;
+  <a href="dpsub-workflow.html">DPSub Workflow</a>
+  &nbsp;|&nbsp;
+  <a href="transformational-search.html">Transformational Search Workflow</a>
+  &nbsp;|&nbsp;
+  <a href="topdown-partitioning-workflow.html">TopDown Partitioning Workflow</a>
+</p>
+
+</body>
+</html>

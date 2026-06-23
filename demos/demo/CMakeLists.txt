@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(Threads REQUIRED)
+
 # --- volcano_core library (shared infrastructure) ---
 add_library(volcano_core STATIC
   src/cost_model.cpp
@@ -21,6 +23,7 @@ target_include_directories(volcano_core
 # --- Strategy implementations ---
 add_library(volcano_strategies STATIC
   src/dp_sub.cpp
+  src/mpdp.cpp
   src/mincut.cpp
   src/top_down_partitioning.cpp
   src/transformational.cpp
@@ -34,6 +37,7 @@ target_include_directories(volcano_strategies
 target_link_libraries(volcano_strategies
   PUBLIC
     volcano_core
+    Threads::Threads
 )
 
 # --- Test cases library ---

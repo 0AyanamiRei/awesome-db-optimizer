@@ -154,7 +154,7 @@
   <li><a href="#trace">Trace 计数器</a></li>
   <li><a href="#dpccp-relation">与 DPccp 的关系</a></li>
   <li><a href="#example">例子：chain_3 流程模拟</a></li>
-  <li><a href="#compare">四种策略对比</a></li>
+  <li><a href="#compare">五种策略对比</a></li>
   <li><a href="#parallelism">并行化潜力</a></li>
   <li><a href="#references">参考资料</a></li>
 </ol>
@@ -164,8 +164,9 @@
 <h2 id="scope">1. 文档定位</h2>
 
 <p>
-  当前项目里有四种 join order search strategy：
+  当前项目里有五种 join order search strategy：
   <code>DPSub</code>（命令行别名 <code>dpsub</code>）、
+  <code>MPDP</code>、
   <code>Transformational</code>、
   <code>TopDown(Naive)</code>、
   <code>TopDown(Mincut)</code>。
@@ -1268,12 +1269,13 @@ DPSub               10            2             57            0             20  
 </ul>
 
 <!-- ================================================================== -->
-<h2 id="compare">13. 四种策略对比</h2>
+<h2 id="compare">13. 五种策略对比</h2>
 
 <pre><code>$ demos/demo/build/volcano_join_demo --compare --test chain_3
 
 Strategy            Partitions    Rejected      PlansCosted   CacheHits     Cached        Dups          Rules         DPCells       Pruned        BestCost
 DPSub               10            2             57            0             20            0             0             20            0             19651.56
+MPDP                8             0             19            0             6             0             0             6             0             30200.00
 Transformational    0             0             34            27            12            16            24            0             0             19651.56
 TopDown(Naive)      7             1             25            7             12            0             0             0             0             19651.56
 TopDown(Mincut)     6             0             25            7             12            0             0             0             0             19651.56</code></pre>
@@ -1281,10 +1283,11 @@ TopDown(Mincut)     6             0             25            7             12  
 <p>这个对比的几个观察：</p>
 
 <ul>
-  <li>四种策略 <code>BestCost</code> 完全相同 (19651.56)，说明在 chain_3 上都找到了全局最优。</li>
-  <li><code>DPSub</code> 的 <code>Partitions=10</code> 多于 <code>TopDown(Naive)=7</code>，因为 DPSub 枚举了两个对称方向。</li>
+  <li>property-aware 策略 <code>BestCost</code> 完全相同 (19651.56)；MPDP 使用 relation-set-only memo，未在内部传播 Sorted/MergeJoin，因此 BestCost 为 30200.00。</li>
+  <li><code>DPSub</code> 的 <code>Partitions=10</code> 多于 <code>MPDP=8</code>，因为 MPDP 在发出 join-pair 前已经避开了一部分不连通候选。</li>
+  <li><code>TopDown(Naive)=7</code> 少于 DPSub，是因为 TopDown 只枚举无序划分，不枚举左右两个对称方向。</li>
   <li><code>DPSub</code> 的 <code>PlansCosted=57</code> 最多，因为它为每个合法 split 都尝试 HashJoin、NestedLoopJoin、MergeJoin 三种物理实现，再加上 Sort Enforcer 传播。</li>
-  <li><code>DPSub</code> 使用 <code>dp_cells_filled</code>，而 <code>Transformational</code> 与两种 TopDown 策略始终为 0。</li>
+  <li><code>DPSub</code> 与 <code>MPDP</code> 都使用 <code>dp_cells_filled</code>，但 MPDP 只缓存 <code>RelSet</code>，因此 chain_3 的 DPCells 是 6 而不是 DPSub 的 20。</li>
   <li><code>Transformational</code> 的 CacheHits=27 与其他策略的 0/7/7 形成鲜明对比 — 这是它 "先构造完整逻辑 memo，再做物理优化" 的二阶段结构导致的。</li>
   <li><code>TopDown(Mincut)</code> 的 <code>Partitions=6</code> 且 0 拒绝 — Mincut 分区策略生成的都是合法 split。</li>
 </ul>

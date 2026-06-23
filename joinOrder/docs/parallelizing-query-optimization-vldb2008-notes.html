@@ -523,6 +523,33 @@ P_{\lfloor S/2 \rfloor} \Join P_{S-\lfloor S/2 \rfloor}
   <li><strong>优化器问题变成执行器问题。</strong>MPJ 可以借鉴 join 执行里的 partitioning、block nested-loop、cache-conscious layout、index skipping 等技术。</li>
 </ol>
 
+<p>到这里再看 <code>ParallelDPEnum</code> 就不突兀了。它不是另一个 join-order 算法，也不是替代 cost model 的模块，而是论文给“并行版 serial DP 顶层 driver”起的名字。可以把它和前一节的 <code>SerialDPEnum</code> 对齐看：</p>
+
+<table>
+  <thead>
+    <tr><th>对象</th><th>它负责什么</th><th>和 MPJ 的关系</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>SerialDPEnum</code></td>
+      <td>按 \(S=2..N\) 一层层构造 MEMO，层内用嵌套循环枚举 <code>smallQS</code> 和 <code>largeQS</code>。</td>
+      <td>还没有 MPJ 这个抽象；它只是直接跑双层/多层 loop。</td>
+    </tr>
+    <tr>
+      <td><code>MultiplePlanJoin</code></td>
+      <td>把“构造某个 \(P_S\)”看成若干 plan partitions 之间的 join，例如 \(P_1 \Join P_3\)、\(P_2 \Join P_2\)。</td>
+      <td>这是每一层内部真正可以切分给线程的工作单元。</td>
+    </tr>
+    <tr>
+      <td><code>ParallelDPEnum</code></td>
+      <td>仍按 \(S=2..N\) 推进，但每一层先调用 <code>AllocateSearchSpace</code>，把该层的 MPJ search space 分给多个线程。</td>
+      <td>它是外层调度器：负责分配 MPJ、等待线程、合并和 prune 结果。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>所以 Algorithm 2 可以读成一句话：<strong>保留 Serial DP 的层级顺序，把每一层内部的 candidate pair 枚举改成并行执行的 MPJ。</strong>层与层之间仍然不能乱序，因为 \(P_S\) 依赖更小的 \(P_i\)；但同一层里，不同 candidate pair 的输入都已经在更小层算好，因此可以并行。</p>
+
 <p>ParallelDPEnum 的高层流程因此是：</p>
 
 <figure class="paper-figure">

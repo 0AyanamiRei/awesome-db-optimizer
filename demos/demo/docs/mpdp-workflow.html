@@ -180,10 +180,10 @@ Find blocks of induced graph G[S]
 For each block B, enumerate local CCP pairs (lb, rb)
       │
       ▼
-Grow lb inside S \ rb
+Grow lb inside S \ rb, and grow rb inside S \ lb
       │
       ▼
-Emit global Join-Pair (left, right = S \ left)
+Emit global Join-Pair (left, right) if they exactly cover S
       │
       ▼
 Cost HashJoin / NestedLoopJoin into relation-set memo</div>
@@ -294,9 +294,10 @@ Cost HashJoin / NestedLoopJoin into relation-set memo</div>
         continue
 
       left = Grow(lb, allowed = S - rb)
-      right = S - left
+      right = Grow(rb, allowed = S - lb)
 
-      if left/right is a connected CP-free split and not emitted:
+      if left/right is disjoint, exactly covers S, connected,
+         has a crossing predicate, and ordered pair is not emitted:
         emit (left, right)</code></pre>
 
 <p>
@@ -305,9 +306,17 @@ Cost HashJoin / NestedLoopJoin into relation-set memo</div>
 
 <ol>
   <li><strong>Block-local：</strong><code>lb</code> 和 <code>rb</code> 都来自同一个 block。</li>
-  <li><strong>Global growth：</strong><code>lb</code> 不是直接作为最终左侧，而是在 <code>S \ rb</code> 中向外生长。</li>
-  <li><strong>Dedup：</strong>不同 block 或不同局部 pair 可能映射到同一个 global join-pair，需要用 <code>left|right</code> 去重。</li>
+  <li><strong>Global growth：</strong><code>lb</code> 和 <code>rb</code> 都不是直接作为最终两侧，而是分别在 <code>S \ rb</code> 与 <code>S \ lb</code> 中向外生长。</li>
+  <li><strong>Cover check：</strong>只有当 grow 后的 <code>left</code> 与 <code>right</code> 不相交、且 <code>left | right == S</code> 时，这个局部分割才覆盖了当前 DP 状态。</li>
+  <li><strong>Dedup：</strong>不同 block 或不同局部 pair 可能映射到同一个 global join-pair，需要用 ordered pair <code>(left, right)</code> 去重；不能用 <code>left | right</code>，因为合法候选的并集总是 <code>S</code>。</li>
 </ol>
+
+<div class="callout">
+  <strong>源码边界：</strong>
+  这里对齐的是 block 枚举 + two-sided grow 的工作流。当前 demo 为了让教学 trace 更直接，
+  把局部连通性和 crossing-predicate 检查显式前置；GPU-QO 的 BICC 实现会更宽地枚举 block subset，
+  再依赖 two-sided grow、覆盖检查和 join/memo 检查淘汰候选。因此不要把这段伪代码读成源码逐行移植。
+</div>
 
 <!-- ================================================================== -->
 <h2 id="blocks">5. Blocks 与 Grow</h2>
@@ -376,14 +385,15 @@ Conceptually:
 <h3>5.3 Grow 的作用</h3>
 
 <p>
-  <code>Grow(graph, seeds, allowed)</code> 是一个 BFS：
-  从局部 <code>lb</code> 出发，只在 <code>allowed = S \ rb</code> 内沿 join graph 扩展，
-  把所有能连到 <code>lb</code> 的点都吸收到最终左侧。
+  <code>Grow(graph, seeds, allowed)</code> 是一个 BFS。
+  MPDP 会对局部 pair 的两侧各做一次 grow：
+  从 <code>lb</code> 出发，只在 <code>allowed = S \ rb</code> 内沿 join graph 扩展得到 <code>left</code>；
+  从 <code>rb</code> 出发，只在 <code>allowed = S \ lb</code> 内扩展得到 <code>right</code>。
 </p>
 
-<pre><code>Grow(lb, S - rb):
-  visited = lb
-  queue = lb
+<pre><code>Grow(seeds, allowed):
+  visited = seeds
+  queue = seeds
 
   while queue not empty:
     current = pop(queue)
@@ -395,7 +405,9 @@ Conceptually:
   return visited</code></pre>
 
 <p>
-  最终 <code>right = S \ left</code>。如果 <code>left/right</code> 不连通，或二者之间没有 predicate，
+  最终不是简单令 <code>right = S \ left</code>，而是检查 grow 出来的
+  <code>left</code> 与 <code>right</code> 是否不相交、并集是否等于 <code>S</code>。
+  如果二者不能覆盖 <code>S</code>，或任一侧不连通，或二者之间没有 predicate，
   这个候选会被丢弃。由于丢弃发生在发出结果前，trace 中不会把它记为 rejected partition。
 </p>
 

@@ -373,6 +373,91 @@ window.MathJax = {
         plans = CreateJoinPlans(Memo[smallQS], Memo[largeQS])
         PrunePlans(Memo[smallQS union largeQS], plans)</code></pre>
 
+<p>这里最容易误解的是 <code>overlaps</code>。它不是说两个子计划“语义相关”，而是说两个 quantifier set 有交集。比如现在 query graph 是一个 star：</p>
+
+<pre><code>    B
+    |
+C - A - D
+
+join predicates: A-B, A-C, A-D</code></pre>
+
+<p>假设已经算出了：</p>
+
+<pre><code>P1 = { A, B, C, D }
+P2 = { AB, AC, AD }
+P3 = { ABC, ABD, ACD }</code></pre>
+
+<p>现在要构造 \(P_4 = ABCD\)。Serial DP 会尝试两类 plan join：</p>
+
+<pre><code>P1 x P3:
+  (A, ABC), (A, ABD), (A, ACD)
+  (B, ABC), (B, ABD), (B, ACD)
+  (C, ABC), (C, ABD), (C, ACD)
+  (D, ABC), (D, ABD), (D, ACD)
+
+P2 x P2:
+  (AB, AB), (AB, AC), (AB, AD)
+  (AC, AB), (AC, AC), (AC, AD)
+  (AD, AB), (AD, AC), (AD, AD)</code></pre>
+
+<p>其中 <code>(A, ABC)</code> 要被 disjoint filter 丢掉，因为左边包含 A，右边也包含 A：</p>
+
+<pre><code>{A} ∩ {A,B,C} = {A}  // overlap, invalid</code></pre>
+
+<p>如果不丢掉，它就等价于把“已经包含 A 的计划 ABC”再和“A 的计划”join 一次，A 这张表会在同一个 join tree 里出现两遍。这不是构造 \(ABCD\) 的合法子步骤。</p>
+
+<p>同理，<code>(AB, AC)</code> 也要丢掉：</p>
+
+<pre><code>{A,B} ∩ {A,C} = {A}  // overlap, invalid</code></pre>
+
+<p>它看起来像是在把两个有用的中间结果拼起来，但两个中间结果都已经消耗了 A。DP 的每一步 join 必须把两个<strong>互不相交</strong>的 relation set 拼成更大的 relation set；否则就不是“覆盖更多表”，而是在重复使用同一张表。</p>
+
+<p>反过来，<code>(B, ACD)</code> 不 overlap：</p>
+
+<pre><code>{B} ∩ {A,C,D} = ∅    // disjoint
+{B} -- {A,C,D}       // connected by join predicate A-B</code></pre>
+
+<p>所以它能通过两个 filter，并调用 <code>CreateJoinPlans</code> 生成形如 \(B \Join (A \Join C \Join D)\) 的候选计划。</p>
+
+<p>再看一个只通过 disjoint、但会被 connectivity filter 丢掉的例子。若枚举器看到了 <code>(B, CD)</code>：</p>
+
+<pre><code>{B} ∩ {C,D} = ∅      // disjoint
+B 与 {C,D} 之间没有 join predicate  // disconnected</code></pre>
+
+<p>这个 pair 没有重叠，但两边之间也没有连接边；在不允许 Cartesian product 的设置下，它会被 connectivity filter 丢掉。</p>
+
+<table>
+  <thead>
+    <tr><th>候选 pair</th><th>Disjoint?</th><th>Connected?</th><th>结果</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>(A, ABC)</code></td>
+      <td>否，交集是 <code>A</code></td>
+      <td>不用再检查</td>
+      <td>被 disjoint filter 丢掉。</td>
+    </tr>
+    <tr>
+      <td><code>(AB, AC)</code></td>
+      <td>否，交集是 <code>A</code></td>
+      <td>不用再检查</td>
+      <td>被 disjoint filter 丢掉。</td>
+    </tr>
+    <tr>
+      <td><code>(B, ACD)</code></td>
+      <td>是</td>
+      <td>是，通过边 <code>A-B</code></td>
+      <td>调用 <code>CreateJoinPlans</code>。</td>
+    </tr>
+    <tr>
+      <td><code>(B, CD)</code></td>
+      <td>是</td>
+      <td>否，没有跨两边的 join predicate</td>
+      <td>被 connectivity filter 丢掉。</td>
+    </tr>
+  </tbody>
+</table>
+
 <p>两个 filter 是后文的关键：</p>
 
 <table>

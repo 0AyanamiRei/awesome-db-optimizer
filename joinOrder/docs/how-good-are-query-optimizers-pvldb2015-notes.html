@@ -140,6 +140,23 @@
   }
 
   .note-list strong { color: #333; }
+  figure {
+    margin: 1.5rem 0;
+    text-align: center;
+  }
+  figure img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  figure figcaption {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    text-align: left;
+  }
   .footnotes {
     font-size: 0.85rem;
     color: var(--muted);
@@ -164,7 +181,7 @@
   <em>How Good Are Query Optimizers, Really?</em>, PVLDB 9(3), 2015.<br>
   <strong>定位：</strong>Join Order Benchmark (JOB) 的提出论文；用真实数据和真实多表 join 查询重新审视传统查询优化器的三个核心组件。<br>
   <strong>阅读来源：</strong>本仓库 PDF：<code>joinOrder/paper/how good are qo--pvldb2015.pdf</code><br>
-  <strong>日期：</strong>2026-06-18
+  <strong>日期：</strong>2026-06-18（更新于 2026-06-25：从论文 PDF 提取并嵌入全部 9 张原图）
 </p>
 
 <nav class="toc">
@@ -239,6 +256,12 @@ SQL query<br>
   -> chosen physical plan
 </div>
 
+
+<figure>
+  <img src="figures/fig01_optimizer_architecture.png" alt="Figure 1: Traditional query optimizer architecture — 论文原图。SQL → Cardinality Estimation → Plan Space Enumeration → Cost Model → 物理计划。" loading="lazy">
+  <figcaption>Figure 1: Traditional query optimizer architecture — 论文原图。SQL → Cardinality Estimation → Plan Space Enumeration → Cost Model → 物理计划。</figcaption>
+</figure>
+
 <p>理论上，如果 cardinality estimation 和 cost model 都准确，那么这个架构可以选到最优计划。现实中，优化器通常要依赖 <span class="key-term">uniformity</span>（均匀分布）、<span class="key-term">independence</span>（谓词独立）、<span class="key-term">principle of inclusion</span>（小 domain 的 join key 都能在大 domain 中匹配）这类简化假设。真实数据里这些假设经常不成立，特别是多表 join 后的相关性。</p>
 
 <p>论文明确提出三个问题：</p>
@@ -267,7 +290,15 @@ SQL query<br>
 
 <p>JOB 查询都是 select-project-join block。论文构造了 33 个 query structures，每个结构有 2-6 个只在 selection 上不同的 variants，总共 113 个查询。它们包含 3 到 16 个 join，平均 8 个 join。</p>
 
-<p>一个典型查询会问类似“美国公司制作的电影的评分与上映日期”这种电影爱好者可能真的会问的问题。论文刻意没有用极端 trick：没有故意挑极端相关属性，也没有加入不等值 join 或非 surrogate key join，因为仅靠普通 SPJ 和真实相关性就已经足够困难。</p>
+<p>一个典型查询会问类似“美国公司制作的电影的评分与上映日期”这种电影爱好者可能真的会问的问题。
+
+
+<figure>
+  <img src="figures/fig02_query_graph.png" alt="Figure 2: Typical query graph of the workload — 论文原图。实线表示 join 边，虚线表示 selection 边。" loading="lazy">
+  <figcaption>Figure 2: Typical query graph of the workload — 论文原图。实线表示 join 边，虚线表示 selection 边。</figcaption>
+</figure>
+
+论文刻意没有用极端 trick：没有故意挑极端相关属性，也没有加入不等值 join 或非 surrogate key join，因为仅靠普通 SPJ 和真实相关性就已经足够困难。</p>
 
 <h3>2.3 PostgreSQL 作为实验平台</h3>
 
@@ -347,17 +378,35 @@ dom(x): attribute x 的 distinct value count
   <li><strong>没有被测系统能识别 join-crossing correlations。</strong>也就是跨表相关性，例如“出生在巴黎的演员更可能出演法国电影”。</li>
 </ul>
 
+
+<figure>
+  <img src="figures/fig03_cardinality_quality.png" alt="Figure 3: Quality of cardinality estimates for multi-join queries — 论文原图。每个 boxplot 汇总 workload 中所有特定 join 数子表达式的误差分布。横轴：join 数量；纵轴（log scale）：q-error。所有系统的误差均随 join 数增加而快速放大。" loading="lazy" style="max-width:720px">
+  <figcaption>Figure 3: Quality of cardinality estimates for multi-join queries — 论文原图。每个 boxplot 汇总 workload 中所有特定 join 数子表达式的误差分布。横轴：join 数量；纵轴（log scale）：q-error。所有系统的误差均随 join 数增加而快速放大。</figcaption>
+</figure>
+
 <div class="callout warn">
   <strong>重要：</strong>论文提醒读者不要把图 3 当成“某个 DBMS 优化器整体好坏”的排名。最终 runtime 取决于系统如何使用估计值、是否有 adaptive operator、是否有更 robust 的执行策略，而不仅仅是估计数字本身。
 </div>
 
 <h3>3.4 TPC-H 为什么显得简单</h3>
 
-<p>论文用 PostgreSQL 在 TPC-H 和 JOB 上的估计误差做对比，认为 TPC-H 对 cardinality estimator 的挑战不足。我的理解是：TPC-H 当然仍可用于执行引擎性能测试，但如果研究目标是 join cardinality estimation，JOB 更能暴露真实相关性带来的难题。</p>
+<p>
+<figure>
+  <img src="figures/fig04_postgres_vs_tpch.png" alt="Figure 4: PostgreSQL cardinality estimates for 4 JOB queries and 3 TPC-H queries — 论文原图。JOB 查询的误差明显大于 TPC-H，说明合成 benchmark 低估了真实数据中的相关性。" loading="lazy">
+  <figcaption>Figure 4: PostgreSQL cardinality estimates for 4 JOB queries and 3 TPC-H queries — 论文原图。JOB 查询的误差明显大于 TPC-H，说明合成 benchmark 低估了真实数据中的相关性。</figcaption>
+</figure>
+
+论文用 PostgreSQL 在 TPC-H 和 JOB 上的估计误差做对比，认为 TPC-H 对 cardinality estimator 的挑战不足。我的理解是：TPC-H 当然仍可用于执行引擎性能测试，但如果研究目标是 join cardinality estimation，JOB 更能暴露真实相关性带来的难题。</p>
 
 <h3>3.5 “修正统计信息”也可能露出更大问题</h3>
 
-<p>PostgreSQL join estimate 很依赖 distinct value count。作者把 estimated distinct counts 替换成 true distinct counts 后，误差方差略有改善，但系统性低估反而更明显。原因是原先被低估的 distinct counts 会让 join cardinality 估计变大，偶然抵消 independence assumption 的低估。</p>
+<p>
+<figure>
+  <img src="figures/fig05_distinct_counts.png" alt="Figure 5: PostgreSQL cardinality estimates based on default distinct count estimates vs. true distinct counts — 论文原图。替换为 true distinct counts 后方差微降但系统性低估更明显，体现了 two wrongs that make a right。" loading="lazy">
+  <figcaption>Figure 5: PostgreSQL cardinality estimates based on default distinct count estimates vs. true distinct counts — 论文原图。替换为 true distinct counts 后方差微降但系统性低估更明显，体现了 two wrongs that make a right。</figcaption>
+</figure>
+
+PostgreSQL join estimate 很依赖 distinct value count。作者把 estimated distinct counts 替换成 true distinct counts 后，误差方差略有改善，但系统性低估反而更明显。原因是原先被低估的 distinct counts 会让 join cardinality 估计变大，偶然抵消 independence assumption 的低估。</p>
 
 <div class="callout red">
   <strong>这就是论文说的 two wrongs that make a right：</strong>两个错误可能相互抵消。优化器工程里的麻烦在于，修好一个统计项可能让另一些查询变慢，因为原先的“错”正在掩盖另一个更深的“错”。
@@ -396,7 +445,13 @@ dom(x): attribute x 的 distinct value count
   <strong>论文的工程建议：</strong>不要只看 expected cost。优化器应该考虑估计本身的不确定性和算法复杂度。一个“估计上只快一点、但错了会炸”的计划，不应该轻易胜过 robust plan。
 </div>
 
-<p>作者禁用非 index nested-loop join 后，使用 PostgreSQL estimates 不再出现 timeout。之后又发现一些慢查询来自 PostgreSQL 9.4 根据估计值固定 hash table size；build input 被低估时，hash table 太小导致长 collision chains。作者 backport 了 PostgreSQL 9.5 的 runtime rehashing 补丁后，primary-key-only 场景中相对 true cardinalities 慢 2 倍以上的查询少于 4%。</p>
+<p>
+<figure>
+  <img src="figures/fig06_slowdown_nested.png" alt="Figure 6: Slowdown of queries using PostgreSQL estimates w.r.t. true cardinalities (primary key indexes only) — 论文原图。(a) 默认配置有大量 timeout；(b) 禁用非 index nested-loop join 后 timeout 消失；(c) 启用 runtime rehashing 后进一步改善。" loading="lazy">
+  <figcaption>Figure 6: Slowdown of queries using PostgreSQL estimates w.r.t. true cardinalities (primary key indexes only) — 论文原图。(a) 默认配置有大量 timeout；(b) 禁用非 index nested-loop join 后 timeout 消失；(c) 启用 runtime rehashing 后进一步改善。</figcaption>
+</figure>
+
+作者禁用非 index nested-loop join 后，使用 PostgreSQL estimates 不再出现 timeout。之后又发现一些慢查询来自 PostgreSQL 9.4 根据估计值固定 hash table size；build input 被低估时，hash table 太小导致长 collision chains。作者 backport 了 PostgreSQL 9.5 的 runtime rehashing 补丁后，primary-key-only 场景中相对 true cardinalities 慢 2 倍以上的查询少于 4%。</p>
 
 <h3>4.3 为什么 primary-key-only 反而稳</h3>
 
@@ -406,7 +461,13 @@ dom(x): attribute x 的 distinct value count
 
 <h3>4.4 外键索引越多，优化器工作越难</h3>
 
-<p>当作者额外给所有 foreign key attributes 建索引后，access paths 变多，query optimizer 的选择也变多。论文发现此时有 40% 的查询比使用 true cardinalities 的计划慢至少 2 倍。注意，这不是说加索引总体会让系统变慢；论文说总体性能通常显著提高，但<strong>更多索引让优化问题本身更难</strong>。</p>
+<p>
+<figure>
+  <img src="figures/fig07_slowdown_index.png" alt="Figure 7: Slowdown of queries using PostgreSQL estimates w.r.t. true cardinalities — 论文原图。(a) PK indexes only: 多数查询接近最优；(b) PK+FK indexes: 40% 的查询慢 2 倍以上。更丰富的物理设计让优化问题更困难。" loading="lazy">
+  <figcaption>Figure 7: Slowdown of queries using PostgreSQL estimates w.r.t. true cardinalities — 论文原图。(a) PK indexes only: 多数查询接近最优；(b) PK+FK indexes: 40% 的查询慢 2 倍以上。更丰富的物理设计让优化问题更困难。</figcaption>
+</figure>
+
+当作者额外给所有 foreign key attributes 建索引后，access paths 变多，query optimizer 的选择也变多。论文发现此时有 40% 的查询比使用 true cardinalities 的计划慢至少 2 倍。注意，这不是说加索引总体会让系统变慢；论文说总体性能通常显著提高，但<strong>更多索引让优化问题本身更难</strong>。</p>
 
 <h3>4.5 Join-crossing correlations 与物理设计</h3>
 
@@ -428,7 +489,13 @@ dom(x): attribute x 的 distinct value count
 
 <h3>5.2 只有 true cardinalities 才让 cost 与 runtime 更可靠相关</h3>
 
-<p>论文比较了 predicted cost 与真实 runtime 的相关性。使用 PostgreSQL estimates 时，outliers 很多；注入 true cardinalities 后，PostgreSQL cost model 才成为比较可靠的 runtime predictor。用 default cost model + true cardinalities 时，论文按线性拟合定义的 median prediction error 为 38%。</p>
+<p>
+<figure>
+  <img src="figures/fig08_cost_vs_runtime.png" alt="Figure 8: Predicted cost vs. runtime for different cost models — 论文原图。(a) PostgreSQL default cost + PostgreSQL estimates: 相关性弱；(b) default cost + true cardinalities: 改善明显；(c) tuned cost + PostgreSQL estimates: 仍有 outliers；(d) tuned cost + true cardinalities: 最佳；(e) Cmm simple cost + PostgreSQL estimates: 不如 tuned；(f) Cmm + true cardinalities: 简单模型也可靠。核心结论：cardinality 质量压倒 cost model 复杂度。" loading="lazy">
+  <figcaption>Figure 8: Predicted cost vs. runtime for different cost models — 论文原图。(a) PostgreSQL default cost + PostgreSQL estimates: 相关性弱；(b) default cost + true cardinalities: 改善明显；(c) tuned cost + PostgreSQL estimates: 仍有 outliers；(d) tuned cost + true cardinalities: 最佳；(e) Cmm simple cost + PostgreSQL estimates: 不如 tuned；(f) Cmm + true cardinalities: 简单模型也可靠。核心结论：cardinality 质量压倒 cost model 复杂度。</figcaption>
+</figure>
+
+论文比较了 predicted cost 与真实 runtime 的相关性。使用 PostgreSQL estimates 时，outliers 很多；注入 true cardinalities 后，PostgreSQL cost model 才成为比较可靠的 runtime predictor。用 default cost model + true cardinalities 时，论文按线性拟合定义的 median prediction error 为 38%。</p>
 
 <h3>5.3 面向内存调参：有提升，但仍被 cardinality 盖过</h3>
 
@@ -470,7 +537,13 @@ index nested-loop:
 
 <h3>6.1 Join order 的影响有多大</h3>
 
-<p>作者用 Quickpick 随机生成 join order，每个查询运行 10,000 次，观察 random plans 的 cost 分布。结论是：join order 非常重要，慢计划和好计划常常差数个数量级。</p>
+<p>
+<figure>
+  <img src="figures/fig09_cost_distributions.png" alt="Figure 9: Cost distributions for 5 queries and different index configurations — 论文原图。绿线为最优计划的 cost。分布越宽说明搜索空间中好计划越稀少；FK indexes 配置下分布显著更宽且有多个峰。" loading="lazy" style="max-width:720px">
+  <figcaption>Figure 9: Cost distributions for 5 queries and different index configurations — 论文原图。绿线为最优计划的 cost。分布越宽说明搜索空间中好计划越稀少；FK indexes 配置下分布显著更宽且有多个峰。</figcaption>
+</figure>
+
+作者用 Quickpick 随机生成 join order，每个查询运行 10,000 次，观察 random plans 的 cost 分布。结论是：join order 非常重要，慢计划和好计划常常差数个数量级。</p>
 
 <table>
   <thead>

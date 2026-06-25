@@ -198,8 +198,13 @@ window.MathJax = {
   <strong>日期：</strong>2026-06-22
 </p>
 
+<div class="callout warn">
+<strong>先读术语表！</strong>这篇论文缩写密集（QEP、QS、MEMO、MPJ、SVA、SVJ、SSDV…），生涩名词多（polyadic DP、stratum、candidate pair…）。建议先花 3 分钟扫一遍下方的<a href="#glossary">术语速查表</a>，再逐节往下读——会顺畅很多。
+</div>
+
 <nav class="toc">
 <ol>
+  <li><a href="#glossary">术语速查：先把生词过一遍</a></li>
   <li><a href="#s0">阅读路线：这篇论文在 join-order 脉络里的位置</a></li>
   <li><a href="#authors">作者背景：为什么它像一篇工业优化器论文</a></li>
   <li><a href="#s1">原文 §1：问题、难点与贡献</a></li>
@@ -215,6 +220,119 @@ window.MathJax = {
   <li><a href="#summary">读完应留下的心智模型</a></li>
 </ol>
 </nav>
+
+<hr>
+
+<h2 id="glossary">术语速查：先把生词过一遍</h2>
+
+<p>这篇论文的英文缩写和领域名词密度很高。下面按"直觉优先"的方式解释每个核心术语——不是查字典式的定义，而是在这篇论文的语境下它到底指什么。</p>
+
+<table>
+  <thead>
+    <tr><th>缩写/术语</th><th>全称</th><th>论文里的直觉</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="key-term">QEP</span></td>
+      <td>Query Execution Plan（查询执行计划）</td>
+      <td>就是优化器最终输出的一棵 join tree。它描述了"先 join 哪两张表、用什么 join 方法（hash/nested-loop/merge）、再和谁 join"的完整执行方案。可以把它想象成一道菜谱：不是数据本身，而是烹饪步骤。论文中有时也用 <strong>plan</strong> 简称。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">quantifier</span></td>
+      <td>—</td>
+      <td>论文对"查询里的一张表（或 range variable）"的称呼。如果你写 <code>FROM A, B, C</code>，那 A、B、C 各是一个 quantifier。之所以不直接用 "table"，是因为同一个物理表可能以不同别名出现多次。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">quantifier set</span><br>（简称 QS）</td>
+      <td>—</td>
+      <td>一组 quantifier 的集合。例如 <code>{A, B, C}</code> 表示"已经 join 了 A、B、C 这三张表"的状态。QEP 的"进度"就是用它覆盖了哪些 quantifier 来描述的：一个覆盖了 {A, B, C} 的计划，和你尚未 join 的 D、E 之间能不能发生下一步 join。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">MEMO</span></td>
+      <td>—</td>
+      <td>优化器的内存数据结构，按 quantifier set 组织。你可以把它想象成一个巨大的查找表：<strong>key = quantifier set，value = 这个 set 上所有还没被淘汰的 QEP 列表</strong>。例如 <code>MEMO[{A,B}]</code> 存的是"覆盖了表 A 和 B 的所有候选 join 方案"。DP 的过程就是从小到大不断往 MEMO 里填新 entry。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">plan partition</span><br>（记作 \(P_k\)）</td>
+      <td>—</td>
+      <td>MEMO 中<strong>所有 quantifier set size = k 的 entry 的集合</strong>。例如 \(P_2\) 就是所有两表 join 方案的总和。论文把 MEMO 水平切成 \(P_1, P_2, \ldots, P_N\)，每一层就是 DP 的一个"进度层"。构造 \(P_4\)（所有四表 join）的原材料来自更小的 \(P_1, P_2, P_3\)。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">Plan Relation</span></td>
+      <td>—</td>
+      <td>论文把整个 MEMO 抽象成一张关系表：<code>PlanRelation(QS, PlanList)</code>——两列，一列是 quantifier set，一列是候选计划列表。这个抽象的意义是：接下来就可以用数据库里 join 执行的技术（分区、嵌套循环、索引跳跃）来处理"构造更大量词集计划"这个任务。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">candidate pair</span></td>
+      <td>—</td>
+      <td>一对来自两个更小 plan partition 的 QEP，例如 \(P_1\) 里的一条和 \(P_3\) 里的一条。DP 枚举器把它们拿出来，检查是否能拼成一个新的、覆盖更多表的计划。绝大多数 candidate pair 会因为重叠或不相连而被丢弃；少数通过检查的才会真正触发计划生成。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">disjoint filter</span></td>
+      <td>—</td>
+      <td>检查两边的 quantifier set 是否<strong>没有交集</strong>。如果左边已经用了表 A，右边也用了表 A，就不能拼——因为 A 不能在 join tree 里出现两次。这是论文优化的核心目标：大多数 candidate pair 都死在这一关，而大部分检查又是白费的。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">connectivity filter</span></td>
+      <td>—</td>
+      <td>检查两边之间是否<strong>至少存在一条 join predicate</strong>。如果两边没有连接边，拼出来的计划就包含 Cartesian product（叉积），在禁用叉积的设置下会被丢弃。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">CreateJoinPlans</span></td>
+      <td>—</td>
+      <td>真正昂贵的操作：给定两个通过 filter 的子计划，枚举所有可能的 join 方式（左右交换、不同 join 算法等），调用 cost model 估算代价，产生一批新的候选 QEP。论文衡量"真实工作量"的指标就是各线程调用了多少次 CreateJoinPlans。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">PrunePlans</span></td>
+      <td>—</td>
+      <td>把新生成的 QEP 和 MEMO 里同一 quantifier set 上已有的 QEP 比较，淘汰代价更高的。这是 DP 保留最优子结构的核心操作。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">MPJ</span></td>
+      <td>Multiple Plan Join</td>
+      <td>论文的核心抽象：把"构造 \(P_S\)"重新解释为"在几个更小的 plan partition 之间做 join"。例如构造 \(P_4\) 就是执行 \(P_1 \Join P_3\) 和 \(P_2 \Join P_2\)，其中 join condition 就是 disjoint + connectivity 两个 filter。一旦接受这个视角，并行化就变成了"怎么给这些 join 分配线程"。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">SVA</span></td>
+      <td>Skip Vector Array</td>
+      <td>一个类似跳表（skip list）的辅助索引结构，建在每个 plan partition 上。它的作用是：当发现当前 candidate pair 在某个 quantifier 上重叠时，直接告诉你"可以跳到 partition 里的第几行"，从而跳过一整段必然重叠的候选，而不是一个一个检查。对 star query 效果最明显。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">SVJ</span></td>
+      <td>Skip Vector Join</td>
+      <td>配合 SVA 的 join 算法。核心逻辑分两路：如果当前 pair disjoint → 走正常 join 流程；如果 overlap → 用两侧的 skip vector 同时跳，跳过一整片重叠区间。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">SSDV</span></td>
+      <td>Search Space Description Vector</td>
+      <td>一个描述"哪个线程负责哪段搜索空间"的数据结构。你不用记住它的内部字段；只需知道它是线程分配工作时的"任务单"——告诉线程：你处理 outer partition 的第几行到第几行，inner partition 的第几行到第几行。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">polyadic DP</span></td>
+      <td>—</td>
+      <td>指 DP 的每一步需要<strong>两个</strong>（或更多）子问题的结果来构造当前问题的解。join enumeration 是典型的 polyadic：一个新计划由两个较小的子计划 join 而成。对比：Fibonacci 是 monadic——每一项只依赖前一项。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">non-serial DP</span></td>
+      <td>—</td>
+      <td>指大小为 k 的子问题<strong>不只依赖固定前几层</strong>（如 k−1 和 k−2），而是可能依赖所有更小的 size。构造 \(P_5\) 需要 \(P_1\) 和 \(P_4\)、\(P_2\) 和 \(P_3\)——所有组合都要考虑。这让通用的 pipeline-parallel DP 方法无法直接套用。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">search space</span></td>
+      <td>—</td>
+      <td>在本文中特指构造某一层 \(P_S\) 时需要检查的所有 candidate pair 的总和。不是"所有可能的 join order 的宇宙"，而是"当前这一层 DP 要枚举的组合范围"。</td>
+    </tr>
+    <tr>
+      <td><span class="key-term">stratum</span></td>
+      <td>—</td>
+      <td>论文里和"plan join stratum"连用，指构造 \(P_S\) 时的一组同构 join：例如 \(P_1 \Join P_3\) 是一个 stratum，\(P_2 \Join P_2\) 是另一个 stratum。不同 stratum 的有效 pair 密度可能差异巨大，这是负载偏斜的一个来源。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+<strong>读完这个表再往下看，会顺畅很多。</strong>后面的正文会反复使用这些缩写，但你可以随时回到这里对照。记住最核心的三个关系就够了：<strong>QEP 是最终产物（执行计划），MEMO 是按 quantifier set 组织的 QEP 仓库，MPJ 是把"往 MEMO 里填新层"这件事当 join 来做。</strong>
+</div>
 
 <hr>
 
@@ -309,7 +427,7 @@ window.MathJax = {
 
 <h2 id="s1">2. 原文 §1：问题、难点与贡献</h2>
 
-<p>论文开篇先承认 DP optimizer 的价值：它能枚举大量候选 QEP，估计代价，选择最低代价计划；通过 bottom-up 构造和 pruning，可以避免许多冗余子计划。问题是 join 表数一多，候选计划数在最坏情况下指数增长。对于超过 20 张表的真实 workload，例如文中提到的 Siebel 查询，传统 DP 的优化时间可能已经不可接受，甚至会超过执行时间。</p>
+<p>论文开篇先承认 DP optimizer 的价值：它能枚举大量候选 QEP（Query Execution Plan，查询执行计划——就是优化器最终输出的 join tree），估计代价，选择最低代价计划；通过 bottom-up 构造和 pruning，可以避免许多冗余子计划。问题是 join 表数一多，候选计划数在最坏情况下指数增长。对于超过 20 张表的真实 workload，例如文中提到的 Siebel 查询，传统 DP 的优化时间可能已经不可接受，甚至会超过执行时间。</p>
 
 <p>已有路线是 randomized 或 heuristic search：iterative improvement、simulated annealing、genetic algorithm、greedy 等。它们可以减少优化时间，但代价是可能错过最优计划。论文的立场很鲜明：如果坏计划执行时间比省下来的优化时间多几个数量级，那么这种交换未必划算。</p>
 
@@ -320,6 +438,13 @@ window.MathJax = {
 <p>这在 2008 年尤其自然：处理器性能提升开始更多来自 multi-core，而不是单核频率继续上升。商业数据库早就支持 parallel query execution，但 query optimization 本身仍多为串行。于是作者问：能不能把多核也用在 optimization 阶段，改善单个复杂查询的 response time，而不仅仅是把额外 core 分给其他并发查询提高吞吐？</p>
 
 <p>难点在于，join enumeration 里的 DP 属于 <span class="key-term">non-serial polyadic DP</span>：</p>
+
+<div class="callout info">
+<strong>拆开理解：</strong><br>
+<strong>polyadic（多元的）</strong>——每一步需要<em>两个</em>子问题来构造当前解（一个大小为 S 的计划 = 两个更小的计划 join 而成）。对比 Fibonacci 数列是 monadic：每一项只依赖前一项。<br>
+<strong>non-serial（非串行）</strong>——大小 S 的子问题不只依赖固定前几层（如 S−1 和 S−2），而是<em>所有更小的 size 都可能参与</em>。构造 \(P_5\) 需要 \(P_1 \Join P_4\)、\(P_2 \Join P_3\)……每一对都要考虑。<br>
+这两点合在一起，意味着你不能用通用的 pipeline-parallel DP 方法——它不是一条直线，而是一张大网。
+</div>
 
 <table>
   <thead>
@@ -357,7 +482,7 @@ window.MathJax = {
 
 <h2 id="s2">3. 原文 §2：Serial DP Join Enumeration</h2>
 
-<p>这一节复述传统 serial DP。论文使用 quantifier 表示查询中的表或 range variable。一个 QEP 可以用它已经访问并 join 的 quantifier set 表征。MEMO 表按 quantifier set 存储计划列表，每个 entry 保存同一 quantifier set 上尚未被 prune 的 QEP。</p>
+<p>这一节复述传统 serial DP。论文使用 quantifier 表示查询中的表或 range variable。一个 QEP（查询执行计划）可以用它已经访问并 join 的 quantifier set 表征——也就是说，看这个计划覆盖了哪些表，就知道它"做到哪一步了"。MEMO 表按 quantifier set 存储计划列表，每个 entry 保存同一 quantifier set 上尚未被 prune 的 QEP。</p>
 
 <p>Serial DP 的主循环很像下面这样：</p>
 
@@ -387,7 +512,7 @@ join predicates: A-B, A-C, A-D</code></pre>
 P2 = { AB, AC, AD }
 P3 = { ABC, ABD, ACD }</code></pre>
 
-<p>现在要构造 \(P_4 = ABCD\)。Serial DP 会尝试两类 plan join：</p>
+<p>现在要构造 \(P_4 = ABCD\)。Serial DP 会尝试两类 plan join（每一对就是一个 <strong>candidate pair</strong>——来自两个更小 partition 的候选组合）：</p>
 
 <pre><code>P1 x P3:
   (A, ABC), (A, ABD), (A, ACD)
@@ -577,46 +702,194 @@ P_{\lfloor S/2 \rfloor} \Join P_{S-\lfloor S/2 \rfloor}
 
 <p>一旦把 \(P_S\) 的构造看成 MPJ，问题就变成：怎样把 MPJ 的 search space 切给线程，才能让每个线程处理的真实工作量接近？</p>
 
-<p>原文先给一个反例。看似把 pair 数量均分给两个线程，thread 1 有 10 个 pair，thread 2 有 11 个 pair；但 thread 2 的 pair 全部会被 disjoint filter 丢掉，所以它不会调用 <code>CreateJoinPlans</code>。这就是“pair 数均衡不等于工作量均衡”。</p>
+<p>原文先给一个反例。看似把 pair 数量均分给两个线程，thread 1 有 10 个 pair，thread 2 有 11 个 pair；但 thread 2 的 pair 全部会被 disjoint filter 丢掉，所以它不会调用 <code>CreateJoinPlans</code>。这就是"pair 数均衡不等于工作量均衡"。</p>
 
 <figure class="paper-figure">
   <img src="assets/parallelizing-qo-vldb2008/figure-2-search-space-allocation.png" alt="Figure 2: Allocating search spaces for building P4 to two threads" loading="lazy">
   <figcaption>原文 Figure 2：构造 \(P_4\) 时的 search-space allocation 反例。按 pair 数平均切，看起来很公平；按实际可生成计划的 pair 看，负载严重偏斜。</figcaption>
 </figure>
 
-<p>论文比较四种 allocation scheme：</p>
+<h3>先理解"切的是什么"——MPJ 的搜索空间长什么样</h3>
+
+<p>构造 \(P_S\) 的搜索空间就是一组 plan join 的总和：</p>
+
+<div class="math-display">
+\[
+P_1 \Join P_{S-1},\; P_2 \Join P_{S-2},\; \ldots,\; P_{\lfloor S/2 floor} \Join P_{S-\lfloor S/2 floor}
+\]
+</div>
+
+<p>论文管每一个单独的 \(P_{smallSZ} \Join P_{largeSZ}\) 叫一个 <strong>stratum</strong>（层）。假设我们要构造 \(P_4\)，搜索空间就是两个 stratum：</p>
+
+<pre><code>Stratum 1: P₁ ⋈ P₃    （小=1，大=3）
+Stratum 2: P₂ ⋈ P₂    （小=2，大=2）</code></pre>
+
+<p>每个 stratum 内部是一个嵌套循环：逐个取 outer partition 里的每一行，再和 inner partition 里的所有行配对。所以"切搜索空间"就是：在整个嵌套循环的迭代空间里，决定"哪个线程跑哪些外层/内层坐标"。四种 allocation scheme 的区别就是<strong>切割策略不同</strong>。</p>
+
+<p>下面用一个具体例子说明。假设：</p>
+
+<pre><code>P₁ 有 4 行: [A, B, C, D]          （4 个单表）
+P₂ 有 3 行: [AB, AC, AD]          （3 个两表 join）
+P₃ 有 3 行: [ABC, ABD, ACD]       （3 个三表 join）
+m = 2 个线程</code></pre>
+
+<h3>Scheme 1：Total Sum —— 把全部 pair 数按总量平均切</h3>
+
+<div class="callout info">
+<strong>一句话：</strong>不管哪个 stratum，把所有 candidate pair 加总，按总数平均切成 m 份。
+</div>
+
+<p>先算搜索空间有多大：</p>
+
+<pre><code>Stratum P₁⋈P₃: 4 × 3 = 12 个 pair
+Stratum P₂⋈P₂: 3 × 3 = 9 个 pair  （自连接，NoInnerPreceding 优化后剩约一半，但 total sum 用原始大小算）
+总共 ≈ 21 个 pair</code></pre>
+
+<p>2 个线程，人均约 10~11 个 pair。切法是在嵌套循环的<strong>线性化序列</strong>上画一条线：</p>
+
+<pre><code>P₁⋈P₃ 的迭代顺序（outer=A,B,C,D，每次扫全部 inner）：
+
+outer=A: (A,ABC) (A,ABD) (A,ACD)    ← 3 个
+outer=B: (B,ABC) (B,ABD) (B,ACD)    ← 3 个
+outer=C: (C,ABC) (C,ABD) (C,ACD)    ← 3 个  ← Thread 1 到此停了（前 10 个）
+outer=D: (D,ABC) (D,ABD) (D,ACD)    ← 2 个  ← Thread 1 的剩余 + 开始切给 Thread 2
+                                                  Thread 1 共拿到: 3+3+3+2 = 11 个 pair
+
+P₂⋈P₂ 的迭代顺序：
+
+outer=AB: (AB,AC) (AB,AD)           ← Thread 2 继续
+outer=AC: (AC,AB) (AC,AD)
+outer=AD: (AD,AB) (AD,AC)
+                                      Thread 2 共拿到: 2(刚才P₁⋈P₃剩的) + 9 = 11 个 pair</code></pre>
+
+<p><strong>问题：</strong>Total sum 不区分不同 stratum 的"有效密度"。假设 P₁⋈P₃ 里 outer=D 的那 2 个 pair 全部 overlap（disjoint filter 不通过），那 Thread 1 实际上只做了 9 个 pair 的有效工作；Thread 2 的 P₂⋈P₂ 部分如果有效密度高，Thread 2 的有效工作量可能远超 Thread 1。这就是 Figure 2 展示的反例。</p>
+
+<h3>Scheme 2：Equi-Depth —— 每个 stratum 内把 outer 侧平均切</h3>
+
+<div class="callout info">
+<strong>一句话：</strong>不是把全部搜索空间搅在一起切，而是先按 stratum 分开，在每个 stratum 内部把 outer partition 的行数平均分给各线程。每个线程分到 outer 的一个连续区间。
+</div>
+
+<p>对上例：</p>
+
+<pre><code>Stratum P₁⋈P₃: outer P₁ 有 4 行 → 每个线程分 2 行
+  Thread 1: outer=[A,B]，各自扫全部 inner(ABC,ABD,ACD) → 2×3 = 6 个 pair
+  Thread 2: outer=[C,D]，各自扫全部 inner           → 2×3 = 6 个 pair
+
+Stratum P₂⋈P₂: outer P₂ 有 3 行 → 分不平，一个线程 2 行，一个 1 行
+  Thread 1: outer=[AB,AC]，各自扫 inner → 6 个 pair
+  Thread 2: outer=[AD]，扫 inner      → 3 个 pair</code></pre>
+
+<p><strong>相比 total sum 的改进：</strong>每个 stratum 各自独立切，不会出现"一个 stratum 的尾巴和另一个 stratum 的头混在一起"的问题。</p>
+
+<p><strong>仍有问题：</strong>outer 的连续区间里如果"有效行"分布不均匀，也会失衡。比如 outer=[A,B] 这连续两行可能都会产生大量 <code>CreateJoinPlans</code>，而 outer=[C,D] 这两行大部分 pair 会被 filter 丢掉——equi-depth 对此无能为力，因为它切的是行数，不是有效工作量。</p>
+
+<h3>Scheme 3：Round-Robin Outer —— 把 outer 行轮转分给线程</h3>
+
+<div class="callout info">
+<strong>一句话：</strong>在每个 stratum 内，outer 侧第 k 行分配给线程 <code>k mod m</code>。不再是连续区间，而是交替分发。
+</div>
+
+<p>对上例：</p>
+
+<pre><code>Stratum P₁⋈P₃: outer P₁ = [A, B, C, D]
+  第0行 A → Thread 1
+  第1行 B → Thread 2
+  第2行 C → Thread 1
+  第3行 D → Thread 2
+  Thread 1 负责 outer=[A,C]，各自扫全部 inner → 6 个 pair
+  Thread 2 负责 outer=[B,D]，各自扫全部 inner → 6 个 pair
+
+Stratum P₂⋈P₂: outer P₂ = [AB, AC, AD]
+  第0行 AB → Thread 1
+  第1行 AC → Thread 2
+  第2行 AD → Thread 1
+  Thread 1 负责 outer=[AB,AD] → 6 个 pair
+  Thread 2 负责 outer=[AC]    → 3 个 pair</code></pre>
+
+<p><strong>和 equi-depth 的区别：</strong>equi-depth 分到的是 outer 的<strong>连续区间</strong>[A,B] vs [C,D]；round-robin outer 把 outer 行交替分发。如果连续区间上有局部偏斜（比如 star query 的 hub 表集中在某个连续区域），round-robin outer 可以把偏斜打散。</p>
+
+<p><strong>仍有问题：</strong>如果 outer 行数很少且不能被 m 整除，某些线程会多分到一行 outer——在 star query 中，多出的那一行如果恰好是 hub，就会导致该线程的工作量远超其他线程。</p>
+
+<h3>Scheme 4：Round-Robin Inner —— 按 inner 行轮转，每个线程扫全部 outer</h3>
+
+<div class="callout info">
+<strong>一句话：</strong>不切 outer，而是让<strong>每个线程都遍历全部 outer 行</strong>，但 inner 侧按"第 j 个 inner tuple 分配给线程 <code>j mod m</code>"来轮转。
+</div>
+
+<p>这是四种方案里最激进的一种。还是看例子：</p>
+
+<pre><code>Stratum P₁⋈P₃: inner P₃ = [ABC, ABD, ACD]
+  第0个 inner ABC → Thread 1
+  第1个 inner ABD → Thread 2
+  第2个 inner ACD → Thread 1
+
+Stratum P₂⋈P₂: inner P₂ = [AB, AC, AD]
+  第0个 inner AB → Thread 1
+  第1个 inner AC → Thread 2
+  第2个 inner AD → Thread 1</code></pre>
+
+<p>对 P₁⋈P₃，每个线程的遍历范围是：</p>
+
+<pre><code>Thread 1:
+  outer=A → 检查 inner ABC、ACD（跳过 ABD，因为它属于 Thread 2）
+  outer=B → 检查 inner ABC、ACD
+  outer=C → 检查 inner ABC、ACD
+  outer=D → 检查 inner ABC、ACD
+  → 4 outer × 2 inner = 8 个 pair
+
+Thread 2:
+  outer=A → 检查 inner ABD
+  outer=B → 检查 inner ABD
+  outer=C → 检查 inner ABD
+  outer=D → 检查 inner ABD
+  → 4 outer × 1 inner = 4 个 pair</code></pre>
+
+<p><strong>为什么它最稳：</strong>它的效果等价于"把所有 join pair 随机打散后均分"。每个线程都在扫全部 outer 行，因此 outer 侧的局部偏斜被平均化了；inner 侧的分配也是交替的。论文实验中的 round-robin inner 最接近理论最优负载均衡。</p>
+
+<p><strong>代价：</strong>每个线程都要遍历全部 outer 行（不像 equi-depth 和 round-robin outer 那样只扫一部分），所以总内存访问量更大。但在共享内存多核 CPU 上，这个代价通常可接受。</p>
+
+<h3>四种方案速查对比</h3>
 
 <table>
   <thead>
-    <tr><th>策略</th><th>分配方式</th><th>优点</th><th>风险</th></tr>
+    <tr><th>策略</th><th>切分方式</th><th>线程扫 outer</th><th>线程扫 inner</th><th>适用场景</th></tr>
   </thead>
   <tbody>
     <tr>
       <td>Total sum</td>
-      <td>把构造 \(P_S\) 的全部 pair 搜索空间按总量切成 \(m\) 份。</td>
-      <td>简单，类似编译器对 nested loop 做平均切分。</td>
-      <td>不同 stratum 的有效 pair 密度差异很大时，会严重失衡。</td>
+      <td>全部搜索空间线性均分</td>
+      <td>部分</td>
+      <td>全部</td>
+      <td>各 stratum 有效密度接近时勉强可用</td>
     </tr>
     <tr>
       <td>Equi-depth</td>
-      <td>对每个 plan join stratum，把 outer partition 的连续区间平均切给线程。</td>
-      <td>比 total sum 更尊重每个 \(P_{smallSZ} \Join P_{largeSZ}\) 的局部结构。</td>
-      <td>如果有效 pair 在连续区间上偏斜，仍会失衡。</td>
+      <td>按 stratum 分开，outer 连续区间均分</td>
+      <td>部分</td>
+      <td>全部</td>
+      <td>outer 连续区间上 CreateJoinPlans 分布均匀时</td>
     </tr>
     <tr>
       <td>Round-robin outer</td>
-      <td>第 \(k\) 个 outer tuple 分给 \(k \bmod m\) 的线程。</td>
-      <td>把 outer 侧的局部偏斜打散。</td>
-      <td>star query 中若只有少数 outer tuple 触发大量工作，仍可能受 hub 位置影响。</td>
+      <td>按 stratum 分开，outer 行轮转分配</td>
+      <td>部分</td>
+      <td>全部</td>
+      <td>outer 有局部偏斜但行数够多、能被 m 整除时</td>
     </tr>
     <tr>
       <td>Round-robin inner</td>
-      <td>按 inner tuple 或 join pair 的 inner index 轮转分配。</td>
-      <td>最接近把所有 join pair 随机打散，论文实验中通常最稳。</td>
-      <td>线程都会扫较大范围 outer，访问模式更复杂，但在共享内存多核上可接受。</td>
+      <td>按 stratum 分开，inner 行轮转分配</td>
+      <td>全部</td>
+      <td>部分</td>
+      <td>任何拓扑；论文里最稳的默认选择</td>
     </tr>
   </tbody>
 </table>
+
+<div class="callout warn">
+<strong>关键直觉：</strong>四个方案的演进逻辑是"切分的粒度越来越细、越来越不在意切出来的是什么连续形状，只在意每个线程最终拿到的有效 pair 数是否接近"。Total sum 是最粗糙的一刀切；equi-depth 意识到要按 stratum 分开切；round-robin outer 意识到连续区间靠不住，要交替分；round-robin inner 发现最靠谱的办法是让所有人都扫一遍 outer，只在 inner 上轮转。每一步都在应对"拓扑导致的局部偏斜"。
+</div>
 
 <p>Basic MPJ 本身采用 cache-conscious 的 block nested-loop join。论文指出，传统 DB2/PostgreSQL 风格的 join enumerator 更像 tuple-based nested loop；而 MPJ 把 plan partition 存为数组，并按 block 访问 inner partition，能更好利用 CPU cache。</p>
 
@@ -630,8 +903,6 @@ CreateJoinPlans(outer, inner)
 PrunePlans(P_S, ResultingPlans)</code></pre>
 
 <p>所以 §4 解决的是 <strong>怎么把工作分给线程</strong>，但还没有解决 <strong>怎么少看那些必然失败的 pair</strong>。这个问题留给 §5 的 Skip Vector Array。</p>
-
-<hr>
 
 <h2 id="s5">6. 原文 §5：Skip Vector Array</h2>
 

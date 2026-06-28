@@ -433,6 +433,7 @@ WHERE score = (
     <section id="dependent-join">
       <h2>2. 优化器眼里的相关子查询：Dependent Join</h2>
       <p>PPT 这一段的讲法很适合初学者：先不要急着看 2015 论文的代数公式，而是先看优化器如何把 SQL 里的 <code>SUBQUERY</code> 节点变成一个显式的逻辑算子。这个算子就是 dependent join。</p>
+      <p>这一节沿用的示范 SQL 是在学生表里找“每个专业中分数等于该专业最高分”的学生；内层子查询负责算当前外层学生所属专业的最高分。</p>
 
       <h3>2.1 从 SUBQUERY 节点到 LHS/RHS</h3>
       <p>还是用按专业找最高分的例子。SQL 里看起来只是 <code>WHERE score = (SELECT ...)</code>，但在逻辑计划里，外层 <code>students AS s1</code> 和内层 <code>students AS s2</code> 被拆成两边：</p>
@@ -457,14 +458,14 @@ WHERE score = (
 
       <h3>2.2 为什么要引入去重绑定域 D？</h3>
       <p>如果直接按 dependent join 执行，外层 <code>students s1</code> 每来一行，RHS 都要重新算一次 <code>MAX(score)</code>。但这个例子里 RHS 真正需要的外层信息只有 <code>s1.major</code>。如果有很多学生同属 <code>CompSci</code>，为每个学生重复计算 <code>CompSci</code> 的最高分就是浪费。</p>
-      <p>PPT 的下一步是引入 <code>DUP_ELIM_SCAN</code>，也就是从 LHS 抽取相关列并去重，形成绑定域 <code>D</code>。在这个例子里，<code>D</code> 可以理解成所有出现过的不同 <code>major</code>。</p>
+      <p>PPT 的下一步是引入 <code>DUP_ELIM_SCAN</code>，也就是从 LHS 抽取相关列并去重，形成绑定域 <code>D</code>。在这个例子里，<code>D</code> 更准确地说是一张只有绑定列的临时关系：<code>D(d.major) = DISTINCT SELECT s1.major FROM students AS s1</code>。</p>
 
       <figure>
         <img src="assets/ppt-domain-pushdown-p30.png" alt="PPT 中 dependent join 下推和 duplicate elimination scan">
         <figcaption>教学 PPT 第 30 页：优化器先用 <code>DUP_ELIM_SCAN students d</code> 得到去重绑定域，再通过 <code>s1.major = d.major</code> 把这些绑定值接回外层。</figcaption>
       </figure>
 
-      <p>这一步把“每个学生执行一次 RHS”改成“每个不同专业执行一次 RHS”。绑定仍然存在，但绑定对象从外层每一行缩小为去重后的相关列组合。</p>
+      <p>这一步把“每个学生执行一次 RHS”改成“每个不同专业执行一次 RHS”。绑定仍然存在，但绑定对象从外层每一行缩小为去重后的相关列组合；后续 RHS 不再直接引用外层的 <code>s1.major</code>，而是用 <code>d.major</code> 作为普通输入列，和内层扫描出来的 <code>s2.major</code> 做连接或过滤。</p>
 
       <h3>2.3 把 dependent join 往 RHS 里面推</h3>
       <p>有了 <code>D</code> 以后，优化器继续把 dependent join 往 RHS 子树深处推。它经过 filter，再经过 aggregate。经过 aggregate 时必须把绑定列加入分组键：否则 <code>MAX(score)</code> 会变成全表一个最大值，而不是每个 <code>d.major</code> 一个最大值。</p>

@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>嵌套 SQL 优化入门：从相关子查询到 Holistic Unnesting</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f8fafc;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-2: #8a5a12;
+      --accent-3: #4f6f52;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --bad-bg: #fff0ed;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.68;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 48px 0 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 36px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 50px);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      max-width: 780px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      border: 1px solid var(--line);
+      background: #f6fbfd;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .source-box strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    nav {
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: #ffffff;
+    }
+
+    main {
+      padding: 34px 0 60px;
+    }
+
+    section {
+      margin: 0 0 38px;
+      padding: 28px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 28px;
+      line-height: 1.24;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 21px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      background: #111827;
+      color: #e7edf5;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.48;
+      font-size: 14px;
+    }
+
+    pre code {
+      color: inherit;
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      font-size: inherit;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .note,
+    .warning,
+    .good,
+    .bad {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .note {
+      background: #f2f7fb;
+      border-color: #c8dce7;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border-color: #eed58d;
+    }
+
+    .good {
+      background: var(--good-bg);
+      border-color: #b8dfc4;
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      border-color: #efb3a8;
+    }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      white-space: normal;
+    }
+
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #ffffff;
+    }
+
+    figcaption {
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 12px 18px;
+      margin: 18px 0;
+    }
+
+    .time {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 20px;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3f5;
+    }
+
+    .callout-title {
+      margin: 0 0 6px;
+      font-weight: 750;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d8df;
+      background: #f7fbfc;
+      color: #245160;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .step {
+      counter-increment: steps;
+      position: relative;
+      padding-left: 46px;
+      margin: 18px 0;
+    }
+
+    .step::before {
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      top: 2px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .steps {
+      counter-reset: steps;
+    }
+
+    footer {
+      padding: 30px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    @media (max-width: 860px) {
+      .hero,
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 22px 18px;
+      }
+
+      .timeline {
+        grid-template-columns: 1fr;
+        gap: 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Nested SQL Optimization Tutorial</p>
+        <h1>嵌套 SQL 优化入门：从相关子查询到 Holistic Unnesting</h1>
+        <p>这份笔记面向刚接触嵌套查询优化的读者。目标不是复述论文，而是用原材料中的案例解释优化器为什么要把相关子查询改写成普通关系代数计划，以及 2015 与 2025 两篇论文各自解决了什么问题。</p>
+      </div>
+      <aside class="source-box">
+        <strong>阅读材料</strong>
+        <div>Neumann & Kemper, <em>Unnesting Arbitrary Queries</em>, BTW 2015</div>
+        <div>Neumann, <em>Improving Unnesting of Complex Queries</em>, BTW 2025</div>
+        <div>Andy Pavlo, <em>Unnesting Queries</em>, Spring 2025 PPT</div>
+      </aside>
+    </div>
+    <nav>
+      <div class="wrap">
+        <a href="#mental-model">直觉模型</a>
+        <a href="#dependent-join">Dependent Join</a>
+        <a href="#paper-2015">2015 算法</a>
+        <a href="#paper-2025">2025 改进</a>
+        <a href="#complex-sql">复杂 SQL</a>
+        <a href="#pitfalls">易错点</a>
+        <a href="#reading-path">学习路线</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="mental-model">
+      <h2>1. 先建立直觉：嵌套查询像函数调用</h2>
+      <p>SQL 允许在很多地方写子查询：<code>SELECT</code>、<code>FROM</code>、<code>WHERE</code>、<code>HAVING</code>、<code>ORDER BY</code> 等。理解优化的第一步，是区分子查询是否引用了外层查询的列。</p>
+
+      <div class="grid-2">
+        <div class="good">
+          <p class="callout-title">非相关子查询</p>
+          <p>子查询不引用外层列。逻辑上只要算一次，然后把结果复用给外层每一行。</p>
+          <pre><code>SELECT name
+FROM students
+WHERE score = (
+  SELECT MAX(score) FROM students
+);</code></pre>
+        </div>
+        <div class="bad">
+          <p class="callout-title">相关子查询</p>
+          <p>子查询引用外层列。逻辑上外层每来一行，内层结果都可能不同。</p>
+          <pre><code>SELECT name, major
+FROM students AS s1
+WHERE score = (
+  SELECT MAX(s2.score)
+  FROM students AS s2
+  WHERE s2.major = s1.major
+);</code></pre>
+        </div>
+      </div>
+
+      <figure>
+        <img src="assets/ppt-correlated-query-p5.png" alt="PPT 中 students 表相关子查询示例">
+        <figcaption>教学 PPT 第 5 页：内层条件 <code>s2.major = s1.major</code> 引用了外层的 <code>s1.major</code>，所以每个外层专业都可能得到不同的 <code>MAX(score)</code>。</figcaption>
+      </figure>
+
+      <p>可以把相关子查询想成一个函数：<code>subquery(s1.major)</code>。优化器的问题是：我们真的要对外层每一行调用一次这个函数吗？如果外层有一百万行，内层表也很大，这个写法会把声明式 SQL 悄悄变成近似嵌套循环。</p>
+    </section>
+
+    <section id="dependent-join">
+      <h2>2. 优化器眼里的相关子查询：Dependent Join</h2>
+      <p>PPT 这一段的讲法很适合初学者：先不要急着看 2015 论文的代数公式，而是先看优化器如何把 SQL 里的 <code>SUBQUERY</code> 节点变成一个显式的逻辑算子。这个算子就是 dependent join。</p>
+
+      <h3>2.1 从 SUBQUERY 节点到 LHS/RHS</h3>
+      <p>还是用按专业找最高分的例子。SQL 里看起来只是 <code>WHERE score = (SELECT ...)</code>，但在逻辑计划里，外层 <code>students AS s1</code> 和内层 <code>students AS s2</code> 被拆成两边：</p>
+      <ul>
+        <li><strong>LHS</strong>：Left-Hand Side，左侧输入，也就是外层扫描 <code>students s1</code>。</li>
+        <li><strong>RHS</strong>：Right-Hand Side，右侧输入，也就是内层子查询的扫描、过滤和聚合。</li>
+      </ul>
+
+      <figure>
+        <img src="assets/ppt-dependent-join-plan-p26.png" alt="PPT 第 26 页：把相关子查询表示为 dependent join 的 LHS 和 RHS">
+        <figcaption>教学 PPT 第 26 页：原来的 <code>SUBQUERY</code> 被展开成 <code>DEPENDENT_JOIN</code>。RHS 中的过滤条件 <code>s2.major = s1.major</code> 读取了 LHS 的 <code>s1.major</code>。</figcaption>
+      </figure>
+
+      <p>这里“依赖”的含义非常具体：RHS 不是一个可以提前独立算完的子计划。它里面有一个外层列 <code>s1.major</code>，必须等 LHS 当前行给出 <code>major</code> 的值，RHS 才知道自己要筛哪些 <code>s2</code> 行。</p>
+      <span class="formula">普通 join：L ⋈ R&nbsp;&nbsp;&nbsp;&nbsp;右侧 R 可以独立求值</span>
+      <span class="formula">Dependent join：L ⧑ R(L)&nbsp;&nbsp;&nbsp;&nbsp;右侧 R 要在每个 L 的绑定下求值</span>
+
+      <figure>
+        <img src="assets/ppt-dependent-join-lhs-rhs-p28.png" alt="PPT 第 28 页：dependent join 对 LHS 每一行执行 RHS">
+        <figcaption>教学 PPT 第 28 页：dependent join 表示“对 LHS 的每一行执行一次 RHS，并把每次执行的结果合并起来”。这就是它容易退化成嵌套循环的原因。</figcaption>
+      </figure>
+
+      <h3>2.2 为什么要引入去重绑定域 D？</h3>
+      <p>如果直接按 dependent join 执行，外层 <code>students s1</code> 每来一行，RHS 都要重新算一次 <code>MAX(score)</code>。但这个例子里 RHS 真正需要的外层信息只有 <code>s1.major</code>。如果有很多学生同属 <code>CompSci</code>，为每个学生重复计算 <code>CompSci</code> 的最高分就是浪费。</p>
+      <p>PPT 的下一步是引入 <code>DUP_ELIM_SCAN</code>，也就是从 LHS 抽取相关列并去重，形成绑定域 <code>D</code>。在这个例子里，<code>D</code> 可以理解成所有出现过的不同 <code>major</code>。</p>
+
+      <figure>
+        <img src="assets/ppt-domain-pushdown-p30.png" alt="PPT 中 dependent join 下推和 duplicate elimination scan">
+        <figcaption>教学 PPT 第 30 页：优化器先用 <code>DUP_ELIM_SCAN students d</code> 得到去重绑定域，再通过 <code>s1.major = d.major</code> 把这些绑定值接回外层。</figcaption>
+      </figure>
+
+      <p>这一步把“每个学生执行一次 RHS”改成“每个不同专业执行一次 RHS”。绑定仍然存在，但绑定对象从外层每一行缩小为去重后的相关列组合。</p>
+
+      <h3>2.3 把 dependent join 往 RHS 里面推</h3>
+      <p>有了 <code>D</code> 以后，优化器继续把 dependent join 往 RHS 子树深处推。它经过 filter，再经过 aggregate。经过 aggregate 时必须把绑定列加入分组键：否则 <code>MAX(score)</code> 会变成全表一个最大值，而不是每个 <code>d.major</code> 一个最大值。</p>
+
+      <figure>
+        <img src="assets/ppt-pushdown-groupby-p32.png" alt="PPT 第 32 页：dependent join 下推到聚合并加入 group by">
+        <figcaption>教学 PPT 第 32 页：dependent join 下推穿过聚合时，聚合变成 <code>MAX(score) GROUP BY(d.major)</code>，保证每个绑定值独立计算。</figcaption>
+      </figure>
+
+      <p>这正是后面 2015 论文里 <code>D ⧑ ΓA;agg(T) → ΓA∪A(D);agg(D ⧑ T)</code> 的直觉版：如果内层聚合依赖外层值，就要按外层绑定值分组计算。</p>
+
+      <h3>2.4 到底后，把 dependent join 改成普通 join</h3>
+      <p>dependent join 被一直推到 RHS 足够底部之后，RHS 不再需要“当前外层行”这个上下文。此时它可以先变成 cross join，再由过滤条件 <code>d.major = s2.major</code> 变成普通 inner join。</p>
+
+      <figure>
+        <img src="assets/ppt-cross-to-inner-join-p39.png" alt="PPT 第 39 页：cross join 转换成 inner join">
+        <figcaption>教学 PPT 第 39 页：原 dependent join 已经不再依赖 LHS 当前行，因此可以转成普通 join；过滤条件成为 join 条件 <code>d.major = s2.major</code>。</figcaption>
+      </figure>
+
+      <h3>2.5 最后删除冗余 D，得到手写 join 形状</h3>
+      <p>在这个例子里，<code>d.major</code> 最终和 <code>s2.major</code> 等值绑定，优化器还可以进一步删除 <code>DUP_ELIM_SCAN</code> 和上方多余过滤，让计划变成更熟悉的“先按专业聚合，再和外层学生表 join”的形状。</p>
+
+      <figure>
+        <img src="assets/ppt-final-flattened-plan-p43.png" alt="PPT 第 43 页：删除 duplicate elimination scan 后的最终 join plan">
+        <figcaption>教学 PPT 第 43 页：最终计划已经没有 dependent join，看起来就像手写的 join + group by 查询。</figcaption>
+      </figure>
+
+      <p>这里有两个术语可以回头再记：</p>
+      <ul>
+        <li><strong>自由变量</strong>：内层表达式使用但自己不能产生的列。例如 <code>s1.major</code> 出现在内层 <code>students AS s2</code> 的过滤条件里，它来自外层。</li>
+        <li><strong>绑定域 D</strong>：外层真正需要传给内层的不同取值集合。例如按专业求最高分时，内层只需要不同的 <code>major</code>，不需要外层每个学生行。</li>
+      </ul>
+
+      <div class="note">
+        <p class="callout-title">优化目标</p>
+        <p>把“每个外层 tuple 触发一次内层求值”改成“为每个必要的绑定值集合求一次内层结果，然后用普通 join 接回外层”。这就是 decorrelation / unnesting 的核心。</p>
+      </div>
+    </section>
+
+    <section id="paper-2015">
+      <h2>3. 2015：任意查询的代数级 Unnesting</h2>
+      <p>2015 论文的主张很强：不要只靠 SQL 文本模式匹配；把查询先翻译成带 dependent join 的关系代数，然后在代数层面消除 dependent join。这样比“看到某种 SQL 写法就套某条规则”的启发式方法更通用。</p>
+
+      <h3>3.1 先看论文的 Q1 案例</h3>
+      <p>论文的运行例子是：找出每个学生成绩最好的考试。原 SQL 是相关子查询，因为内层 <code>e2.sid</code> 要和外层 <code>s.id</code> 比较。</p>
+      <pre><code>-- Q1: correlated form
+SELECT s.name, e.course
+FROM students s, exams e
+WHERE s.id = e.sid
+  AND e.grade = (
+    SELECT MIN(e2.grade)
+    FROM exams e2
+    WHERE s.id = e2.sid
+  );</code></pre>
+
+      <p>如果手写成去相关 SQL，大致就是先按学生聚合出最好成绩，再接回原查询。</p>
+      <pre><code>-- Q1': decorrelated shape
+SELECT s.name, e.course
+FROM students s, exams e,
+     (SELECT e2.sid AS id, MIN(e2.grade) AS best
+      FROM exams e2
+      GROUP BY e2.sid) m
+WHERE s.id = e.sid
+  AND m.id = s.id
+  AND e.grade = m.best;</code></pre>
+
+      <figure>
+        <img src="assets/paper2015-fig1-pushdown-crop-p7.png" alt="2015 论文 Figure 1 dependent join push-down">
+        <figcaption>2015 论文第 7 页 Figure 1：把原 dependent join 改成外层与绑定域 <code>D</code> 的普通 join，再把 <code>D</code> 送进内层聚合。</figcaption>
+      </figure>
+
+      <h3>3.2 核心等价式：先造 D，再下推 D</h3>
+      <p>2015 算法最关键的一步，是把原来的 dependent join 拆成两个部分：一个普通 join 加一个以去重绑定域驱动的新 dependent join。</p>
+      <span class="formula">T1 ⧑p T2 ≡ T1 ⋈(p ∧ T1=A(D)D) (D ⧑ T2)，其中 D := Π<sub>F(T2)∩A(T1)</sub>(T1)</span>
+      <p>这里的 <code>T1=A(D)D</code> 表示普通 join 需要把外层原列和投影/重命名后的 <code>D</code> 列对应起来，不是随便做一个自然连接。比如 Q1 里论文把 <code>s.id</code> 投影成 <code>d.id</code>，接回外层时要用 <code>s.id = d.id</code>。</p>
+      <p>这句话可以翻译成新手版：</p>
+      <ol>
+        <li>先从外层 <code>T1</code> 取出内层 <code>T2</code> 真正引用的外层列。</li>
+        <li>对这些列去重，得到绑定域 <code>D</code>。</li>
+        <li>让内层只为每个 <code>D</code> 值算一次。</li>
+        <li>再用普通 join 把结果接回原来的外层行。</li>
+      </ol>
+
+      <div class="warning">
+        <p class="callout-title">为什么 D 必须去重？</p>
+        <p>论文后续下推规则依赖 <code>D</code> 是集合而不是 SQL bag。去重只发生在绑定域上，不表示整个查询丢掉了 SQL 多重集语义中的重复行。</p>
+      </div>
+
+      <h3>3.3 下推规则的直觉</h3>
+      <p>有了 <code>D</code>，算法把 <code>D ⧑ T</code> 一路往右侧子树下推。遇到不同算子时做相应改写：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>遇到的算子</th>
+            <th>直觉</th>
+            <th>典型改写</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Selection <code>σ</code></td>
+            <td>先把 dependent join 推到过滤输入，再保留过滤条件。</td>
+            <td><code>D ⧑ σp(T) → σp(D ⧑ T)</code></td>
+          </tr>
+          <tr>
+            <td>Join</td>
+            <td>如果依赖只在一侧，就推到那侧；如果两侧都依赖，就复制到两侧并用 <code>D</code> 的列对齐。</td>
+            <td>必要时变成 <code>(D ⧑ T1) ⋈naturalD (D ⧑ T2)</code></td>
+          </tr>
+          <tr>
+            <td>Group By</td>
+            <td>内层聚合必须按绑定值分别算，所以把 <code>D</code> 的列加入分组键。</td>
+            <td><code>D ⧑ ΓA;agg(T) → ΓA∪A(D);agg(D ⧑ T)</code></td>
+          </tr>
+          <tr>
+            <td>Base table</td>
+            <td>表扫描本身不需要外层列，dependent join 到这里就可以变成普通 join。</td>
+            <td><code>D ⧑ R → D ⋈ R</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <figure>
+        <img src="assets/paper2015-q1-steps1-2-crop-p10.png" alt="2015 论文 Q1 transformation steps 1 and 2">
+        <figcaption>2015 论文第 10 页 Figures 3-4：第一步建立绑定域 <code>D</code>，第二步把 <code>D</code> 加进聚合分组键。</figcaption>
+      </figure>
+
+      <figure>
+        <img src="assets/paper2015-q1-steps4-5-crop-p11.png" alt="2015 论文 Q1 transformation steps 4 and 5">
+        <figcaption>2015 论文第 11 页 Figures 6-7：dependent join 下推到底后变成普通 join，随后常规优化再把过滤条件推回去。</figcaption>
+      </figure>
+
+      <h3>3.4 什么时候可以把 D 整个消掉？</h3>
+      <p>有时 <code>D</code> 的列和内层已有列通过等值条件绑定。Q1 中 <code>d.id = e2.sid</code>，所以可以用 map/substitution 把 <code>d.id</code> 替换成 <code>e2.sid</code>，让计划看起来完全像普通手写 join。</p>
+
+      <figure>
+        <img src="assets/paper2015-substitution-q2-crop-p12.png" alt="2015 论文 Figure 8 substitution and Figure 9 Q2">
+        <figcaption>2015 论文第 12 页：上半部分 Figure 8 展示 Q1 中用替换消除 <code>D</code>；下半部分 Figure 9 展示更复杂 Q2 中 <code>D</code> 不能完全消除。</figcaption>
+      </figure>
+
+      <p>但论文强调：替换不总是更快。消掉 <code>D</code> 的 join 会丢掉早期过滤能力，可能制造更大的中间结果。最终要不要替换，应交给成本模型。</p>
+
+      <h3>3.5 更复杂的 Q2：非等值条件让 D 留在计划里</h3>
+      <p>Q2 计算“学生某门考试是否比自己或高年级同专业学生的平均成绩差一档以上”。它的相关条件包含 <code>OR</code>、<code>s.year &gt; e2.date</code> 这类非等值比较。这里无法简单用内层已有列替代外层 <code>s.year</code>、<code>s.major</code>，因此 <code>D</code> 作为 sideways information passing 保留下来。</p>
+
+      <div class="note">
+        <p class="callout-title">2015 的贡献一句话</p>
+        <p>把“相关子查询消除”从一堆特殊 SQL 重写规则，提升为一套代数级、可覆盖任意嵌套形状的 dependent join 消除方法。</p>
+      </div>
+    </section>
+
+    <section id="paper-2025">
+      <h2>4. 2025：为什么还需要 Holistic Unnesting？</h2>
+      <p>2015 方法已经能处理大量查询，但 2025 论文指出一个新问题：当 dependent join 多层嵌套时，自底向上一个个消除会让较外层的 <code>D</code> 穿过已经改写过的内层结构，可能生成过大的中间交叉组合。结果仍然正确，但代价可能爆炸。</p>
+
+      <h3>4.1 多层相关子查询的示例</h3>
+      <p>2025 论文开头用 TPC-H 风格查询说明：找汽车市场客户，这些客户有超过 5 个订单，每个订单的 lineitem 总价超过 300000。这里有两层相关关系：<code>orders</code> 引用 <code>customer</code>，<code>lineitem</code> 引用 <code>orders</code>。</p>
+      <pre><code>SELECT *
+FROM customer
+WHERE c_mktsegment = 'AUTOMOBILE'
+  AND (
+    SELECT COUNT(*)
+    FROM orders
+    WHERE o_custkey = c_custkey
+      AND (
+        SELECT SUM(l_extendedprice)
+        FROM lineitem
+        WHERE l_orderkey = o_orderkey
+      ) &gt; 300000
+  ) &gt; 5;</code></pre>
+
+      <figure>
+        <img src="assets/paper2025-fig1-query-plan-crop-p1.png" alt="2025 论文 Figure 1 nested correlated query and algebra plan">
+        <figcaption>2025 论文第 1 页 Figure 1：两层 correlated subquery 形成嵌套 dependent join；颜色标出不同层级的相关性。</figcaption>
+      </figure>
+
+      <h3>4.2 自底向上的病理情况</h3>
+      <p>问题的本质是：先消除内层 dependent join 时，优化器可能保留一个和内层绑定有关的 <code>D</code>；再消除外层 dependent join 时，外层绑定可能和内层绑定组合成更大的域。这个域包含很多最后会被过滤掉的组合，但 group by 等算子已经为它们付出了代价。</p>
+
+      <div class="grid-2">
+        <figure>
+          <img src="assets/paper2025-bottomup-before-crop-p6.png" alt="2025 论文嵌套 dependent join 示例">
+          <figcaption>2025 论文第 6 页：嵌套 dependent join 的小型病理例子。</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/paper2025-bottomup-crossproduct-crop-p7.png" alt="2025 论文 bottom-up 产生过大绑定域示例">
+          <figcaption>2025 论文第 7 页：自底向上再次 unnest 后，<code>T1.a</code> 与 <code>T2.b</code> 的组合可能比真实 join 域大得多。</figcaption>
+        </figure>
+      </div>
+
+      <p>这不是语义错误，而是计划质量错误。2025 论文提到实际触发场景来自把复杂 UDF 翻译成纯 SQL 后产生的深层嵌套查询；旧策略可能耗尽内存，新策略可以在毫秒级完成。</p>
+
+      <h3>4.3 Holistic 的主意：从上到下一起处理</h3>
+      <p>Holistic unnesting 仍然继承 2015 的核心思想：识别外层引用，构造或推理绑定域，最终消除 dependent join。差别在执行顺序和状态管理：</p>
+      <ol>
+        <li>先识别所有非平凡 dependent join，也就是右侧确实访问左侧列的 join。</li>
+        <li>按从根到叶的顺序处理 dependent join。</li>
+        <li>在向下改写时维护 outer references、等价类、替换映射等状态。</li>
+        <li>遇到嵌套 dependent join 时合并处理，避免不同 <code>D</code> 集合互相穿越造成交叉爆炸。</li>
+      </ol>
+
+      <figure>
+        <img src="assets/paper2025-annotations-crop-p8.png" alt="2025 论文 dependent join annotations">
+        <figcaption>2025 论文第 8 页 Figure 2：用访问者列表标注哪些算子读取了某个 dependent join 左侧提供的列。</figcaption>
+      </figure>
+
+      <div class="note">
+        <p class="callout-title">可以这样记</p>
+        <p>2015 是“看到一个 dependent join，就把它的 <code>D</code> 往下推到底”。2025 是“先看整棵树里所有相关性，再从上往下携带状态，别让多个 <code>D</code> 无意义地相乘”。</p>
+      </div>
+
+      <h3>4.4 2025 的算法状态</h3>
+      <p>论文中的状态结构大致包含这些信息：</p>
+      <ul>
+        <li><code>outerRefs</code>：右侧访问了左侧哪些列。</li>
+        <li><code>D</code>：这些外层引用的绑定域。</li>
+        <li><code>parent</code>：如果当前 unnesting 在另一个 unnesting 内部，记录父状态。</li>
+        <li><code>cclasses</code>：等价类，用 union-find 记录 <code>a=b</code>、<code>b=c</code> 这种可传递关系。</li>
+        <li><code>repr</code>：如果外层列已经被某个内层列替代，记录替代映射。</li>
+      </ul>
+
+      <p>这些状态让优化器在下推时能做选择：是显式加入 <code>D</code> 的 join，还是用已有等价列直接替换 outer reference。</p>
+    </section>
+
+    <section id="complex-sql">
+      <h2>5. 复杂 SQL 构造怎么处理？</h2>
+      <p>2025 论文还补齐了 2015 没有详细覆盖的一些 SQL 构造。这里不需要一开始就掌握证明细节，但要知道优化器为什么不能简单套用普通下推规则。</p>
+
+      <h3>5.1 Full outer join 条件里的相关子查询</h3>
+      <p>如果 full join 的条件里有子查询，并且子查询同时引用左右两侧，问题会变难：full join 要保留 unmatched rows，而带动态输入的相关 full outer join 语义本身并不良定义。2025 论文给出的处理方式，是构造左右两侧绑定域 <code>DR</code> 与 <code>DS</code> 的组合，为每组绑定计算谓词结果，再用带 <code>is not distinct from</code> 条件的 outer/full outer join 接回两侧，从而明确 NULL 和 unmatched row 的行为。</p>
+
+      <h3>5.2 WITH RECURSIVE</h3>
+      <p>递归查询不能只把外层引用加到最终结果上。递归体每一轮都必须按外层绑定值分区执行，否则不同绑定的递归状态会混在一起。论文把外层引用加入 recursive CTE 的列，并让 iteratescan 也产生这些列。</p>
+
+      <figure>
+        <img src="assets/paper2025-fulljoin-recursive-crop-p17.png" alt="2025 论文 full join and recursive SQL unnesting examples">
+        <figcaption>2025 论文第 17 页：上半部分是 full join condition 中相关子查询的等价式，下半部分展示 recursive SQL 的 iterate/iteratescan 视角。</figcaption>
+      </figure>
+
+      <h3>5.3 CTE / DAG 查询计划</h3>
+      <p>CTE 可能让代数表达式从树变成 DAG：同一个子计划被多个地方读取。若天真地沿左右路径分别 unnest，可能重复改写同一个共享子树。论文建议把 DAG 切成若干树，让共享子树形成自己的处理单元，并指定一个共享读触发真正的 unnesting。</p>
+
+      <figure>
+        <img src="assets/paper2025-cte-dag-crop-p19.png" alt="2025 论文 CTE DAG unnesting example">
+        <figcaption>2025 论文第 19 页：CTE 共享子树需要作为 DAG 处理，避免重复下推或重复加入绑定域。</figcaption>
+      </figure>
+
+      <h3>5.4 ORDER BY LIMIT</h3>
+      <p>相关子查询里如果有 <code>ORDER BY ... LIMIT</code>，limit 的语义是“每个外层绑定各取前 N 个”，不是整个内层全局取前 N 个。常见改写是先变成窗口函数：</p>
+      <pre><code>SELECT *
+FROM (
+  SELECT *,
+         ROW_NUMBER() OVER (ORDER BY x) AS rn
+  FROM S
+) AS ranked
+WHERE rn BETWEEN offset + 1 AND offset + limit;</code></pre>
+      <p>unnesting 时再把外层绑定列加入 <code>PARTITION BY</code>，让 row number 按每个绑定值独立编号。</p>
+    </section>
+
+    <section id="pitfalls">
+      <h2>6. 新手最容易漏掉的语义坑</h2>
+      <div class="steps">
+        <div class="step">
+          <h3>NULL 比较不是普通等号</h3>
+          <p>论文中 <code>natural D</code> 使用 IS semantics，也就是 NULL 被当成专门值，两个 NULL 可视为相等。若实现时直接使用 SQL 普通 <code>=</code>，可能改变结果。</p>
+        </div>
+        <div class="step">
+          <h3>绑定域 D 去重，不等于整条查询 DISTINCT</h3>
+          <p><code>D</code> 必须是 duplicate-free，这服务于下推等价式；原查询中的重复行仍要按 SQL 多重集语义保留。</p>
+        </div>
+        <div class="step">
+          <h3>聚合空输入有特殊语义</h3>
+          <p>历史上的 SQL unnesting 规则曾因 <code>COUNT</code> 和空输入出错。2025 论文在 group by static case 中特别提到，空分组聚合需要保证仍产生正确的单行结果，必要时借助 outer join 或 groupjoin。</p>
+        </div>
+        <div class="step">
+          <h3>消掉 D 是成本选择，不是语义必需</h3>
+          <p>用等价列替换 <code>D</code> 可以让计划更干净，但会减少早期过滤。如果 <code>D</code> 的 join 很有选择性，保留它可能更好。</p>
+        </div>
+        <div class="step">
+          <h3>深层嵌套不能只看局部</h3>
+          <p>2015 的局部下推在多数情况下很好，但多层 dependent join 堆叠时，局部最优可能制造巨大的中间域。2025 的 holistic 方法正是为这个场景设计的。</p>
+        </div>
+      </div>
+
+      <figure>
+        <img src="assets/paper2015-antijoin-q3-crop-p14.png" alt="2015 论文 dependent anti join ALL 子句示例">
+        <figcaption>2015 论文第 14 页：<code>ALL</code> 子句可通过 dependent anti join 表达，再改写为普通 anti join。不同子查询谓词需要不同 join 变体承载语义。</figcaption>
+      </figure>
+    </section>
+
+    <section id="reading-path">
+      <h2>7. 推荐学习路线</h2>
+      <div class="timeline">
+        <div class="time">第 1 步</div>
+        <div>先看 PPT 第 3-15 页，确认自己能区分 uncorrelated 与 correlated subquery，并能把相关子查询说成 <code>subquery(outer_column)</code>。</div>
+        <div class="time">第 2 步</div>
+        <div>看 PPT 第 24-43 页和 2015 论文第 1-13 页。重点追 Q1：dependent join、<code>D</code>、group by 加绑定列、最后变成普通 join。</div>
+        <div class="time">第 3 步</div>
+        <div>读 2015 论文第 13-15 页，理解 Q2 为什么不能完全替换掉 <code>D</code>，以及成本模型为什么要在“保留 D”和“替换 D”之间选择。</div>
+        <div class="time">第 4 步</div>
+        <div>读 2025 论文第 1-7 页，重点不是记伪代码，而是看懂 bottom-up 为什么会生成过大的绑定组合。</div>
+        <div class="time">第 5 步</div>
+        <div>最后读 2025 论文第 8-20 页，掌握 holistic unnesting 的三件事：识别访问者、携带状态、遇到嵌套相关性时合并处理。</div>
+      </div>
+
+      <div class="pill-row">
+        <span class="pill">相关子查询 = 内层有外层自由变量</span>
+        <span class="pill">Dependent join = 代数里的函数调用</span>
+        <span class="pill">D = 去重后的绑定域</span>
+        <span class="pill">2015 = 下推 D 消除 dependent join</span>
+        <span class="pill">2025 = top-down 避免多层 D 爆炸</span>
+      </div>
+    </section>
+
+    <section id="summary">
+      <h2>8. 一页总结</h2>
+      <p>嵌套 SQL 优化的核心，不是把 SQL 文本改得更漂亮，而是让优化器摆脱“外层每行调用一次内层”的执行形状。2015 论文给出通用代数方法：把相关子查询表达为 dependent join，抽出外层绑定域 <code>D</code>，把 <code>D</code> 下推到内层，最终把 dependent join 替换成普通 join。2025 论文进一步指出，多层相关子查询不能天真地自底向上逐个处理；应该从上到下整体识别和改写相关性，避免多个绑定域制造无用的中间交叉组合。</p>
+      <p>如果你只记一个心法：相关子查询的优化，就是把“逐行执行的函数调用”重写成“按绑定域分组的一次性关系计算”。</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>本文档依据本仓库 <code>unnset/paper</code> 下三份材料整理。图示截图来自对应 PDF 页面，文字说明为教学化转述。</p>
+    </div>
+  </footer>
+</body>
+</html>

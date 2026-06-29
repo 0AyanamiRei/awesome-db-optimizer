@@ -433,7 +433,7 @@ WHERE score = (
     <section id="dependent-join">
       <h2>2. 优化器眼里的相关子查询：Dependent Join</h2>
       <p>PPT 这一段的讲法很适合初学者：先不要急着看 2015 论文的代数公式，而是先看优化器如何把 SQL 里的 <code>SUBQUERY</code> 节点变成一个显式的逻辑算子。这个算子就是 dependent join。</p>
-      <p>这一节沿用的示范 SQL 是在学生表里找“每个专业中分数等于该专业最高分”的学生；内层子查询负责算当前外层学生所属专业的最高分。</p>
+      <p>这一节沿用的示范 SQL 是在学生表里找“每个专业中分数最高的学生”；内层子查询负责算当前外层学生所属专业的最高分。</p>
 
       <h3>2.1 从 SUBQUERY 节点到 LHS/RHS</h3>
       <p>还是用按专业找最高分的例子。SQL 里看起来只是 <code>WHERE score = (SELECT ...)</code>，但在逻辑计划里，外层 <code>students AS s1</code> 和内层 <code>students AS s2</code> 被拆成两边：</p>
@@ -469,6 +469,29 @@ WHERE score = (
 
       <h3>2.3 把 dependent join 往 RHS 里面推</h3>
       <p>有了 <code>D</code> 以后，优化器继续把 dependent join 往 RHS 子树深处推。它经过 filter，再经过 aggregate。经过 aggregate 时必须把绑定列加入分组键：否则 <code>MAX(score)</code> 会变成全表一个最大值，而不是每个 <code>d.major</code> 一个最大值。</p>
+      <p>理由是：下推之前，RHS 是“带着一个绑定值执行一次”。当 <code>d.major = 'CompSci'</code> 时，内层只看 <code>CompSci</code> 的行；当 <code>d.major = 'Streets'</code> 时，内层只看 <code>Streets</code> 的行。下推之后，优化器想把这些执行合并成一次关系计算，于是同一张中间关系里会同时出现多个绑定值的行。如果聚合仍然没有分组键，<code>MAX(score)</code> 就会把所有绑定值的行混在一起，只产出一个全局最大分数。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>绑定值</th>
+            <th>RHS 应该看到的行</th>
+            <th>正确结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>d.major = 'CompSci'</code></td>
+            <td><code>CompSci</code> 学生的分数，例如 <code>90, 80</code></td>
+            <td><code>MAX = 90</code></td>
+          </tr>
+          <tr>
+            <td><code>d.major = 'Streets'</code></td>
+            <td><code>Streets</code> 学生的分数，例如 <code>100</code></td>
+            <td><code>MAX = 100</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>所以聚合必须从“算一个 <code>MAX(score)</code>”变成“按 <code>d.major</code> 分组分别算 <code>MAX(score)</code>”。这不是性能细节，而是保持相关子查询语义的必要条件：原来每个绑定值各自执行一次，现在合并执行时也必须保留“每个绑定值一个结果”的边界。</p>
 
       <figure>
         <img src="assets/ppt-pushdown-groupby-p32.png" alt="PPT 第 32 页：dependent join 下推到聚合并加入 group by">
@@ -503,6 +526,56 @@ WHERE score = (
         <p class="callout-title">优化目标</p>
         <p>把“每个外层 tuple 触发一次内层求值”改成“为每个必要的绑定值集合求一次内层结果，然后用普通 join 接回外层”。这就是 decorrelation / unnesting 的核心。</p>
       </div>
+
+      <h3>2.6 这几步分别为什么成立？</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>PPT 步骤</th>
+            <th>计划改动</th>
+            <th>为什么语义不变</th>
+            <th>为什么更适合优化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>展开 <code>SUBQUERY</code></td>
+            <td>把内层子查询表示成 <code>DEPENDENT_JOIN</code> 的 RHS。</td>
+            <td>RHS 仍然能读取 LHS 当前行的 <code>s1.major</code>，等价于原 SQL 中内层引用外层列。</td>
+            <td>相关性从 SQL 语法现象变成显式逻辑算子，后续规则可以在代数树上工作。</td>
+          </tr>
+          <tr>
+            <td>引入绑定域 <code>D</code></td>
+            <td>从 LHS 抽取并去重相关列，得到 <code>D(d.major)</code>，再用 <code>s1.major = d.major</code> 接回 LHS。</td>
+            <td>RHS 的结果只取决于 <code>major</code>，同一个 <code>major</code> 的多行外层 tuple 会得到同一个内层聚合结果。</td>
+            <td>把“按外层每行执行”降为“按不同绑定值执行”，避免重复计算。</td>
+          </tr>
+          <tr>
+            <td>下推穿过 filter</td>
+            <td>把 dependent join 推到 <code>s2.major = d.major</code> 这个过滤条件下面或旁边。</td>
+            <td>过滤条件仍然使用同一个绑定值 <code>d.major</code> 来选择 RHS 行，只是绑定值变成了普通输入列。</td>
+            <td>相关谓词开始变成普通关系条件，为后续 join 化做准备。</td>
+          </tr>
+          <tr>
+            <td>下推穿过 aggregate</td>
+            <td>把聚合改成 <code>MAX(score) GROUP BY(d.major)</code>。</td>
+            <td>原语义是每个绑定值单独执行一次 RHS；分组键保留了这个“每个绑定值一个聚合结果”的边界。</td>
+            <td>多个绑定值可以在一次扫描/聚合中同时计算，而不会混成一个全局聚合。</td>
+          </tr>
+          <tr>
+            <td>转成普通 join</td>
+            <td>当 RHS 不再读取 LHS 当前行时，把 dependent join 变成 cross join，再把 <code>d.major = s2.major</code> 变成 inner join 条件。</td>
+            <td>RHS 所需的绑定列已经由 <code>D</code> 提供，不再需要逐行调用上下文。</td>
+            <td>普通 join 可以使用 hash join、join reorder 等成熟优化能力。</td>
+          </tr>
+          <tr>
+            <td>删除冗余 <code>D</code></td>
+            <td>在 <code>d.major</code> 可由 <code>s2.major</code> 等值替代时，移除 <code>DUP_ELIM_SCAN</code> 和多余过滤。</td>
+            <td>最终 join 仍会用 <code>s1.major = s2.major</code> 和 <code>s1.score = MAX(score)</code> 保证结果匹配。</td>
+            <td>计划回到更简洁的 join + group by 形状，少一个中间绑定域。</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="paper-2015">

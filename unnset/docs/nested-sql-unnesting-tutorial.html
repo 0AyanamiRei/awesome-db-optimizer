@@ -144,6 +144,14 @@
       letter-spacing: 0;
     }
 
+    h4 {
+      margin: 22px 0 8px;
+      font-size: 17px;
+      line-height: 1.35;
+      letter-spacing: 0;
+      color: var(--accent);
+    }
+
     p {
       margin: 0 0 14px;
     }
@@ -803,21 +811,137 @@ WHERE c.c_mktsegment = 'AUTOMOBILE'
       </table>
 
       <h3>4.3 旧 bottom-up 为什么会出问题？</h3>
-      <p>如果继续沿用 2015 的“从内到外，一个 dependent join 一个 dependent join 地消除”，优化器会先处理 <code>lineitem</code> 这一层，再处理 <code>orders</code> 这一层。对简单查询这没问题；但当内层子查询还同时引用更外层的列，或者多层绑定之间有选择性 join 条件时，先处理内层会让优化器过早保留一个局部绑定域 <code>D</code>。等外层再 unnest 时，两个绑定域可能被组合成比真实 join 域大得多的中间关系。</p>
-      <p>直观地说，真实需要的不是“所有客户绑定 × 所有订单绑定”的组合，而是“这些客户真正拥有的那些订单”。如果计划先制造了前者，再靠后面的 join/filter 删除无效组合，最终结果仍然对，但中间的 group by、join、内存都会被迫处理太多无用行。</p>
+      <p>论文第 2.3 节没有继续用完整 SQL，而是把问题压缩成三张表 <code>T1</code>、<code>T2</code>、<code>T3</code> 的代数树。这个图比 SQL 更适合看清 2015 bottom-up 策略的坏处。</p>
 
-      <div class="grid-2">
-        <figure>
-          <img src="assets/paper2025-bottomup-before-crop-p6.png" alt="2025 论文嵌套 dependent join 示例">
-          <figcaption>2025 论文第 6 页：嵌套 dependent join 的小型病理例子。</figcaption>
-        </figure>
-        <figure>
-          <img src="assets/paper2025-bottomup-crossproduct-crop-p7.png" alt="2025 论文 bottom-up 产生过大绑定域示例">
-          <figcaption>2025 论文第 7 页：自底向上再次 unnest 后，<code>T1.a</code> 与 <code>T2.b</code> 的组合可能比真实 join 域大得多。</figcaption>
-        </figure>
+      <figure>
+        <img src="assets/paper2025-bottomup-before-crop-p6.png" alt="2025 论文第 2.3 节：原始嵌套 dependent join 以及先 unnest lower join 后的计划">
+        <figcaption>2025 论文第 6 页：上半部分是病理例子的原始嵌套 dependent join；下半部分开始展示 2015 bottom-up 会先 unnest 较低的 dependent join。</figcaption>
+      </figure>
+
+      <h4>4.3.1 先读上半张图：三层表分别扮演什么角色</h4>
+      <p>把这张代数树按层读：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>图中符号</th>
+            <th>可以类比成 TPC-H 例子里的谁</th>
+            <th>它在图里做什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>T1</code></td>
+            <td><code>customer</code></td>
+            <td>最外层输入，先经过 <code>σ f = 123</code> 过滤，然后提供外层绑定列 <code>T1.a</code>。</td>
+          </tr>
+          <tr>
+            <td><code>T2</code></td>
+            <td><code>orders</code></td>
+            <td>中层输入，通过 <code>σ T2.a = T1.a</code> 绑定到当前 <code>T1</code>。这相当于“只看当前客户的订单”。</td>
+          </tr>
+          <tr>
+            <td><code>T3</code></td>
+            <td><code>lineitem</code></td>
+            <td>最内层输入，通过 <code>T3.b = T2.b</code> 绑定到当前 <code>T2</code>，同时又通过 <code>T3.a = T1.a</code> 直接引用最外层 <code>T1</code>。</td>
+          </tr>
+          <tr>
+            <td><code>Γ</code></td>
+            <td><code>GROUP BY / aggregate</code></td>
+            <td>图里的两个聚合分别对应“按内层绑定计算 <code>t</code>”和“按外层绑定计算 <code>cnt</code>”。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warning">
+        <p class="callout-title">触发问题的关键</p>
+        <p>如果最内层只有 <code>T3.b = T2.b</code>，它只依赖中层 <code>T2</code>。但图里额外有 <code>T3.a = T1.a</code>，也就是最内层同时读取更外层的 <code>T1</code>。2025 论文说的坏情况主要就是这个“跨层引用”。</p>
       </div>
 
-      <p>这不是语义错误，而是计划质量错误。2025 论文提到实际触发场景来自把复杂 UDF 翻译成纯 SQL 后产生的深层嵌套查询；旧策略可能耗尽内存，新策略可以在毫秒级完成。</p>
+      <h4>4.3.2 bottom-up 第一步：先 unnest 较低的 dependent join</h4>
+      <p>2015 的顺序是从内到外。于是优化器先处理右侧里面较低的 dependent join：左边是 <code>σ T2.a = T1.a (T2)</code>，右边是对 <code>T3</code> 的聚合。</p>
+      <p>按照 2015 的方法，它会为内层引用构造一个绑定域。此处内层聚合至少需要 <code>T2.b</code>，所以计划中出现了类似：</p>
+      <span class="formula">Π<sub>T2.b</sub>(σ<sub>T2.a = T1.a</sub>(T2))</span>
+      <p>这表示“从当前 <code>T1.a</code> 对应的 <code>T2</code> 行里，取出会被 <code>T3</code> 用到的 <code>T2.b</code>”。这一步本身仍然正确，而且如果只处理这一层，看起来也很合理。</p>
+
+      <p>但请注意：这个局部绑定域只显式保留了 <code>T2.b</code>。它背后虽然来自 <code>σ T2.a = T1.a</code>，但后续再处理更外层 dependent join 时，<code>T1.a</code> 和 <code>T2.b</code> 的配对关系可能被拆开。</p>
+
+      <h4>4.3.3 bottom-up 第二步：外层 unnest 让两个绑定维度被拆开组合</h4>
+      <p>第二张图展示了继续 unnest 外层 dependent join 后的形状。重点看中间的聚合：</p>
+      <figure>
+        <img src="assets/paper2025-bottomup-crossproduct-crop-p7.png" alt="2025 论文第 2.3 节：bottom-up 再次 unnest 后产生过大绑定域">
+        <figcaption>2025 论文第 7 页：再次 unnest 后，内层聚合变成按 <code>{T1.a, T2.b}</code> 分组；但 <code>T1.a</code> 和 <code>T2.b</code> 是从两个投影路径进入的，可能先形成过大的组合域。</figcaption>
+      </figure>
+
+      <p>图中最危险的位置是：</p>
+      <span class="formula">Γ<sub>{T1.a,T2.b}; t:...</sub></span>
+      <p>它说明内层聚合现在要为每个 <code>(T1.a, T2.b)</code> 组合计算 <code>t</code>。问题不在于“按两个列分组”本身；如果这两个列来自真实 join 后的行，那是对的。问题在于图里 <code>T1.a</code> 和 <code>T2.b</code> 被两条路径分别带进去：</p>
+      <ul>
+        <li><code>Π T1.a</code> 从外层 <code>σ f = 123(T1)</code> 产生所有外层绑定。</li>
+        <li><code>Π T2.b</code> 从中层 <code>T2</code> 产生所有内层订单绑定。</li>
+        <li>真正约束它们关系的 <code>T2.a = T1.a</code> 在图的下方/旁边，后面才过滤掉无效组合。</li>
+      </ul>
+
+      <p>也就是说，计划会先像这样想问题：</p>
+      <span class="formula">所有可能的 T1.a × 所有可能的 T2.b</span>
+      <p>然后再靠 <code>T2.a = T1.a</code> 把不属于同一个外层绑定的组合删掉。结果是对的，但聚合已经为太多组合做过准备。</p>
+
+      <h4>4.3.4 用一个小表模拟第二张图里的膨胀</h4>
+      <p>假设真实关系是：</p>
+      <table>
+        <thead>
+          <tr>
+            <th><code>T1.a</code></th>
+            <th>真实连到的 <code>T2.b</code></th>
+            <th>真实需要的分组键</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>A1</code></td>
+            <td><code>B10</code>, <code>B11</code></td>
+            <td><code>(A1,B10)</code>, <code>(A1,B11)</code></td>
+          </tr>
+          <tr>
+            <td><code>A2</code></td>
+            <td><code>B20</code></td>
+            <td><code>(A2,B20)</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>真实只需要 3 个 <code>(T1.a,T2.b)</code> 分组。但如果先把两个绑定维度拆开，就会得到：</p>
+      <span class="formula">{A1,A2} × {B10,B11,B20}</span>
+
+      <table>
+        <thead>
+          <tr>
+            <th>组合</th>
+            <th>是否真实需要？</th>
+            <th>何时被发现无效</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>(A1, B10)</code>, <code>(A1, B11)</code>, <code>(A2, B20)</code></td>
+            <td>是</td>
+            <td>这些组合满足 <code>T2.a = T1.a</code>。</td>
+          </tr>
+          <tr>
+            <td><code>(A1, B20)</code>, <code>(A2, B10)</code>, <code>(A2, B11)</code></td>
+            <td>否</td>
+            <td>后续 join/filter 才会用 <code>T2.a = T1.a</code> 删除。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>这个 2 个 <code>A</code>、3 个 <code>B</code> 的玩具例子只是为了看清形状。真实数据里如果 <code>T1.a</code> 有百万级取值、<code>T2.b</code> 有千万级取值，先构造近似 <code>|T1.a| × |T2.b|</code> 的中间域就会把内存和 CPU 吃光。论文强调：这不是语义错误，而是计划质量错误。</p>
+
+      <div class="warning">
+        <p class="callout-title">对应回 customer/orders/lineitem</p>
+        <p>正确的绑定域应该是 <code>{(customer, order) | order 属于 customer}</code>。坏的 bottom-up 形状可能先得到 <code>{customer} × {order}</code>，再事后过滤。这就是为什么 2025 要改成 top-down holistic，而不是继续一个 dependent join 一个 dependent join 地局部消除。</p>
+      </div>
+
+      <p>2025 论文提到，实际触发场景来自把复杂 UDF 翻译成纯 SQL 后产生的深层嵌套查询。旧策略可能在这些无效组合上耗尽内存；新策略则通过整体处理相关性，避免先制造这些组合。</p>
 
       <h3>4.4 Holistic 的主意：先看整棵相关树</h3>
       <p>Holistic unnesting 仍然继承 2015 的核心思想：识别外层引用，构造或推理绑定域，最终消除 dependent join。差别是它不急着先消除最里面那一层，而是先标注整棵树里的相关访问，再从上往下处理。</p>

@@ -700,8 +700,8 @@ WHERE score = (
       <h2>4. 2025：为什么还需要 Holistic Unnesting？</h2>
       <p>2015 方法已经能处理大量查询，但 2025 论文指出一个新问题：当 dependent join 多层嵌套时，自底向上一个个消除会让较外层的 <code>D</code> 穿过已经改写过的内层结构，可能生成过大的中间交叉组合。结果仍然正确，但代价可能爆炸。</p>
 
-      <h3>4.1 多层相关子查询的示例</h3>
-      <p>2025 论文开头用 TPC-H 风格查询说明：找汽车市场客户，这些客户有超过 5 个订单，每个订单的 lineitem 总价超过 300000。这里有两层相关关系：<code>orders</code> 引用 <code>customer</code>，<code>lineitem</code> 引用 <code>orders</code>。</p>
+      <h3>4.1 权威例子：TPC-H 风格的两层相关子查询</h3>
+      <p>2025 论文开头的 Figure 1 就是最适合教学的例子。它要找出汽车市场客户，并且这些客户至少有 6 个订单满足“该订单的 lineitem 总金额超过 300000”。注意这里不是一个相关子查询，而是两个相关子查询叠在一起。</p>
       <pre><code>SELECT *
 FROM customer
 WHERE c_mktsegment = 'AUTOMOBILE'
@@ -716,13 +716,90 @@ WHERE c_mktsegment = 'AUTOMOBILE'
       ) &gt; 300000
   ) &gt; 5;</code></pre>
 
+      <table>
+        <thead>
+          <tr>
+            <th>层级</th>
+            <th>子查询在算什么</th>
+            <th>它依赖谁</th>
+            <th>绑定列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>外层</td>
+            <td>对当前客户，数有多少订单满足收入条件。</td>
+            <td><code>orders</code> 子查询依赖当前 <code>customer</code> 行。</td>
+            <td><code>o_custkey = c_custkey</code></td>
+          </tr>
+          <tr>
+            <td>内层</td>
+            <td>对当前订单，汇总这个订单的所有 lineitem 金额。</td>
+            <td><code>lineitem</code> 子查询依赖当前 <code>orders</code> 行。</td>
+            <td><code>l_orderkey = o_orderkey</code></td>
+          </tr>
+        </tbody>
+      </table>
+
       <figure>
         <img src="assets/paper2025-fig1-query-plan-crop-p1.png" alt="2025 论文 Figure 1 nested correlated query and algebra plan">
         <figcaption>2025 论文第 1 页 Figure 1：两层 correlated subquery 形成嵌套 dependent join；颜色标出不同层级的相关性。</figcaption>
       </figure>
 
-      <h3>4.2 自底向上的病理情况</h3>
-      <p>问题的本质是：先消除内层 dependent join 时，优化器可能保留一个和内层绑定有关的 <code>D</code>；再消除外层 dependent join 时，外层绑定可能和内层绑定组合成更大的域。这个域包含很多最后会被过滤掉的组合，但 group by 等算子已经为它们付出了代价。</p>
+      <p>如果用“函数调用”的眼光看，这条 SQL 大概是这样执行的：对每个 customer，调用一次 <code>count_expensive_orders(c_custkey)</code>；这个函数内部又对每个 order 调用一次 <code>sum_lineitems(o_orderkey)</code>。2025 论文要解决的就是：当这种函数调用嵌套很多层时，优化器不能只把最里面一层孤立地拉平。</p>
+
+      <h3>4.2 这条 SQL 去相关后的目标形状</h3>
+      <p>为了先看清目标，可以把它手写成 CTE 风格的去相关形状。下面这段不是论文要求用户手写的代码，而是帮助理解优化器想自动得到的计划形状：</p>
+      <pre><code>WITH order_revenue AS (
+  SELECT o.o_orderkey,
+         o.o_custkey,
+         SUM(l.l_extendedprice) AS revenue
+  FROM orders AS o
+  JOIN lineitem AS l
+    ON l.l_orderkey = o.o_orderkey
+  GROUP BY o.o_orderkey, o.o_custkey
+),
+customer_order_count AS (
+  SELECT o_custkey,
+         COUNT(*) AS cnt
+  FROM order_revenue
+  WHERE revenue &gt; 300000
+  GROUP BY o_custkey
+)
+SELECT c.*
+FROM customer AS c
+JOIN customer_order_count AS coc
+  ON coc.o_custkey = c.c_custkey
+WHERE c.c_mktsegment = 'AUTOMOBILE'
+  AND coc.cnt &gt; 5;</code></pre>
+
+      <p>这个形状对应两次“按绑定值分组的一次性计算”：先按订单算 revenue，再按客户算满足条件的订单数。它和 2015 students 例子的区别在于：这里的第二层聚合依赖第一层聚合的结果，因此两个 dependent join 是堆叠的。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>原相关执行</th>
+            <th>去相关后</th>
+            <th>为什么要这样分组</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>对每个订单单独执行 <code>SUM(lineitem)</code>。</td>
+            <td>一次性按 <code>o_orderkey</code> 分组算每个订单收入。</td>
+            <td>内层绑定值是订单号；每个订单必须有自己的 <code>SUM</code>。</td>
+          </tr>
+          <tr>
+            <td>对每个客户单独执行 <code>COUNT(orders)</code>。</td>
+            <td>一次性按 <code>o_custkey</code> 分组算每个客户的订单数。</td>
+            <td>外层绑定值是客户号；每个客户必须有自己的 <code>COUNT</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>4.3 旧 bottom-up 为什么会出问题？</h3>
+      <p>如果继续沿用 2015 的“从内到外，一个 dependent join 一个 dependent join 地消除”，优化器会先处理 <code>lineitem</code> 这一层，再处理 <code>orders</code> 这一层。对简单查询这没问题；但当内层子查询还同时引用更外层的列，或者多层绑定之间有选择性 join 条件时，先处理内层会让优化器过早保留一个局部绑定域 <code>D</code>。等外层再 unnest 时，两个绑定域可能被组合成比真实 join 域大得多的中间关系。</p>
+      <p>直观地说，真实需要的不是“所有客户绑定 × 所有订单绑定”的组合，而是“这些客户真正拥有的那些订单”。如果计划先制造了前者，再靠后面的 join/filter 删除无效组合，最终结果仍然对，但中间的 group by、join、内存都会被迫处理太多无用行。</p>
 
       <div class="grid-2">
         <figure>
@@ -737,14 +814,40 @@ WHERE c_mktsegment = 'AUTOMOBILE'
 
       <p>这不是语义错误，而是计划质量错误。2025 论文提到实际触发场景来自把复杂 UDF 翻译成纯 SQL 后产生的深层嵌套查询；旧策略可能耗尽内存，新策略可以在毫秒级完成。</p>
 
-      <h3>4.3 Holistic 的主意：从上到下一起处理</h3>
-      <p>Holistic unnesting 仍然继承 2015 的核心思想：识别外层引用，构造或推理绑定域，最终消除 dependent join。差别在执行顺序和状态管理：</p>
-      <ol>
-        <li>先识别所有非平凡 dependent join，也就是右侧确实访问左侧列的 join。</li>
-        <li>按从根到叶的顺序处理 dependent join。</li>
-        <li>在向下改写时维护 outer references、等价类、替换映射等状态。</li>
-        <li>遇到嵌套 dependent join 时合并处理，避免不同 <code>D</code> 集合互相穿越造成交叉爆炸。</li>
-      </ol>
+      <h3>4.4 Holistic 的主意：先看整棵相关树</h3>
+      <p>Holistic unnesting 仍然继承 2015 的核心思想：识别外层引用，构造或推理绑定域，最终消除 dependent join。差别是它不急着先消除最里面那一层，而是先标注整棵树里的相关访问，再从上往下处理。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Holistic 步骤</th>
+            <th>放回 Figure 1 怎么理解</th>
+            <th>避免了什么问题</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>识别非平凡 dependent join</td>
+            <td>标出 <code>orders</code> 读取 <code>customer.c_custkey</code>，以及 <code>lineitem</code> 读取 <code>orders.o_orderkey</code>。</td>
+            <td>优化器知道这里有两层相关性，而不是两个互不相关的小问题。</td>
+          </tr>
+          <tr>
+            <td>记录访问者 accessing</td>
+            <td>记录哪些 filter/aggregate 节点真正使用了外层列。</td>
+            <td>下推时只改写需要绑定值的路径，不盲目复制 <code>D</code>。</td>
+          </tr>
+          <tr>
+            <td>从上到下消除</td>
+            <td>先处理客户到订单这一层，再在同一轮过程中看到订单到 lineitem 这一层。</td>
+            <td>不会让内层 <code>D</code> 先独立成形，再被外层 <code>D</code> 交叉放大。</td>
+          </tr>
+          <tr>
+            <td>维护等价类和替换映射</td>
+            <td>利用 <code>o_custkey = c_custkey</code>、<code>l_orderkey = o_orderkey</code> 这类等值条件判断外层引用能否被内层列替代。</td>
+            <td>能在“显式 join D”和“替换外层引用”之间做成本选择。</td>
+          </tr>
+        </tbody>
+      </table>
 
       <figure>
         <img src="assets/paper2025-annotations-crop-p8.png" alt="2025 论文 dependent join annotations">
@@ -756,7 +859,7 @@ WHERE c_mktsegment = 'AUTOMOBILE'
         <p>2015 是“看到一个 dependent join，就把它的 <code>D</code> 往下推到底”。2025 是“先看整棵树里所有相关性，再从上往下携带状态，别让多个 <code>D</code> 无意义地相乘”。</p>
       </div>
 
-      <h3>4.4 2025 的算法状态</h3>
+      <h3>4.5 2025 的算法状态</h3>
       <p>论文中的状态结构大致包含这些信息：</p>
       <ul>
         <li><code>outerRefs</code>：右侧访问了左侧哪些列。</li>

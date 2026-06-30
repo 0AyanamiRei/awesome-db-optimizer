@@ -702,19 +702,24 @@ WHERE score = (
 
       <h3>4.1 权威例子：TPC-H 风格的两层相关子查询</h3>
       <p>2025 论文开头的 Figure 1 就是最适合教学的例子。它要找出汽车市场客户，并且这些客户至少有 6 个订单满足“该订单的 lineitem 总金额超过 300000”。注意这里不是一个相关子查询，而是两个相关子查询叠在一起。</p>
-      <pre><code>SELECT *
-FROM customer
-WHERE c_mktsegment = 'AUTOMOBILE'
+      <p>为了看清嵌套结构，可以先按“外层客户 -> 中层订单 -> 内层订单明细”来排版：</p>
+      <pre><code>-- Level 0: outer query, one row is one customer
+SELECT *
+FROM customer AS c
+WHERE c.c_mktsegment = 'AUTOMOBILE'
   AND (
+    -- Level 1: for this customer, count qualifying orders
     SELECT COUNT(*)
-    FROM orders
-    WHERE o_custkey = c_custkey
+    FROM orders AS o
+    WHERE o.o_custkey = c.c_custkey
       AND (
-        SELECT SUM(l_extendedprice)
-        FROM lineitem
-        WHERE l_orderkey = o_orderkey
+        -- Level 2: for this order, compute total lineitem revenue
+        SELECT SUM(l.l_extendedprice)
+        FROM lineitem AS l
+        WHERE l.l_orderkey = o.o_orderkey
       ) &gt; 300000
   ) &gt; 5;</code></pre>
+      <p>读这段 SQL 时，先不要从上到下一行行扫，而是看两个“向外引用”的条件：<code>o.o_custkey = c.c_custkey</code> 把订单子查询绑定到当前客户，<code>l.l_orderkey = o.o_orderkey</code> 把明细子查询绑定到当前订单。这两个绑定条件就是 Figure 1 里的两层相关性。</p>
 
       <table>
         <thead>
@@ -730,13 +735,13 @@ WHERE c_mktsegment = 'AUTOMOBILE'
             <td>外层</td>
             <td>对当前客户，数有多少订单满足收入条件。</td>
             <td><code>orders</code> 子查询依赖当前 <code>customer</code> 行。</td>
-            <td><code>o_custkey = c_custkey</code></td>
+            <td><code>o.o_custkey = c.c_custkey</code></td>
           </tr>
           <tr>
             <td>内层</td>
             <td>对当前订单，汇总这个订单的所有 lineitem 金额。</td>
             <td><code>lineitem</code> 子查询依赖当前 <code>orders</code> 行。</td>
-            <td><code>l_orderkey = o_orderkey</code></td>
+            <td><code>l.l_orderkey = o.o_orderkey</code></td>
           </tr>
         </tbody>
       </table>
@@ -843,7 +848,7 @@ WHERE c.c_mktsegment = 'AUTOMOBILE'
           </tr>
           <tr>
             <td>维护等价类和替换映射</td>
-            <td>利用 <code>o_custkey = c_custkey</code>、<code>l_orderkey = o_orderkey</code> 这类等值条件判断外层引用能否被内层列替代。</td>
+            <td>利用 <code>o.o_custkey = c.c_custkey</code>、<code>l.l_orderkey = o.o_orderkey</code> 这类等值条件判断外层引用能否被内层列替代。</td>
             <td>能在“显式 join D”和“替换外层引用”之间做成本选择。</td>
           </tr>
         </tbody>

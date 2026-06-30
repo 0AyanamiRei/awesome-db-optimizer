@@ -580,40 +580,46 @@ WHERE score = (
 
     <section id="paper-2015">
       <h2>3. 2015：任意查询的代数级 Unnesting</h2>
-      <p>2015 论文的主张很强：不要只靠 SQL 文本模式匹配；把查询先翻译成带 dependent join 的关系代数，然后在代数层面消除 dependent join。这样比“看到某种 SQL 写法就套某条规则”的启发式方法更通用。</p>
+      <p>前一节已经用教学 PPT 把 students 例子的执行形状讲完了：相关子查询先变成 dependent join，再引入绑定域 <code>D</code>，下推到 RHS，最后转成普通 join。因此这一节不再重复同一个 SQL 例子，而是看 2015 论文把这套直觉推广成了什么。</p>
 
-      <h3>3.1 先看论文的 Q1 案例</h3>
-      <p>论文的运行例子是：找出每个学生成绩最好的考试。原 SQL 是相关子查询，因为内层 <code>e2.sid</code> 要和外层 <code>s.id</code> 比较。</p>
-      <pre><code>-- Q1: correlated form
-SELECT s.name, e.course
-FROM students s, exams e
-WHERE s.id = e.sid
-  AND e.grade = (
-    SELECT MIN(e2.grade)
-    FROM exams e2
-    WHERE s.id = e2.sid
-  );</code></pre>
-
-      <p>如果手写成去相关 SQL，大致就是先按学生聚合出最好成绩，再接回原查询。</p>
-      <pre><code>-- Q1': decorrelated shape
-SELECT s.name, e.course
-FROM students s, exams e,
-     (SELECT e2.sid AS id, MIN(e2.grade) AS best
-      FROM exams e2
-      GROUP BY e2.sid) m
-WHERE s.id = e.sid
-  AND m.id = s.id
-  AND e.grade = m.best;</code></pre>
+      <h3>3.1 PPT 之后，论文新增了什么？</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>前面 PPT 已经说明</th>
+            <th>2015 论文进一步给出</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>一个具体相关聚合子查询可以被拉平成 join + group by。</td>
+            <td>任意相关子查询都可以先表达成 dependent join，再用代数规则消除。</td>
+          </tr>
+          <tr>
+            <td><code>DUP_ELIM_SCAN</code> 表示只按不同绑定值执行 RHS。</td>
+            <td><code>D := Π<sub>F(T2)∩A(T1)</sub>(T1)</code> 精确定义了绑定域来自哪些外层列。</td>
+          </tr>
+          <tr>
+            <td>下推经过聚合时要把绑定列加入 group by。</td>
+            <td>给出 selection、join、group by、projection、set operation 等通用下推等价式。</td>
+          </tr>
+          <tr>
+            <td>最后有些情况下可以删除 <code>D</code>。</td>
+            <td>说明删除 <code>D</code> 依赖等价类/替换，并且是成本选择，不是永远更好。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>所以，2015 论文的重点不是“又举了一个能改写的 SQL”，而是把 PPT 中的动画步骤抽象成优化器可以机械应用的一组关系代数规则。</p>
 
       <figure>
         <img src="assets/paper2015-fig1-pushdown-crop-p7.png" alt="2015 论文 Figure 1 dependent join push-down">
-        <figcaption>2015 论文第 7 页 Figure 1：把原 dependent join 改成外层与绑定域 <code>D</code> 的普通 join，再把 <code>D</code> 送进内层聚合。</figcaption>
+        <figcaption>2015 论文第 7 页 Figure 1：这里仍是一个 correlated aggregate 的例子，但读图重点应放在“把外层绑定域 <code>D</code> 送进内层子树”这个通用形状，而不是 SQL 表名本身。</figcaption>
       </figure>
 
       <h3>3.2 核心等价式：先造 D，再下推 D</h3>
       <p>2015 算法最关键的一步，是把原来的 dependent join 拆成两个部分：一个普通 join 加一个以去重绑定域驱动的新 dependent join。</p>
       <span class="formula">T1 ⧑p T2 ≡ T1 ⋈(p ∧ T1=A(D)D) (D ⧑ T2)，其中 D := Π<sub>F(T2)∩A(T1)</sub>(T1)</span>
-      <p>这里的 <code>T1=A(D)D</code> 表示普通 join 需要把外层原列和投影/重命名后的 <code>D</code> 列对应起来，不是随便做一个自然连接。比如 Q1 里论文把 <code>s.id</code> 投影成 <code>d.id</code>，接回外层时要用 <code>s.id = d.id</code>。</p>
+      <p>这里的 <code>T1=A(D)D</code> 表示普通 join 需要把外层原列和投影/重命名后的 <code>D</code> 列对应起来，不是随便做一个自然连接。比如论文的等值聚合示例把 <code>s.id</code> 投影成 <code>d.id</code>，接回外层时要用 <code>s.id = d.id</code>。</p>
       <p>这句话可以翻译成新手版：</p>
       <ol>
         <li>先从外层 <code>T1</code> 取出内层 <code>T2</code> 真正引用的外层列。</li>
@@ -663,16 +669,16 @@ WHERE s.id = e.sid
 
       <figure>
         <img src="assets/paper2015-q1-steps1-2-crop-p10.png" alt="2015 论文 Q1 transformation steps 1 and 2">
-        <figcaption>2015 论文第 10 页 Figures 3-4：第一步建立绑定域 <code>D</code>，第二步把 <code>D</code> 加进聚合分组键。</figcaption>
+        <figcaption>2015 论文第 10 页 Figures 3-4：读图重点是两个通用动作：建立绑定域 <code>D</code>，以及把 <code>D</code> 加进聚合分组键。</figcaption>
       </figure>
 
       <figure>
         <img src="assets/paper2015-q1-steps4-5-crop-p11.png" alt="2015 论文 Q1 transformation steps 4 and 5">
-        <figcaption>2015 论文第 11 页 Figures 6-7：dependent join 下推到底后变成普通 join，随后常规优化再把过滤条件推回去。</figcaption>
+        <figcaption>2015 论文第 11 页 Figures 6-7：读图重点是 dependent join 下推到底后变成普通 join，随后常规优化再把过滤条件推回去。</figcaption>
       </figure>
 
       <h3>3.4 什么时候可以把 D 整个消掉？</h3>
-      <p>有时 <code>D</code> 的列和内层已有列通过等值条件绑定。Q1 中 <code>d.id = e2.sid</code>，所以可以用 map/substitution 把 <code>d.id</code> 替换成 <code>e2.sid</code>，让计划看起来完全像普通手写 join。</p>
+      <p>有时 <code>D</code> 的列和内层已有列通过等值条件绑定。在论文的等值聚合示例中，<code>d.id = e2.sid</code>，所以可以用 map/substitution 把 <code>d.id</code> 替换成 <code>e2.sid</code>，让计划看起来完全像普通手写 join。</p>
 
       <figure>
         <img src="assets/paper2015-substitution-q2-crop-p12.png" alt="2015 论文 Figure 8 substitution and Figure 9 Q2">
@@ -835,7 +841,7 @@ WHERE rn BETWEEN offset + 1 AND offset + limit;</code></pre>
         <div class="time">第 1 步</div>
         <div>先看 PPT 第 3-15 页，确认自己能区分 uncorrelated 与 correlated subquery，并能把相关子查询说成 <code>subquery(outer_column)</code>。</div>
         <div class="time">第 2 步</div>
-        <div>看 PPT 第 24-43 页和 2015 论文第 1-13 页。重点追 Q1：dependent join、<code>D</code>、group by 加绑定列、最后变成普通 join。</div>
+        <div>看 PPT 第 24-43 页和 2015 论文第 1-13 页。PPT 用具体例子建立直觉；论文部分重点看这些直觉如何变成 <code>D</code> 的定义、下推等价式和替换规则。</div>
         <div class="time">第 3 步</div>
         <div>读 2015 论文第 13-15 页，理解 Q2 为什么不能完全替换掉 <code>D</code>，以及成本模型为什么要在“保留 D”和“替换 D”之间选择。</div>
         <div class="time">第 4 步</div>

@@ -263,6 +263,19 @@
       background: #fbfcfd;
     }
 
+    .figure-comparison {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin: 20px 0;
+    }
+
+    .figure-comparison figure {
+      margin: 0;
+      height: 100%;
+    }
+
     .timeline {
       display: grid;
       grid-template-columns: 160px minmax(0, 1fr);
@@ -359,7 +372,8 @@
 
     @media (max-width: 860px) {
       .hero,
-      .grid-2 {
+      .grid-2,
+      .figure-comparison {
         grid-template-columns: 1fr;
       }
 
@@ -820,17 +834,18 @@ WHERE c.c_mktsegment = 'AUTOMOBILE'
 
       <p>bottom-up unnesting 会先处理较低的 dependent join。处理完成后，计划变成下面这样。论文特别说明，优化器很可能会保留 <code>Π<sub>T2.b</sub>(σ<sub>T2.a=T1.a</sub>(T2))</code> 这个计算，而不是直接用替换消掉它，因为过滤条件 <code>T2.a = T1.a</code> 可能具有选择性。</p>
 
-      <figure>
-        <img src="assets/paper2025-sec23-after-lower-unnest-p6.png" alt="2025 论文第 2.3 节先 unnest lower dependent join 后的计划">
-        <figcaption>2025 论文第 6 页：先 unnest 较低 dependent join 后的计划。局部看，这一步仍然合理。</figcaption>
-      </figure>
-
       <p>但是，如果接着再运行算法去消除最上层 dependent join，就会出现第三张图。此时 lower join 的 RHS 概念上会在 <code>T1.a</code> 的域和 <code>T2.b</code> 的域的完整组合上求值，而不是只在 <code>T1</code> 与 <code>T2</code> 真实 join 后产生的绑定域上求值。</p>
 
-      <figure>
-        <img src="assets/paper2025-sec23-after-top-unnest-p7.png" alt="2025 论文第 2.3 节继续 unnest topmost dependent join 后的计划">
-        <figcaption>2025 论文第 7 页：继续消除最上层 dependent join 后，<code>Γ<sub>{T1.a,T2.b};t:...</sub></code> 会处理过大的绑定组合。</figcaption>
-      </figure>
+      <div class="figure-comparison">
+        <figure>
+          <img src="assets/paper2025-sec23-after-lower-unnest-p6.png" alt="2025 论文第 2.3 节先 unnest lower dependent join 后的计划">
+          <figcaption>2025 论文第 6 页：先 unnest 较低 dependent join 后的计划。局部看，这一步仍然合理。</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/paper2025-sec23-after-top-unnest-p7.png" alt="2025 论文第 2.3 节继续 unnest topmost dependent join 后的计划">
+          <figcaption>2025 论文第 7 页：继续消除最上层 dependent join 后，<code>Γ<sub>{T1.a,T2.b};t:...</sub></code> 会处理过大的绑定组合。</figcaption>
+        </figure>
+      </div>
 
       <p>论文强调：这个结果仍然是正确的，因为 <code>t &gt; ... ∧ natural {T1.a,T2.b}</code> 的 join 条件最终会删除那些不满足 <code>T2.a = T1.a</code> 的 <code>T1.a</code> 取值。但是，<code>GROUP BY</code> 已经处理了太多绑定组合。也就是说，错误不在结果，而在中间计划过大。</p>
 

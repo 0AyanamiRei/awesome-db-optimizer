@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TiDB、GPORCA、DataFusion 嵌套子查询优化调研</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --paper: #ffffff;
+      --ink: #20242a;
+      --muted: #626a73;
+      --line: #d8dde3;
+      --blue: #245a9c;
+      --teal: #16736b;
+      --red: #aa3b42;
+      --amber: #9a681d;
+      --green-soft: #e7f3ef;
+      --blue-soft: #e8f0fb;
+      --red-soft: #f8e9ea;
+      --amber-soft: #f7eedf;
+      --code: #f0f2f5;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.72;
+    }
+
+    main {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 40px 22px 80px;
+    }
+
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 34px 34px 28px;
+      box-shadow: 0 10px 32px rgba(32, 36, 42, 0.06);
+    }
+
+    h1, h2, h3 {
+      line-height: 1.26;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(30px, 4vw, 48px);
+      font-weight: 760;
+    }
+
+    h2 {
+      margin: 42px 0 18px;
+      font-size: 28px;
+      border-left: 6px solid var(--blue);
+      padding-left: 12px;
+    }
+
+    h3 {
+      margin: 28px 0 12px;
+      font-size: 21px;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      background: var(--code);
+      border-radius: 5px;
+      padding: 0.1em 0.34em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      margin: 12px 0 18px;
+      padding: 16px;
+      overflow-x: auto;
+      background: #1f252d;
+      color: #f4f6f8;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    .subtitle {
+      max-width: 920px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #fbfcfd;
+      white-space: nowrap;
+    }
+
+    .toc {
+      margin: 20px 0 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+    }
+
+    .toc a {
+      display: block;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    section {
+      margin-top: 24px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px 30px;
+    }
+
+    .lead {
+      font-size: 17px;
+      color: #30363d;
+    }
+
+    .callout {
+      border-left: 5px solid var(--teal);
+      background: var(--green-soft);
+      padding: 14px 16px;
+      border-radius: 6px;
+      margin: 16px 0;
+    }
+
+    .warning {
+      border-left-color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .negative {
+      border-left-color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfd;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 22px;
+      font-size: 15px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef2f6;
+      font-weight: 720;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #fafbfc;
+    }
+
+    ul, ol {
+      padding-left: 1.35em;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .evidence {
+      margin: 14px 0 20px;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .evidence li {
+      border-left: 4px solid var(--line);
+      padding: 8px 0 8px 12px;
+      margin: 8px 0;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 5px;
+      padding: 1px 7px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-right: 5px;
+      color: #1d252c;
+    }
+
+    .tag-yes {
+      background: var(--green-soft);
+      color: var(--teal);
+    }
+
+    .tag-mid {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .tag-no {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .diagram {
+      margin: 20px 0 24px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      overflow-x: auto;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      min-width: 720px;
+    }
+
+    .flow .box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: white;
+      min-height: 82px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .box strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-path {
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 20px 12px 56px;
+      }
+
+      header, section {
+        padding: 22px 18px;
+      }
+
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>TiDB、GPORCA、DataFusion 嵌套子查询优化调研</h1>
+    <p class="subtitle">
+      这份报告围绕“嵌套子查询 / correlated subquery / dependent join unnesting”展开，
+      对比三个本地开源项目是否支持相关子查询优化，以及它们和 2015、2025 两篇 unnesting 论文之间的关系。
+    </p>
+    <div class="meta">
+      <span class="pill">调研日期：2026-07-03</span>
+      <span class="pill">范围：本地源码 checkout</span>
+      <span class="pill">重点：相关子查询、Apply、聚合 decorrelation、holistic unnesting</span>
+    </div>
+    <nav class="toc" aria-label="目录">
+      <a href="#summary">核心结论</a>
+      <a href="#method">判断方法</a>
+      <a href="#comparison">三项目总览</a>
+      <a href="#tidb">TiDB</a>
+      <a href="#gporca">GPORCA</a>
+      <a href="#datafusion">DataFusion</a>
+      <a href="#paper-map">和论文的对应关系</a>
+      <a href="#recommendation">阅读建议</a>
+    </nav>
+  </header>
+
+  <section id="summary">
+    <h2>核心结论</h2>
+    <p class="lead">
+      短答案：TiDB、GPORCA、DataFusion 都支持一定范围内的嵌套 / 相关子查询优化；
+      三者都能在源码中看到和 2015 论文、课程 PPT 中相近的工程套路；
+      但在本地源码中，没有找到三者实现 2025 论文提出的
+      “同时考虑所有 dependent joins 的 holistic unnesting”算法的证据。
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>最像课程/PPT术语：GPORCA</h3>
+        <p>
+          GPORCA 明确把子查询变成 Apply，再通过 xform 和 decorrelator 尝试把 Apply 变成 Join。
+          如果你想看“dependent join → join”的优化器实现骨架，它是三个里面术语最贴近论文的一份。
+        </p>
+      </div>
+      <div class="card">
+        <h3>最适合读代码学习：DataFusion</h3>
+        <p>
+          DataFusion 的 Rust 代码把“拉起相关谓词、补 group by key、处理 count bug、转换为 join”写得比较集中，
+          读起来比生产级大型 C++/Go 优化器更直接。
+        </p>
+      </div>
+      <div class="card">
+        <h3>生产系统风格：TiDB</h3>
+        <p>
+          TiDB 有 <code>LogicalApply</code>、<code>PhysicalApply</code> 和 <code>DecorrelateSolver</code>，
+          能 decorrelate 一批常见模式，也会在不安全或受 hint 影响时保留 Apply 执行路径。
+        </p>
+      </div>
+    </div>
+
+    <div class="callout negative">
+      <p>
+        这里的“没有找到 2025 holistic 实现”不是说这些项目永远不会做类似优化；
+        它只表示在当前本地 checkout 中，没有看到一个全局收集多层 dependent join、
+        再一次性规避绑定域乘积膨胀的专门算法。
+      </p>
+    </div>
+  </section>
+
+  <section id="method">
+    <h2>判断方法</h2>
+    <p>
+      这次不是只搜索“subquery”关键字，而是按论文里的几个核心概念去源码里找对应物。
+      判断一个系统是否接近 2015/PPT 的传统 unnesting，主要看下面这些迹象：
+    </p>
+    <ul>
+      <li>是否有 Apply / dependent join / outer reference 这样的内部表示。</li>
+      <li>是否能把相关谓词从子查询内部拉出来，变成普通 join predicate。</li>
+      <li>遇到聚合时，是否把相关列补进 group by key，再 join 回外层。</li>
+      <li>是否处理 scalar aggregate 的空输入语义，例如 <code>COUNT(*)</code> 在空组上的特殊值。</li>
+      <li>是否有失败回退路径：不能安全 decorrelate 时仍保留相关执行或原始子查询形态。</li>
+    </ul>
+
+    <p>
+      判断一个系统是否接近 2025 论文的 holistic unnesting，则标准更苛刻：
+    </p>
+    <ul>
+      <li>优化器需要识别一棵查询里的多个 dependent joins，而不是只处理当前局部 Apply。</li>
+      <li>需要把多层绑定关系作为一个整体建模，例如绑定列之间的真实 join domain，而不是简单保留局部 domain。</li>
+      <li>需要有显式策略避免 <code>D1 × D2 × ...</code> 这类中间绑定域膨胀。</li>
+      <li>源码或测试应体现“同时考虑多个 dependent joins”的算法入口，而不是固定顺序、递归或规则式逐层处理。</li>
+    </ul>
+
+    <div class="diagram" aria-label="传统 unnesting 与 holistic unnesting 对比">
+      <div class="flow">
+        <div class="box">
+          <strong>SQL 子查询</strong>
+          <span>WHERE / SELECT / EXISTS / IN 中含外层引用</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="box">
+          <strong>Apply / 外部引用</strong>
+          <span>表达 dependent join</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="box">
+          <strong>局部 decorrelate</strong>
+          <span>拉谓词、补 group key、改 join</span>
+        </div>
+      </div>
+      <p class="small">
+        2015/PPT 路线通常可以理解成上面这条链路。2025 论文关心的是：
+        当一棵查询里有多层 Apply 时，不能只机械地从内到外做局部链路，
+        而要把所有 dependent joins 的绑定关系一起看。
+      </p>
+    </div>
+  </section>
+
+  <section id="comparison">
+    <h2>三项目总览</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>项目</th>
+          <th>本地版本</th>
+          <th>相关子查询支持</th>
+          <th>与 2015/PPT 的接近程度</th>
+          <th>与 2025 holistic 的接近程度</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TiDB</td>
+          <td><code>b212b93152</code><br>2026-07-02</td>
+          <td>
+            有 <code>LogicalApply</code> / <code>PhysicalApply</code>；
+            <code>DecorrelateSolver</code> 会尝试把 Apply 转为 Join。
+          </td>
+          <td>
+            <span class="tag tag-mid">中高</span>
+            选择、投影、聚合、等值相关列、count/default 语义都有专门逻辑。
+          </td>
+          <td>
+            <span class="tag tag-no">未发现</span>
+            规则列表中是普通 optimizer rule 顺序执行，没有看到全局多 Apply 绑定图。
+          </td>
+        </tr>
+        <tr>
+          <td>GPORCA</td>
+          <td><code>6f35adf4</code><br>2023-08-30</td>
+          <td>
+            子查询先转 Apply，之后通过 <code>Apply2Join</code> 和
+            <code>CDecorrelator</code> decorrelate。
+          </td>
+          <td>
+            <span class="tag tag-yes">高</span>
+            Apply、decorrelation、group key augmentation 的表达非常贴近论文讲法。
+          </td>
+          <td>
+            <span class="tag tag-no">未发现</span>
+            本地 archive 早于 2025 论文；xform 注释也显示内层 Subquery/Apply 要先被 unnest。
+          </td>
+        </tr>
+        <tr>
+          <td>DataFusion</td>
+          <td><code>3496b9e9a</code><br>2026-07-02</td>
+          <td>
+            有 predicate subquery、scalar subquery、lateral join decorrelation 规则；
+            通过 outer reference 和 rule rewrite 表达相关性。
+          </td>
+          <td>
+            <span class="tag tag-mid">中高</span>
+            代码集中展示了 pull-up filter、补 aggregate group key、count bug 处理。
+          </td>
+          <td>
+            <span class="tag tag-no">未发现</span>
+            源码明确把嵌套 Subquery 当作 scope boundary，而不是一次性全局处理。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="tidb">
+    <h2>TiDB</h2>
+    <p>
+      TiDB 的相关子查询支持是典型的生产优化器形态：逻辑层用 Apply 表示相关执行关系，
+      优化阶段尝试 decorrelate；如果不能安全转换，物理层仍可以保留 Apply 作为执行路径。
+    </p>
+
+    <h3>关键源码证据</h3>
+    <ul class="evidence">
+      <li>
+        <span class="tag tag-yes">Apply 表示</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/operator/logicalop/logical_apply.go:36</code></span>
+        定义 <code>LogicalApply</code>，字段包含 <code>CorCols</code>、<code>NoDecorrelate</code>、<code>IsLateral</code>。
+      </li>
+      <li>
+        <span class="tag tag-yes">物理回退</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/operator/physicalop/physical_apply.go:29</code></span>
+        定义 <code>PhysicalApply</code>，注释说明它用于 subquery，字段中还有缓存、并发和 outer schema 信息。
+      </li>
+      <li>
+        <span class="tag tag-yes">decorrelate 规则</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/rule_decorrelate.go:119</code></span>
+        <code>DecorrelateSolver</code> 的目标就是尝试把 Apply 转成 Join。
+      </li>
+      <li>
+        <span class="tag tag-yes">等值相关列转 join key</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/operator/logicalop/logical_apply.go:328</code></span>
+        <code>DeCorColFromEqExpr</code> 会识别 <code>inner_col = correlated_col</code> 这类条件，把 correlated column 转成普通列引用。
+      </li>
+      <li>
+        <span class="tag tag-mid">聚合 decorrelation</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/rule_decorrelate.go:336</code></span>
+        聚合场景下会检查 <code>CanPullUpAgg</code>，必要时把外层 key 纳入 group by，并处理 count/default 值。
+      </li>
+      <li>
+        <span class="tag tag-mid">规则式执行</span>
+        <span class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/optimizer.go:88</code></span>
+        <code>DecorrelateSolver</code> 是 optimizer rule 列表中的一项，整体由 <code>logicalOptimize</code> 按规则顺序运行。
+      </li>
+    </ul>
+
+    <h3>支持什么</h3>
+    <p>
+      TiDB 能处理常见的相关 <code>EXISTS</code>、<code>IN</code>、scalar subquery，以及带聚合的相关子查询。
+      在测试数据中可以看到有些 correlated subquery 被转成 <code>HashJoin</code> / <code>HashAgg</code>，
+      也可以看到某些复杂或不适合转换的查询仍保留 <code>Apply</code>。
+    </p>
+    <p>
+      这很像课程 PPT 中的“dependent join 能消掉就消掉，不能消掉就保留相关执行”。
+      生产系统不能只追求形式上消掉 Apply，因为 SQL 的三值逻辑、空输入聚合、outer join 语义和 hint 都会影响安全性。
+    </p>
+
+    <h3>和 2015/PPT 的关系</h3>
+    <p>
+      TiDB 的实现可以对应到 2015/PPT 的几个动作：
+    </p>
+    <ul>
+      <li>Apply 表示相关子查询。</li>
+      <li>Selection 下推/拉起后，把相关谓词变成 Join predicate。</li>
+      <li>Projection 里替换 correlated column，修复列引用。</li>
+      <li>Aggregation 场景把相关绑定列补进 group by，必要时给外层列加 <code>firstrow</code>。</li>
+      <li>处理 <code>COUNT</code>、默认值和 HAVING 语义，避免“等价变换”破坏 SQL 结果。</li>
+    </ul>
+
+    <h3>和 2025 论文的关系</h3>
+    <div class="callout negative">
+      <p>
+        没有找到 holistic unnesting 的实现痕迹。TiDB 的 decorrelation 是一个 optimizer rule，
+        递归处理当前 Apply 及其子树；这不等于 2025 论文里“同时看所有 dependent joins，
+        避免多层绑定域乘积膨胀”的算法。
+      </p>
+    </div>
+  </section>
+
+  <section id="gporca">
+    <h2>GPORCA</h2>
+    <p>
+      GPORCA 是三个项目中最贴近论文语言的。它有明确的 Apply 表达式族，
+      子查询处理器会把 scalar、existential、quantified subquery 转成 Apply 形态，
+      然后由 Apply-to-Join transformation 和 decorrelator 尝试去相关化。
+    </p>
+
+    <h3>关键源码证据</h3>
+    <ul class="evidence">
+      <li>
+        <span class="tag tag-yes">子查询转 Apply</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CSubqueryHandler.cpp:8</code></span>
+        文件头部说明子查询表达式会被转换成 Apply，并在可能时继续转为普通 Join。
+      </li>
+      <li>
+        <span class="tag tag-yes">scalar subquery</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CSubqueryHandler.cpp:690</code></span>
+        scalar subquery 会构造 <code>CLogicalLeftOuterApply</code> 一类表达式。
+      </li>
+      <li>
+        <span class="tag tag-mid">count 语义</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CSubqueryHandler.cpp:713</code></span>
+        对 count 聚合有专门检测和处理，避免空输入语义被普通 join 改坏。
+      </li>
+      <li>
+        <span class="tag tag-yes">Apply2Join</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/include/gpopt/xforms/CXformApply2Join.h:28</code></span>
+        transformation 的职责就是通过 decorrelate inner side 把 Apply 变成 Join。
+      </li>
+      <li>
+        <span class="tag tag-yes">Decorrelator</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CDecorrelator.cpp:150</code></span>
+        <code>FProcess</code> 是 decorrelation 主流程，会把外部引用分离成相关谓词并尝试上拉。
+      </li>
+      <li>
+        <span class="tag tag-yes">group key augmentation</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CDecorrelator.cpp:404</code></span>
+        聚合 decorrelation 会根据被拉起的相关等值条件，把内侧对应列加入 grouping columns。
+      </li>
+      <li>
+        <span class="tag tag-mid">两层相关测试</span>
+        <span class="source-path"><code>/Users/refrain/proj/gporca-archive/server/src/unittest/CSubqueryTestUtils.cpp:874</code></span>
+        单元测试工具构造了 two-level correlated subquery，形态上接近我们讨论的跨层相关例子。
+      </li>
+    </ul>
+
+    <h3>支持什么</h3>
+    <p>
+      GPORCA 覆盖的子查询类型很广，包括 scalar subquery、<code>EXISTS</code>、
+      <code>NOT EXISTS</code>、<code>ANY</code>、<code>ALL</code>、多层相关子查询以及部分不可 decorrelate 场景。
+      这可以从 <code>CSubqueryHandlerTest.cpp</code> 的测试命名中直接看出来。
+    </p>
+
+    <h3>和 2015/PPT 的关系</h3>
+    <p>
+      如果用课程 PPT 的图来映射，GPORCA 的结构几乎可以直接翻译：
+      子查询先变成 Apply；Apply 的右侧如果有外层列引用，decorrelator 把相关 predicate 提出来；
+      右侧有聚合时补 group key；最后生成普通 Join 或保留 correlated Apply/subplan。
+    </p>
+    <p>
+      它对 quantified subquery 的处理也体现了工程系统的复杂性：
+      <code>ANY</code>、<code>ALL</code>、<code>NOT IN</code> 等并不只是一个 semi join，
+      还要考虑 NULL 和空结果带来的真假值差异。
+    </p>
+
+    <h3>和 2025 论文的关系</h3>
+    <div class="callout negative">
+      <p>
+        没有找到 2025 holistic unnesting 的实现。一个很强的反证是：
+        <code>CXformApply2Join</code> 中的逻辑要求 inner child 里仍有 Subquery/Apply 时先不做当前 Apply2Join，
+        也就是仍偏向“先把内部子查询 unnested，再处理当前 Apply”的 staged pipeline。
+      </p>
+    </div>
+    <p>
+      此外，本地仓库是 <code>gporca-archive</code>，HEAD 时间是 2023-08-30，
+      时间上也早于 2025 论文。除非存在另一个未在本地 checkout 中的后续分支，否则不能说它实现了该论文算法。
+    </p>
+  </section>
+
+  <section id="datafusion">
+    <h2>DataFusion</h2>
+    <p>
+      DataFusion 没有像 GPORCA 那样把“Apply”作为显眼的中心概念，
+      但它通过 outer reference、subquery rewrite、lateral join decorrelation 等 optimizer rule
+      支持相关子查询去相关化。代码较新，也比较适合作为学习材料。
+    </p>
+
+    <h3>关键源码证据</h3>
+    <ul class="evidence">
+      <li>
+        <span class="tag tag-mid">规则入口</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/optimizer.rs:290</code></span>
+        默认 optimizer rules 包含 <code>DecorrelatePredicateSubquery</code>、
+        <code>ScalarSubqueryToJoin</code>、<code>DecorrelateLateralJoin</code>。
+      </li>
+      <li>
+        <span class="tag tag-yes">相关表达式上拉</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate.rs:42</code></span>
+        <code>PullUpCorrelatedExpr</code> 会把 correlated filter expressions 拉上来，
+        并给 Projection/Aggregate 补必要列。
+      </li>
+      <li>
+        <span class="tag tag-mid">count bug</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate.rs:60</code></span>
+        源码专门讨论 scalar aggregate 在空输入上的语义问题，并引入 unmatched-row indicator。
+      </li>
+      <li>
+        <span class="tag tag-yes">predicate subquery</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate_predicate_subquery.rs:18</code></span>
+        相关 <code>IN</code> / <code>EXISTS</code> 可以转为 semi / anti / mark join。
+      </li>
+      <li>
+        <span class="tag tag-yes">scalar subquery</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/scalar_subquery_to_join.rs:40</code></span>
+        correlated scalar subquery 在这条规则中被转换为 join。
+      </li>
+      <li>
+        <span class="tag tag-yes">lateral join</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate_lateral_join.rs:18</code></span>
+        对 LATERAL / outer column reference 形态有专门 decorrelation 规则。
+      </li>
+      <li>
+        <span class="tag tag-no">scope boundary</span>
+        <span class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate.rs:140</code></span>
+        嵌套 Subquery 被视为 scope boundary，内层 outer refs 不会被当前层一次性拉上来。
+      </li>
+    </ul>
+
+    <h3>支持什么</h3>
+    <p>
+      DataFusion 支持把相关 predicate subquery 转成 semi/anti/mark join；
+      把 correlated scalar subquery 转成 left join 加聚合；
+      也支持从 LATERAL join 中抽取相关 filter，必要时把 ungrouped aggregate 改为按相关列分组。
+    </p>
+    <p>
+      测试里有 recursive subqueries 的 TPC-H 风格例子：
+      <code>customer</code> 外层、<code>orders</code> 中层、<code>lineitem</code> 内层。
+      优化后的形态是多个 join 和 aggregate 的组合。这说明它能处理多层相关子查询的一些常见形式。
+    </p>
+
+    <h3>和 2015/PPT 的关系</h3>
+    <p>
+      DataFusion 的代码非常适合映射到课程 PPT：
+    </p>
+    <ul>
+      <li><code>PullUpCorrelatedExpr</code> 对应“把 RHS 中依赖 LHS 的 filter 拉出来”。</li>
+      <li>Aggregate 分支把相关列补到 group expressions，对应“按绑定列分组再 join 回外层”。</li>
+      <li><code>__always_true</code> 这样的 indicator 对应“修复 scalar aggregate 空输入语义”。</li>
+      <li>Predicate subquery 转 semi/anti/mark join，对应 EXISTS/IN/NOT IN 的关系代数改写。</li>
+    </ul>
+
+    <h3>和 2025 论文的关系</h3>
+    <div class="callout negative">
+      <p>
+        没有找到 holistic unnesting 的实现。DataFusion 有 recursive subquery 测试，
+        但源码中最关键的限制是嵌套 Subquery 被当作 scope boundary；
+        这说明它不是把所有层的 dependent joins 先收集起来再统一选择绑定域。
+      </p>
+    </div>
+  </section>
+
+  <section id="paper-map">
+    <h2>和两篇论文的对应关系</h2>
+    <h3>2015/PPT：三者都有相似工程套路</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>论文/PPT概念</th>
+          <th>TiDB</th>
+          <th>GPORCA</th>
+          <th>DataFusion</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Dependent join / Apply 表示</td>
+          <td><code>LogicalApply</code> / <code>PhysicalApply</code></td>
+          <td><code>CLogical*Apply</code></td>
+          <td>outer reference + subquery/lateral rewrite，Apply 概念不显式</td>
+        </tr>
+        <tr>
+          <td>相关谓词拉出</td>
+          <td><code>DecorrelateSolver</code> 处理 Selection</td>
+          <td><code>CDecorrelator::FProcessPredicate</code></td>
+          <td><code>PullUpCorrelatedExpr</code></td>
+        </tr>
+        <tr>
+          <td>等值相关列变 join key</td>
+          <td><code>DeCorColFromEqExpr</code></td>
+          <td>correlations 进入 Apply2Join predicate</td>
+          <td>join filter / extracted predicate</td>
+        </tr>
+        <tr>
+          <td>聚合补 group by key</td>
+          <td>聚合 pull-up 与 group key 扩展</td>
+          <td><code>FProcessGbAgg</code> 补 grouping columns</td>
+          <td>Aggregate 分支补 group expressions</td>
+        </tr>
+        <tr>
+          <td>COUNT / 空输入语义</td>
+          <td>default value 与 count 相关处理</td>
+          <td>count aggregate special handling</td>
+          <td>unmatched-row indicator 与 count bug 修复</td>
+        </tr>
+        <tr>
+          <td>不能安全转换时回退</td>
+          <td>保留 <code>PhysicalApply</code></td>
+          <td>可能保留 correlated apply/subplan</td>
+          <td>规则不改写，保留原逻辑或物理 scalar subquery</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>2025：没有看到 holistic 绑定域优化</h3>
+    <p>
+      我们前面学习 2025 论文时重点讨论的是这种坏情况：
+      如果查询有多层相关子查询，并且内层还引用了更外层列，
+      从内到外逐个消 dependent join 可能会让优化器过早保留一个局部绑定域。
+      等外层再 unnest 时，这些局部绑定域可能被组合成比真实 join 域大得多的中间关系。
+    </p>
+
+    <pre><code>真实需要的绑定域：
+  (T1 与 T2 在相关条件下真的能配对的那些 (T1.a, T2.b))
+
+坏的逐层近似可能得到：
+  distinct(T1.a) × distinct(T2.b)
+
+差异：
+  前者受 T1/T2 的真实 join 选择性约束；
+  后者像笛卡尔积一样把本来不会同现的绑定组合也放进中间结果。</code></pre>
+
+    <p>
+      三个项目都能在局部处理“把相关列加入 group by”这种传统动作。
+      但 2025 论文要解决的问题不是“会不会补 group by key”，而是“多层 dependent joins 的
+      group key / binding domain 应该一起选择，避免内层先生成过大的局部 domain”。
+      从本地源码看，三者都没有一个明显的全局 dependent-join graph 或 holistic rewrite pass。
+    </p>
+
+    <div class="two-col">
+      <div class="card">
+        <h3>传统局部处理</h3>
+        <ol>
+          <li>看到当前 Apply。</li>
+          <li>处理右侧 Selection / Projection / Aggregate。</li>
+          <li>把当前相关列加入 join predicate 或 group key。</li>
+          <li>递归或按规则继续处理下一层。</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>2025 期待看到的处理</h3>
+        <ol>
+          <li>先识别整棵查询中的多个 dependent joins。</li>
+          <li>分析所有外层引用和层间 join 条件。</li>
+          <li>用整体绑定关系决定哪些 domain 真的需要物化。</li>
+          <li>生成避免无效 cross product 的 unnesting 计划。</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="project-details">
+    <h2>项目差异</h2>
+    <h3>为什么说 GPORCA 最像论文？</h3>
+    <p>
+      因为它的优化器模型本来就是 transformation-driven：
+      子查询被转成 Apply，Apply 再被 xform 变成 Join。
+      读它时，你会反复看到 Apply、Decorrelator、correlations、group columns 这些和论文/ppt 对得上的词。
+    </p>
+
+    <h3>为什么说 DataFusion 更适合初学者读？</h3>
+    <p>
+      DataFusion 的代码量和抽象层级相对可控。
+      例如 <code>decorrelate.rs</code> 里直接能看到 pull-up correlated expr、
+      aggregate 补 group by、count bug indicator 等逻辑。
+      如果你现在还在建立直觉，它比直接读 GPORCA C++ transformation framework 更容易先跑通脑内模型。
+    </p>
+
+    <h3>为什么 TiDB 显得“没有那么论文式”？</h3>
+    <p>
+      TiDB 的代码目标是服务生产优化器。
+      它当然有 Apply 和 decorrelate，但周围混着 schema、hint、join type、统计信息、列裁剪、物理执行等大量工程约束。
+      所以它很适合看真实系统如何把论文思路落地，但不一定最适合第一次理解算法本身。
+    </p>
+  </section>
+
+  <section id="recommendation">
+    <h2>阅读建议</h2>
+    <ol>
+      <li>
+        先读 DataFusion：
+        <code>datafusion/optimizer/src/decorrelate.rs</code>、
+        <code>scalar_subquery_to_join.rs</code>、
+        <code>decorrelate_predicate_subquery.rs</code>。
+        目标是把“相关谓词上拉、聚合补 group key、count bug”这三件事看懂。
+      </li>
+      <li>
+        再读 TiDB：
+        <code>pkg/planner/core/rule_decorrelate.go</code> 和
+        <code>logical_apply.go</code>。
+        目标是理解生产系统怎样决定哪些 Apply 能消、哪些要保留。
+      </li>
+      <li>
+        最后读 GPORCA：
+        <code>CSubqueryHandler.cpp</code>、<code>CDecorrelator.cpp</code>、
+        <code>CXformApply2Join.h</code>。
+        目标是把 transformation framework 下的 Apply-to-Join 过程和论文术语对起来。
+      </li>
+    </ol>
+
+    <div class="callout">
+      <p>
+        如果你的学习目标是“验证 2025 论文的新算法有没有被工业系统采用”，
+        这三个本地项目目前给出的答案偏否定：能看到传统 decorrelation 很多痕迹，
+        但看不到 holistic all-dependent-joins simultaneous unnesting 的完整实现。
+      </p>
+    </div>
+  </section>
+
+  <section id="appendix">
+    <h2>附录：本次查看的关键路径</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>项目</th>
+          <th>文件</th>
+          <th>关注点</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TiDB</td>
+          <td class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/rule_decorrelate.go</code></td>
+          <td>Apply 转 Join、Selection/Projection/Aggregation decorrelation。</td>
+        </tr>
+        <tr>
+          <td>TiDB</td>
+          <td class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/operator/logicalop/logical_apply.go</code></td>
+          <td><code>LogicalApply</code>、相关列、lateral、等值相关列处理。</td>
+        </tr>
+        <tr>
+          <td>TiDB</td>
+          <td class="source-path"><code>/Users/refrain/proj/tidb/pkg/planner/core/operator/physicalop/physical_apply.go</code></td>
+          <td><code>PhysicalApply</code> 执行路径。</td>
+        </tr>
+        <tr>
+          <td>GPORCA</td>
+          <td class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CSubqueryHandler.cpp</code></td>
+          <td>子查询转 Apply，scalar/existential/quantified subquery 处理。</td>
+        </tr>
+        <tr>
+          <td>GPORCA</td>
+          <td class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/src/xforms/CDecorrelator.cpp</code></td>
+          <td>相关谓词分离、join/aggregate decorrelation、group key 扩展。</td>
+        </tr>
+        <tr>
+          <td>GPORCA</td>
+          <td class="source-path"><code>/Users/refrain/proj/gporca-archive/libgpopt/include/gpopt/xforms/CXformApply2Join.h</code></td>
+          <td>Apply-to-Join transformation 主入口。</td>
+        </tr>
+        <tr>
+          <td>DataFusion</td>
+          <td class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate.rs</code></td>
+          <td>pull up correlated expressions、aggregate group key、count bug。</td>
+        </tr>
+        <tr>
+          <td>DataFusion</td>
+          <td class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/scalar_subquery_to_join.rs</code></td>
+          <td>correlated scalar subquery 转 join。</td>
+        </tr>
+        <tr>
+          <td>DataFusion</td>
+          <td class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate_predicate_subquery.rs</code></td>
+          <td><code>IN</code>、<code>EXISTS</code>、semi/anti/mark join。</td>
+        </tr>
+        <tr>
+          <td>DataFusion</td>
+          <td class="source-path"><code>/Users/refrain/proj/datafusion/datafusion/optimizer/src/decorrelate_lateral_join.rs</code></td>
+          <td>LATERAL join decorrelation。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

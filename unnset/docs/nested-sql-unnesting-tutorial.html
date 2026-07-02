@@ -719,122 +719,49 @@ WHERE score = (
     </section>
 
     <section id="paper-2025">
-      <h2>4. 2025：为什么还需要 Holistic Unnesting？</h2>
-      <p>2015 方法已经能处理大量查询，但 2025 论文指出一个新问题：当 dependent join 多层嵌套时，自底向上一个个消除会让较外层的 <code>D</code> 穿过已经改写过的内层结构，可能生成过大的中间交叉组合。结果仍然正确，但代价可能爆炸。</p>
+      <h2>4. 2025：Holistic Query Unnesting</h2>
+      <p>这一节按 2025 论文 <em>Improving Unnesting of Complex Queries</em> 的讲述顺序来读。论文不是重新发明 dependent join，而是在 2015 算法已经被多个系统采用之后，指出两个缺口：复杂 SQL 构造还没有被系统覆盖；多层相关子查询按 bottom-up 逐个消除时，也可能生成很大的中间 cross product。</p>
 
-      <h3>4.1 权威例子：TPC-H 风格的两层相关子查询</h3>
-      <p>2025 论文开头的 Figure 1 就是最适合教学的例子。它要找出汽车市场客户，并且这些客户至少有 6 个订单满足“该订单的 lineitem 总金额超过 300000”。注意这里不是一个相关子查询，而是两个相关子查询叠在一起。</p>
-      <p>为了看清嵌套结构，可以先按“外层客户 -> 中层订单 -> 内层订单明细”来排版：</p>
-      <pre><code>-- Level 0: outer query, one row is one customer
-SELECT *
-FROM customer AS c
-WHERE c.c_mktsegment = 'AUTOMOBILE'
-  AND (
-    -- Level 1: for this customer, count qualifying orders
-    SELECT COUNT(*)
-    FROM orders AS o
-    WHERE o.o_custkey = c.c_custkey
-      AND (
-        -- Level 2: for this order, compute total lineitem revenue
-        SELECT SUM(l.l_extendedprice)
-        FROM lineitem AS l
-        WHERE l.l_orderkey = o.o_orderkey
-      ) &gt; 300000
-  ) &gt; 5;</code></pre>
-      <p>读这段 SQL 时，先不要从上到下一行行扫，而是看两个“向外引用”的条件：<code>o.o_custkey = c.c_custkey</code> 把订单子查询绑定到当前客户，<code>l.l_orderkey = o.o_orderkey</code> 把明细子查询绑定到当前订单。这两个绑定条件就是 Figure 1 里的两层相关性。</p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>层级</th>
-            <th>子查询在算什么</th>
-            <th>它依赖谁</th>
-            <th>绑定列</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>外层</td>
-            <td>对当前客户，数有多少订单满足收入条件。</td>
-            <td><code>orders</code> 子查询依赖当前 <code>customer</code> 行。</td>
-            <td><code>o.o_custkey = c.c_custkey</code></td>
-          </tr>
-          <tr>
-            <td>内层</td>
-            <td>对当前订单，汇总这个订单的所有 lineitem 金额。</td>
-            <td><code>lineitem</code> 子查询依赖当前 <code>orders</code> 行。</td>
-            <td><code>l.l_orderkey = o.o_orderkey</code></td>
-          </tr>
-        </tbody>
-      </table>
+      <h3>4.1 Introduction：声明式 SQL 在复杂子查询处失效</h3>
+      <p>论文开头先提醒读者：SQL 的承诺是声明式，用户只写“想要什么”，系统负责找执行策略。但复杂相关子查询会让这个承诺失效。Figure 1 的查询要找 automobile market 的客户，并且这些客户有超过 5 个订单的收入超过 300000。SQL 文本不复杂，但规范翻译成关系代数后，右侧会出现嵌套 dependent join：RHS 必须读取 LHS 当前 tuple 的列。</p>
 
       <figure>
         <img src="assets/paper2025-fig1-query-plan-crop-p1.png" alt="2025 论文 Figure 1 nested correlated query and algebra plan">
-        <figcaption>2025 论文第 1 页 Figure 1：两层 correlated subquery 形成嵌套 dependent join；颜色标出不同层级的相关性。</figcaption>
+        <figcaption>2025 论文第 1 页 Figure 1：左侧是嵌套相关 SQL，右侧是规范代数翻译；颜色标出不同层级的相关性。</figcaption>
       </figure>
 
-      <p>如果用“函数调用”的眼光看，这条 SQL 大概是这样执行的：对每个 customer，调用一次 <code>count_expensive_orders(c_custkey)</code>；这个函数内部又对每个 order 调用一次 <code>sum_lineitems(o_orderkey)</code>。2025 论文要解决的就是：当这种函数调用嵌套很多层时，优化器不能只把最里面一层孤立地拉平。</p>
+      <p>作者接着说明，dependent join 的问题是算法复杂度。普通 hash join 可以先独立计算两边，而 dependent join 的 RHS 要对 LHS 的每个 tuple 求值，复杂度随两边规模相乘增长。论文给出一个具体事实：在 TPC-H scale factor 1 上，这个 1GB 数据量的查询在 PostgreSQL 16 上会运行超过 25 分钟；如果人工改写成去相关形式，则可以很快完成。论文的立场是：这种改写应该由 DBMS 自动完成，而不是要求用户手写更长、更难读的 SQL。</p>
 
-      <h3>4.2 这条 SQL 去相关后的目标形状</h3>
-      <p>为了先看清目标，可以把它手写成 CTE 风格的去相关形状。下面这段不是论文要求用户手写的代码，而是帮助理解优化器想自动得到的计划形状：</p>
-      <pre><code>WITH order_revenue AS (
-  SELECT o.o_orderkey,
-         o.o_custkey,
-         SUM(l.l_extendedprice) AS revenue
-  FROM orders AS o
-  JOIN lineitem AS l
-    ON l.l_orderkey = o.o_orderkey
-  GROUP BY o.o_orderkey, o.o_custkey
-),
-customer_order_count AS (
-  SELECT o_custkey,
-         COUNT(*) AS cnt
-  FROM order_revenue
-  WHERE revenue &gt; 300000
-  GROUP BY o_custkey
-)
-SELECT c.*
-FROM customer AS c
-JOIN customer_order_count AS coc
-  ON coc.o_custkey = c.c_custkey
-WHERE c.c_mktsegment = 'AUTOMOBILE'
-  AND coc.cnt &gt; 5;</code></pre>
+      <p>接下来，作者回顾历史：早期系统用 SQL 模式识别和重写来处理一些相关子查询，但这种方法对 SQL 文本形状很敏感。2015 的工作改用代数级算法，核心是两个观察：只需要为外层自由变量的不同绑定值执行内层查询；当绑定域 <code>D</code> 去重以后，dependent join 可以沿代数树下推直到消失。2025 论文要补的，是这个算法在深层嵌套和复杂 SQL 构造上的不足。</p>
 
-      <p>这个形状对应两次“按绑定值分组的一次性计算”：先按订单算 revenue，再按客户算满足条件的订单数。它和 2015 students 例子的区别在于：这里的第二层聚合依赖第一层聚合的结果，因此两个 dependent join 是堆叠的。</p>
+      <h3>4.2 Background：先复述 2015 的 bottom-up 算法</h3>
+      <p>论文第 2 节先把问题重新形式化。关系代数表达式 <code>T</code> 产生的列记为 <code>A(T)</code>，表达式中使用但当前输入不能产生的列记为自由变量 <code>F(T)</code>。如果 <code>F(T)</code> 非空，表达式不能单独求值，必须由上方 dependent join 绑定这些列。</p>
 
-      <table>
-        <thead>
-          <tr>
-            <th>原相关执行</th>
-            <th>去相关后</th>
-            <th>为什么要这样分组</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>对每个订单单独执行 <code>SUM(lineitem)</code>。</td>
-            <td>一次性按 <code>o_orderkey</code> 分组算每个订单收入。</td>
-            <td>内层绑定值是订单号；每个订单必须有自己的 <code>SUM</code>。</td>
-          </tr>
-          <tr>
-            <td>对每个客户单独执行 <code>COUNT(orders)</code>。</td>
-            <td>一次性按 <code>o_custkey</code> 分组算每个客户的订单数。</td>
-            <td>外层绑定值是客户号；每个客户必须有自己的 <code>COUNT</code>。</td>
-          </tr>
-        </tbody>
-      </table>
+      <span class="formula">目标：给定包含 dependent join 的关系代数表达式，改写成等价且不含 dependent join 的表达式。</span>
+      <span class="formula">平凡情况：如果 <code>A(L) ∩ F(R) = ∅</code>，则 <code>L ⧑ R</code> 可以直接替换成普通 join <code>L ⋈ R</code>。</span>
 
-      <h3>4.3 旧 bottom-up 为什么会出问题？</h3>
-      <p>论文第 2.3 节指出，bottom-up 方法通常能很好地处理查询，但在某些角落情况会退化。作者最初是从 Sam Arch 那里注意到这个问题：当复杂 UDF 被翻译成纯 SQL 时，可能产生类似 Figure 1 的多层相关子查询。论文把这个情况压缩成下面的代数树，并且为了用很小的例子触发问题，额外加入了相关条件 <code>T3.a = T1.a</code>。</p>
+      <p>然后作者按 2015 算法解释 bottom-up unnesting。第一步总是尝试 simple unnesting：有些 dependent join 只是 SQL 语法翻译造成的。例如 <code>EXISTS</code> 子查询里有 <code>R.x = S.y</code>，优化器可以把这个条件拉到 semi join 上，依赖就消失了。</p>
+
+      <p>如果 simple unnesting 不够，就使用通用策略：为 RHS 所需的外层列构造绑定域 <code>D</code>，并把原 dependent join 改写成外层与 <code>D</code> 的普通连接，再让 <code>D</code> 去驱动 RHS。</p>
+
+      <span class="formula"><code>D := Π<sub>A(L)∩F(R)</sub>(L)</code></span>
+      <span class="formula"><code>L ⧑ R ≡ L ⋈<sub>natural D</sub> (D ⧑ R)</code></span>
+
+      <p>这个变换有两个作用。第一，<code>|D| ≤ |L|</code>，所以内层查询只需要按不同绑定值求值。第二，<code>D</code> 是 duplicate free 的，后面的下推规则依赖这个性质。算法会把 <code>D ⧑ ...</code> 穿过 selection、join、group by 等算子；遇到 group by 时，把 <code>D</code> 的列加入分组键；到达叶子后 dependent join 变成普通 join。</p>
+
+      <p>最后，优化器可以选择是否把 <code>D</code> 整个消掉。如果 <code>D</code> 的列都被等值条件绑定，例如 <code>x = y</code>，就可以用替换 <code>χ<sub>x:y</sub></code> 让 <code>x</code> 由 <code>y</code> 计算出来。论文也强调这只是成本选择：删掉 <code>D</code> 会让计划更像普通查询，但如果 <code>D</code> 的 join 很有选择性，保留它可能更快。</p>
+
+      <h3>4.3 Limitations：bottom-up 嵌套时会放大绑定域</h3>
+      <p>论文第 2.3 节指出，bottom-up 方法通常可以工作，但在某些角落情况会退化。作者最初是从 Sam Arch 那里注意到这个问题：复杂 UDF 被翻译成纯 SQL 后，可能产生类似 Figure 1 的多层相关子查询。论文把这个情况压缩成下面的代数树，并为了用小例子触发问题，额外加入相关条件 <code>T3.a = T1.a</code>。</p>
 
       <figure>
         <img src="assets/paper2025-sec23-original-nested-p6.png" alt="2025 论文第 2.3 节原始嵌套 dependent join 示例">
         <figcaption>2025 论文第 6 页：原始嵌套 dependent join 示例。内层条件同时引用 <code>T2.b</code> 和更外层的 <code>T1.a</code>。</figcaption>
       </figure>
 
-      <p>bottom-up unnesting 会先处理较低的 dependent join。处理完成后，计划变成下面这样。论文特别说明，优化器很可能会保留 <code>Π<sub>T2.b</sub>(σ<sub>T2.a=T1.a</sub>(T2))</code> 这个计算，而不是直接用替换消掉它，因为过滤条件 <code>T2.a = T1.a</code> 可能具有选择性。</p>
+      <p>bottom-up 算法先消除较低的 dependent join。处理后，优化器很可能保留 <code>Π<sub>T2.b</sub>(σ<sub>T2.a=T1.a</sub>(T2))</code> 这段计算，而不是把 <code>T1.a</code> 替换成 <code>T2.a</code>，因为 <code>T2.a = T1.a</code> 可能是有选择性的过滤条件。</p>
 
-      <p>但是，如果接着再运行算法去消除最上层 dependent join，就会出现第三张图。此时 lower join 的 RHS 概念上会在 <code>T1.a</code> 的域和 <code>T2.b</code> 的域的完整组合上求值，而不是只在 <code>T1</code> 与 <code>T2</code> 真实 join 后产生的绑定域上求值。</p>
+      <p>问题出现在第二次运行算法、继续消除最上层 dependent join 时。此时 lower join 的 RHS 概念上会在 <code>T1.a</code> 的域与 <code>T2.b</code> 的域的完整组合上求值，而不是只在 <code>T1</code> 与 <code>T2</code> 真正 join 后的绑定域上求值。</p>
 
       <div class="figure-comparison">
         <figure>
@@ -847,66 +774,164 @@ WHERE c.c_mktsegment = 'AUTOMOBILE'
         </figure>
       </div>
 
-      <p>论文强调：这个结果仍然是正确的，因为 <code>t &gt; ... ∧ natural {T1.a,T2.b}</code> 的 join 条件最终会删除那些不满足 <code>T2.a = T1.a</code> 的 <code>T1.a</code> 取值。但是，<code>GROUP BY</code> 已经处理了太多绑定组合。也就是说，错误不在结果，而在中间计划过大。</p>
+      <p>作者强调，结果仍然正确：后续 join 条件会删除不满足 <code>T2.a = T1.a</code> 的 <code>T1.a</code> 取值。但 group by 已经处理了太多组合。嵌套越深，这个问题越严重；Sam Arch 提供的 <code>crash.sql</code> 包含六层嵌套 join，旧策略会制造很大的中间 cross product，之后再被过滤消掉，却已经消耗了内存和 CPU。</p>
 
-      <p>这个问题会随着嵌套深度增加而变得越来越严重。论文提到 Sam Arch 提供的一个名为 <code>crash.sql</code> 的查询包含六层嵌套 join；旧 unnesting 策略会生成很大的中间 cross product，这些中间结果最终会被后续过滤消掉，但在消失之前已经消耗了内存和 CPU。这正是 2025 论文提出 holistic unnesting 的动机：同时考虑所有 dependent join，避免先制造这些不必要的组合。</p>
+      <h3>4.4 Holistic Query Unnesting：新算法的三部分</h3>
+      <p>论文第 3 节正式提出 holistic unnesting。作者把它看作 2015 算法的 top-down 变体：仍然使用“把自由变量绑定域 <code>D</code> 下推”的思想，但不再真的把每个 <code>D</code> 立刻穿过整棵树。新算法记住哪些 <code>D</code> 需要被加入，在一次自顶向下的遍历里重写算子，直到 <code>D</code> 不再需要，或者可以安全加入。</p>
 
-      <h3>4.4 Holistic 的主意：先看整棵相关树</h3>
-      <p>Holistic unnesting 仍然继承 2015 的核心思想：识别外层引用，构造或推理绑定域，最终消除 dependent join。差别是它不急着先消除最里面那一层，而是先标注整棵树里的相关访问，再从上往下处理。</p>
+      <p>论文把算法拆成三部分：</p>
+      <ol>
+        <li>预处理阶段：找出所有非平凡 dependent join，并标注主算法需要的信息。</li>
+        <li>主算法：按 top-to-bottom 顺序消除 dependent join；如果遇到嵌套 dependent join，通常在消除祖先 join 时一并处理，但如果祖先 unnesting 在抵达后代前停止，后代 join 会在后续顺序中处理。</li>
+        <li>算子规则：分别说明 selection、map、group by、window、join 等算子如何在 unnesting 中被改写。</li>
+      </ol>
+
+      <h3>4.5 Identifying Non-Trivial Dependent Joins：标注 accessing</h3>
+      <p>第一步是识别非平凡 dependent join，也就是 RHS 真的访问了 LHS 提供列的 dependent join。论文建议使用 indexed algebra：对每个列访问，找到“访问该列的算子”和“产生该列的算子”的 lowest common ancestor。如果这个 LCA 不是访问算子本身，它必须是某个 dependent join，于是把访问算子记录进这个 dependent join 的 <code>accessing</code> 集合。没有访问算子的 dependent join 是平凡的，可以直接转成普通 join。</p>
+
+      <figure>
+        <img src="assets/paper2025-annotations-crop-p8.png" alt="2025 论文 dependent join annotations">
+        <figcaption>2025 论文第 8 页 Figure 2：示例中 <code>accessing(⧑1) = {σ6, σ9}</code>，<code>accessing(⧑5) = {σ9}</code>。</figcaption>
+      </figure>
+
+      <p>这一步的意义是让算法知道“到底哪些算子在读外层列”。后续 unnesting 不再盲目把每个绑定域穿过所有位置，而是沿着 <code>accessing</code> 指出的路径推进。</p>
+
+      <h3>4.6 Eliminating Dependent Joins：先 simple，再 full</h3>
+      <p>标注完成后，算法按从根到叶的顺序处理 dependent join。论文先给出 simple dependent join elimination：如果访问算子到 dependent join 的路径是线性的，并且访问算子是 selection 或可上移的 map，就把它合并到 join 或移动到 join 上方；如果 <code>accessing</code> 变空，就把 dependent join 转成普通 join。</p>
+
+      <figure>
+        <img src="assets/paper2025-fig3-simple-djoin-elimination-p9.png" alt="2025 论文 Figure 3 simple dependent join elimination pseudocode">
+        <figcaption>2025 论文第 9 页 Figure 3：simple dependent join elimination 的伪代码。它是对 2015 simple unnesting 的推广。</figcaption>
+      </figure>
+
+      <p>如果 simple unnesting 不够，就进入完整算法。论文把状态分成两层：<code>UnnestingInfo</code> 是整个 unnesting 过程中不变的信息，<code>Unnesting</code> 是当前查询片段里的局部状态。</p>
+
+      <div class="figure-comparison">
+        <figure>
+          <img src="assets/paper2025-fig4-unnesting-state-p9.png" alt="2025 论文 Figure 4 state maintained during unnesting">
+          <figcaption>2025 论文第 9 页 Figure 4：<code>join</code>、<code>outerRefs</code>、<code>D</code>、<code>parent</code> 属于全局信息；<code>cclasses</code> 和 <code>repr</code> 属于局部状态。</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/paper2025-fig5-rewrite-columns-p10.png" alt="2025 论文 Figure 5 helper function to rewrite outer column references">
+          <figcaption>2025 论文第 10 页 Figure 5：如果 <code>repr</code> 中记录了外层列的新代表列，就把算子里的列引用改写过去。</figcaption>
+        </figure>
+      </div>
 
       <table>
         <thead>
           <tr>
-            <th>Holistic 步骤</th>
-            <th>放回 Figure 1 怎么理解</th>
-            <th>避免了什么问题</th>
+            <th>状态</th>
+            <th>论文中的含义</th>
+            <th>为什么需要</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>识别非平凡 dependent join</td>
-            <td>标出 <code>orders</code> 读取 <code>customer.c_custkey</code>，以及 <code>lineitem</code> 读取 <code>orders.o_orderkey</code>。</td>
-            <td>优化器知道这里有两层相关性，而不是两个互不相关的小问题。</td>
+            <td><code>outerRefs</code></td>
+            <td><code>A(L) ∩ F(R)</code>，RHS 访问的 LHS 列。</td>
+            <td>决定绑定域 <code>D</code> 需要包含哪些列。</td>
           </tr>
           <tr>
-            <td>记录访问者 accessing</td>
-            <td>记录哪些 filter/aggregate 节点真正使用了外层列。</td>
-            <td>下推时只改写需要绑定值的路径，不盲目复制 <code>D</code>。</td>
+            <td><code>D</code></td>
+            <td><code>Π<sub>outerRefs</sub>(L)</code>，外层引用的去重绑定域。</td>
+            <td>当不能替换外层列时，用它显式 join 进来。</td>
           </tr>
           <tr>
-            <td>从上到下消除</td>
-            <td>先处理客户到订单这一层，再在同一轮过程中看到订单到 lineitem 这一层。</td>
-            <td>不会让内层 <code>D</code> 先独立成形，再被外层 <code>D</code> 交叉放大。</td>
+            <td><code>parent</code></td>
+            <td>当前 unnesting 若发生在另一个 unnesting 之内，记录父状态。</td>
+            <td>识别嵌套 dependent join，并把父层访问合并进当前处理。</td>
           </tr>
           <tr>
-            <td>维护等价类和替换映射</td>
-            <td>利用 <code>o.o_custkey = c.c_custkey</code>、<code>l.l_orderkey = o.o_orderkey</code> 这类等值条件判断外层引用能否被内层列替代。</td>
-            <td>能在“显式 join D”和“替换外层引用”之间做成本选择。</td>
+            <td><code>cclasses</code></td>
+            <td>用 union-find 维护等价列，例如 <code>a=b</code>、<code>b=c</code>。</td>
+            <td>允许通过传递等价关系找到可替代 outer reference 的内层列。</td>
+          </tr>
+          <tr>
+            <td><code>repr</code></td>
+            <td>记录外层列已经被哪个新列替代。</td>
+            <td>沿递归返回路径重写 selection、group by、join condition 等引用。</td>
           </tr>
         </tbody>
       </table>
 
+      <p>Figure 6 是完整 dependent join elimination 的主流程。它先尝试 simple elimination；如果 simple elimination 已经成功，算法只需要在存在 <code>parentUnnesting</code> 时重写被移动的 map，并用父状态继续 <code>unnest</code> 当前 join，然后返回。只有 simple elimination 不足时，才进入完整分支：嵌套情况下先 unnest 当前 join 的左侧并重写条件，随后创建新的 unnesting 状态，必要时把父层 accessing 合并进来，最后 unnest 当前 join 的右侧，并把 <code>outerRefs</code> 与 <code>repr</code> 的对应关系补成 <code>is not distinct from</code> 条件。</p>
+
       <figure>
-        <img src="assets/paper2025-annotations-crop-p8.png" alt="2025 论文 dependent join annotations">
-        <figcaption>2025 论文第 8 页 Figure 2：用访问者列表标注哪些算子读取了某个 dependent join 左侧提供的列。</figcaption>
+        <img src="assets/paper2025-fig6-djoin-elimination-p11.png" alt="2025 论文 Figure 6 general case of dependent join elimination">
+        <figcaption>2025 论文第 11 页 Figure 6：完整 dependent join elimination 伪代码。关键点是 top-to-bottom 处理，并且嵌套情况下会先处理左侧、合并父状态，再处理右侧。</figcaption>
       </figure>
 
+      <h3>4.7 论文示例的一次完整运行</h3>
+      <p>论文随后用第 2.3 节的例子演示算法。算法从最外层 <code>⧑1</code> 开始，初始化 <code>outerRef := {T1.a}</code>、<code>cclasses := ∅</code>、<code>repr := ∅</code>，下一步调用 <code>unnest(Γ4, {σ6, σ9})</code>。处理 group by 时，先递归处理输入，之后才会把 outer references 加入 group by。</p>
+
+      <figure>
+        <img src="assets/paper2025-holistic-run-start-p12.png" alt="2025 论文第 12 页 holistic unnesting running example start">
+        <figcaption>2025 论文第 12 页：算法从 <code>⧑1</code> 启动，先进入 <code>Γ4</code>，随后遇到另一个 dependent join <code>⧑5</code>。</figcaption>
+      </figure>
+
+      <p>遇到嵌套 dependent join <code>⧑5</code> 后，simple elimination 仍然不够。论文说，先处理它的左输入。进入 <code>σ6</code> 时，把选择条件 <code>T2.a = T1.a</code> 加入 <code>cclasses</code>，并把 <code>σ6</code> 从 accessing list 中移除。到达 <code>T2</code> 时，访问列表为空，算法有两个选择：加入 <code>D := Π<sub>a:=T1.a</sub>(σ<sub>f=123</sub>(T1))</code> 的 join，或者利用等价类把 <code>T1.a</code> 替换为 <code>T2.a</code>。论文为了展示选择空间，假设 <code>σ2</code> 有选择性，于是选择显式加入 join。</p>
+
+      <figure>
+        <img src="assets/paper2025-holistic-run-left-p13.png" alt="2025 论文第 13 页 holistic unnesting running example left side">
+        <figcaption>2025 论文第 13 页：处理 <code>⧑5</code> 左侧时，<code>cclasses</code> 记录 <code>{T1.a,T2.a}</code>；访问列表清空后，在“加入 D”和“列替换”之间做成本选择。</figcaption>
+      </figure>
+
+      <p>之后算法处理另一侧，也就是 <code>Γ8</code> 以下的 <code>σ9</code> 和 <code>T3</code>。这次论文为了同时展示另一种分支，假设优化器选择替换：记录 <code>T1.a → T3.a</code> 和 <code>T2.b → T3.b</code> 到 <code>repr</code>，然后在返回路径上改写所有列引用。最终得到的计划不再把 <code>T1.a</code> 与 <code>T2.b</code> 的完整域交叉放大，而是在同一轮 top-down unnesting 中把嵌套依赖一起处理。</p>
+
+      <figure>
+        <img src="assets/paper2025-holistic-run-final-p14.png" alt="2025 论文第 14 页 holistic unnesting final plan">
+        <figcaption>2025 论文第 14 页：另一侧选择 substitution 后，<code>repr</code> 把外层引用改写为 <code>T3</code> 产生的列，最终计划避免了 Section 2.3 中的过大 cross product。</figcaption>
+      </figure>
+
+      <h3>4.8 Unnesting Rules：各类算子的处理</h3>
+      <p>第 3.3 节最后给出各算子的规则。论文说这些规则和 2015 的 push down 规则类似，因此只列重点。共同逻辑是：如果 <code>unnest(op, info, accessing)</code> 被调用且 <code>accessing</code> 为空，就停止向下走；此时要么把 <code>info.D</code> join 到当前算子上，要么用 <code>info.cclasses</code> 中的等价列替换所有 outer references。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>算子</th>
+            <th>论文规则</th>
+            <th>直观作用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Selection</td>
+            <td>把谓词中的等值条件加入 <code>cclasses</code>，递归处理输入，返回时重写谓词列引用。</td>
+            <td>利用 <code>a=b</code> 这类条件发现可替代的内层列。</td>
+          </tr>
+          <tr>
+            <td>Map</td>
+            <td>先 unnest 输入，返回时重写 map 产生式中的列引用。</td>
+            <td>保持投影/表达式里的 outer reference 与替换映射一致。</td>
+          </tr>
+          <tr>
+            <td>Group by</td>
+            <td>unnest 输入并重写 group by，然后把 outer references 的代表列加入分组键。</td>
+            <td>保证聚合按每个绑定值分别计算。</td>
+          </tr>
+          <tr>
+            <td>Static group by</td>
+            <td>若 group by 为空或 grouping sets 包含空组，需要用 outer join 或 group join 保证空输入仍产生正确输出。</td>
+            <td>处理标量聚合在空输入上仍返回一行的 SQL 语义。</td>
+          </tr>
+          <tr>
+            <td>Window</td>
+            <td>把 outer references 的代表列加入 <code>partition by</code>。</td>
+            <td>让窗口函数按每个绑定值独立计算。</td>
+          </tr>
+          <tr>
+            <td>Join</td>
+            <td>如果遇到另一个 dependent join，调用主算法处理。否则先把 <code>accessing</code> 分到左右输入：只有访问都在一侧，并且 join 类型不需要输出另一侧 unmatched rows 时，才能只递归一侧；否则必须分别 unnest 两侧。返回时用 <code>rewriteColumnsForJoin</code> 按 join 类型重写条件，并为 outer references 补 <code>is not distinct from</code> 条件；full outer join 这类情况还要按行选择代表列，例如使用 <code>COALESCE</code>。</td>
+            <td>避免把不同层的 <code>D</code> 盲目穿过 dependent join，同时把 inner/left/right/full join 对 unmatched rows 的不同保留规则纳入列替换。</td>
+          </tr>
+        </tbody>
+      </table>
+
       <div class="note">
-        <p class="callout-title">可以这样记</p>
-        <p>2015 是“看到一个 dependent join，就把它的 <code>D</code> 往下推到底”。2025 是“先看整棵树里所有相关性，再从上往下携带状态，别让多个 <code>D</code> 无意义地相乘”。</p>
+        <p class="callout-title">2025 第 3 节的核心</p>
+        <p>Holistic unnesting 不是“换一套完全不同的代数规则”，而是把 2015 的 <code>D</code> 下推思想改成自顶向下的状态化遍历：先标注所有真正访问外层列的位置，再在遍历中携带 <code>outerRefs</code>、<code>cclasses</code>、<code>repr</code>。遇到嵌套 dependent join 时，算法通常会在祖先 join 的消除过程中一起处理；如果祖先过程提前停止，后代 join 再按 top-to-bottom 顺序处理。这样可以避免多个绑定域在中间计划里无意义相乘。</p>
       </div>
-
-      <h3>4.5 2025 的算法状态</h3>
-      <p>论文中的状态结构大致包含这些信息：</p>
-      <ul>
-        <li><code>outerRefs</code>：右侧访问了左侧哪些列。</li>
-        <li><code>D</code>：这些外层引用的绑定域。</li>
-        <li><code>parent</code>：如果当前 unnesting 在另一个 unnesting 内部，记录父状态。</li>
-        <li><code>cclasses</code>：等价类，用 union-find 记录 <code>a=b</code>、<code>b=c</code> 这种可传递关系。</li>
-        <li><code>repr</code>：如果外层列已经被某个内层列替代，记录替代映射。</li>
-      </ul>
-
-      <p>这些状态让优化器在下推时能做选择：是显式加入 <code>D</code> 的 join，还是用已有等价列直接替换 outer reference。</p>
     </section>
 
     <section id="complex-sql">

@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORCA 优化器 —— 一条 SQL 的完整旅程</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --subtle: #6b7280;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --surface: #f8f9fc;
+    --border: #e5e7eb;
+    --code-bg: #f1f5f9;
+    --table-stripe: #f8fafc;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+    --info-bg: #eff6ff;
+    --info-border: #93c5fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --fg: #e2e8f0; --subtle: #94a3b8;
+      --surface: #1e293b; --border: #334155; --code-bg: #1e293b;
+      --table-stripe: #1a2332;
+      --warn-bg: #422006; --warn-border: #92400e;
+      --info-bg: #172554; --info-border: #1e40af;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    line-height: 1.7; color: var(--fg); background: var(--bg); max-width: 960px;
+    margin: 0 auto; padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 2.2rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h1 + p { color: var(--subtle); font-size: 1.05rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.5rem; margin: 3rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid var(--border); }
+  h3 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  h4 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; color: var(--accent-2); }
+  p, li { margin: .5rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .92rem; }
+  th, td { padding: .5rem .75rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: .9rem 1.1rem; overflow-x: auto; font-size: .88rem; line-height: 1.55; margin: .75rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+         font-size: .88em; background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .badge { display: inline-block; padding: .15em .55em; border-radius: 999px; font-size: .78rem;
+           font-weight: 600; margin-right: .3em; }
+  .badge-accent { background: #dbeafe; color: #1e40af; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+
+  .callout { border-left: 4px solid; border-radius: 0 6px 6px 0; padding: .7rem 1rem; margin: 1rem 0; font-size: .93rem; }
+  .callout-info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1.5rem 0; }
+  .toc h3 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 2rem; }
+  .toc li { margin: .2rem 0; font-size: .93rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin: 1rem 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: .8rem; margin: 1rem 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .card h4 { margin-top: 0; }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* Diagram / flow chart */
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: center; font-family: monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+
+  /* Pipeline stages */
+  .pipeline { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; align-items: center; }
+  .pipeline-stage { background: var(--surface); border: 2px solid var(--border); border-radius: 8px;
+                    padding: .6rem 1rem; text-align: center; font-weight: 600; font-size: .9rem; min-width: 100px; }
+  .pipeline-stage.active { border-color: var(--accent); background: var(--info-bg); }
+  .pipeline-arrow { font-size: 1.2rem; color: var(--subtle); font-weight: bold; }
+
+  /* Step number */
+  .step { display: inline-flex; align-items: center; justify-content: center;
+          width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent);
+          color: #fff; font-weight: bold; font-size: .85rem; margin-right: .5rem; flex-shrink: 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .file-ref { font-size: .82rem; color: var(--subtle); margin-top: -.3rem; margin-bottom: .6rem; }
+
+  @media (max-width: 700px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+    body { padding: 1rem; }
+    .pipeline { flex-direction: column; }
+    .pipeline-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<h1>🐋 ORCA 优化器 —— 一条 SQL 的完整旅程</h1>
+<p>
+  <code>greenplum-db/gporca</code> —
+  从 DXL 输入到物理执行计划的端到端管线追踪。
+  关注一条查询"怎么进来、走哪些路径、怎么出去"，不涉及内存管理、并发原语等横向基础设施。
+</p>
+
+<nav class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#overview">全景概览</a></li>
+  <li><a href="#stage0">Stage 0：SQL → DXL（外部）</a></li>
+  <li><a href="#stage1">Stage 1：DXL → CExpression（翻译入）</a></li>
+  <li><a href="#stage2">Stage 2：预处理 &amp; QueryContext</a></li>
+  <li><a href="#stage3">Stage 3：Memo 初始化</a></li>
+  <li><a href="#stage4">Stage 4：多阶段搜索</a></li>
+  <li><a href="#stage5">Stage 5：计划提取</a></li>
+  <li><a href="#stage6">Stage 6：CExpression → DXL（翻译出）</a></li>
+  <li><a href="#files">关键文件索引</a></li>
+  <li><a href="#reading">建议阅读顺序</a></li>
+</ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="overview">全景概览</h2>
+
+<div class="pipeline">
+  <div class="pipeline-stage active">SQL<br><small>SELECT * FROM t1 JOIN t2 ON ...</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage">DXL<br><small>XML-like IR</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage"><strong>CExpression</strong><br><small>逻辑算子树</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage"><strong>Memo</strong><br><small>搜索空间</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage"><strong>Job Scheduler</strong><br><small>多阶段并行搜索</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage"><strong>最优 Plan</strong><br><small>CExpression (Physical)</small></div>
+  <div class="pipeline-arrow">→</div>
+  <div class="pipeline-stage">DXL Plan<br><small>返回 GPDB</small></div>
+</div>
+
+<div class="callout callout-info">
+<strong>核心思路：</strong>ORCA 是一个 <strong>Cascades 风格</strong>的优化器。
+它将一条 SQL 翻译成内部表达式树，放入 Memo（DP 表），
+然后通过多阶段、<strong>Job-基于依赖图的并行搜索</strong>来探索所有等价计划空间，
+最终用代价模型选出最优物理执行计划。
+这份文档追踪的正是这条 "SQL 进，Plan 出" 的主路径。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage0">Stage 0：SQL → DXL（外部）</h2>
+<p>
+  ORCA 自身<strong>不处理 SQL 文本</strong>。SQL 解析、语义分析由 Greenplum Database (GPDB) 的
+  PostgreSQL 风格解析器完成。GPDB 将解析后的查询树序列化为
+  <strong>DXL (Data eXchange Language)</strong> —— 一种基于 XML 的中间表示，
+  通过进程间通信传给 ORCA。
+</p>
+
+<div class="diagram">
+┌─────────────┐      SQL       ┌──────────────┐     DXL (XML)    ┌──────────────┐
+│   Client    │ ─────────────▶ │    GPDB      │ ───────────────▶ │    ORCA      │
+│             │                │  Parser /     │                  │  Optimizer   │
+│  SELECT ... │                │  Analyzer     │                  │              │
+└─────────────┘                └──────────────┘                  └──────────────┘
+</div>
+
+<div class="callout callout-warn">
+<strong>本文的关注边界：</strong>从 GPDB 传来 <code>CDXLNode *query</code> 开始，
+到 ORCA 返回 <code>CDXLNode *pdxlnPlan</code> 结束。
+SQL 解析 → DXL 的序列化过程不在本文范围内。
+</div>
+
+<p>相关代码：<code>libnaucrates/</code> 库定义了所有 DXL 操作符（<code>CDXLNode</code>、<code>CDXLLogical*</code>、<code>CDXLPhysical*</code> 等）。</p>
+
+<!-- ============================================================ -->
+<h2 id="stage1">Stage 1：DXL → CExpression（翻译入）</h2>
+
+<h3>入口函数</h3>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/optimizer/COptimizer.cpp:227-360</a> — <code>COptimizer::PdxlnOptimize()</code></div>
+
+<p>一切从 <code>COptimizer::PdxlnOptimize()</code> 开始。这是 ORCA 的唯一对外接口：</p>
+
+<pre><code>CDXLNode *                                // 返回：DXL 格式的物理计划
+COptimizer::PdxlnOptimize(
+    CMemoryPool *mp,                       // 内存池
+    CMDAccessor *md_accessor,              // 元数据访问器（表定义、统计等）
+    const CDXLNode *query,                 // ← 输入：DXL 查询树
+    const CDXLNodeArray *query_output_dxlnode_array,
+    const CDXLNodeArray *cte_producers,
+    IConstExprEvaluator *pceeval,          // 常量表达式求值器
+    ULONG ulHosts,                         // 集群节点数
+    ULONG ulSessionId, ULONG ulCmdId,
+    CSearchStageArray *search_stage_array, // 搜索阶段配置
+    COptimizerConfig *optimizer_config,    // 优化器配置
+    const CHAR *szMinidumpFileName
+);</code></pre>
+
+<h3>DXL → Expr 翻译</h3>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/translate/CTranslatorDXLToExpr.cpp:356</a> — <code>PexprTranslateQuery()</code></div>
+
+<pre><code>// 在 PdxlnOptimize() 内部 (~Line 288):
+CTranslatorDXLToExpr dxltr(mp, md_accessor);
+CExpression *pexprTranslated = dxltr.PexprTranslateQuery(
+    query, query_output_dxlnode_array, cte_producers);</code></pre>
+
+<p><code>CTranslatorDXLToExpr</code> 遍历 DXL 树，为每个 DXL 节点创建对应的<strong>逻辑算子 (CLogical)</strong>，组装成一棵 <code>CExpression</code> 树：</p>
+
+<div class="diagram">
+ DXL 节点                               CExpression 树
+ ─────────                              ──────────────
+ CDXLLogicalSelect               CExpression( CLogicalSelect )
+   ├─ CDXLLogicalJoin      ──▶     ├─ CExpression( CLogicalInnerJoin )
+   │    ├─ CDXLLogicalGet              │    ├─ CExpression( CLogicalGet("t1") )
+   │    └─ CDXLLogicalGet              │    └─ CExpression( CLogicalGet("t2") )
+   └─ CDXLScalarCmp                   └─ CExpression( CScalarCmp(a > 10) )
+</div>
+
+<div class="callout callout-info">
+<strong>关键点：</strong>翻译出的表达式树<strong>全是逻辑算子</strong>（<code>CLogical*</code>）。
+物理执行方式（HashJoin? NLJoin?）在后面的搜索阶段才决定。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage2">Stage 2：预处理 &amp; QueryContext</h2>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/optimizer/COptimizer.cpp:295-297</a></div>
+
+<pre><code>CQueryContext *pqc = CQueryContext::PqcGenerate(
+    mp, pexprTranslated, pdrgpul, pdrgpmdname, true /*fDeriveStats*/);</code></pre>
+
+<p><code>CQueryContext::PqcGenerate()</code> 做三件事：</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>1. 表达式预处理</h4>
+    <p>调用 <code>CExpressionPreprocessor</code> 对逻辑表达式做规范化：谓词下推、冗余 Join 消除、子查询提升等。<strong>这些都是逻辑→逻辑的改写</strong>，不涉及物理算子。</p>
+  </div>
+  <div class="card">
+    <h4>2. 属性推导</h4>
+    <p>调用 <code>PdpDerive()</code> 自底向上推导关系属性 (<code>CDrvdPropRelational</code>)：输出哪些列、有哪些 Key、外键约束、分区信息等。</p>
+  </div>
+  <div class="card">
+    <h4>3. 包装 Required Props</h4>
+    <p>从原始查询中提取"要求属性" (<code>CReqdPropPlan</code>)：最终结果需要哪些列、什么分布、什么排序顺序。</p>
+  </div>
+</div>
+
+<div class="callout callout-info">
+<strong>区分两个概念：</strong>
+<ul>
+  <li><strong>Derived Properties（推导属性）</strong>——表达式"实际具有的"属性，如输出列、键约束</li>
+  <li><strong>Required Properties（要求属性）</strong>——上层对下层"要求的"属性，如"我需要按 (a) Hash 分布"</li>
+</ul>
+这套 Required/Derived 机制是 Cascades 框架的核心，它驱动 Enforcer（Motion/Sort 等）的自动插入。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage3">Stage 3：Memo 初始化</h2>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/optimizer/COptimizer.cpp:414-420</a> — <code>PexprOptimize()</code></div>
+
+<pre><code>CExpression *
+COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
+                          CSearchStageArray *search_stage_array)
+{
+    CEngine eng(mp);
+    eng.Init(pqc, search_stage_array);   // ← Step 3a: 初始化 Memo
+    eng.Optimize();                       // ← Step 4: 搜索
+    CExpression *pexprPlan = eng.PexprExtractPlan();  // ← Step 5: 提取最优计划
+    return pexprPlan;
+}</code></pre>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/engine/CEngine.cpp:131-141</a> — <code>CEngine::InitLogicalExpression()</code></div>
+
+<pre><code>void CEngine::InitLogicalExpression(CExpression *pexpr)
+{
+    // 将预处理后的根表达式递归插入 Memo
+    CGroup *pgroupRoot = PgroupInsert(
+        NULL /*pgroupTarget*/, pexpr,
+        CXform::ExfInvalid, NULL /*pgexprOrigin*/,
+        false /*fIntermediate*/);
+    m_pmemo->SetRoot(pgroupRoot);        // 标记根 Group
+}</code></pre>
+
+<p><code>PgroupInsert()</code> 递归地将表达式树的每个节点插入 Memo：</p>
+
+<div class="diagram">
+ Memo
+ ──────────────────────────────────────────
+  Group 0 (Root)                            ← CLogicalSelect
+  ├── GroupExpression 0: Select[Group1, Group3]
+  │
+  Group 1                                   ← CLogicalInnerJoin
+  ├── GroupExpression 0: InnerJoin[Group2, Group3]
+  │
+  Group 2                                   ← CLogicalGet("t1")
+  ├── GroupExpression 0: Get(t1)
+  │
+  Group 3                                   ← CLogicalGet("t2")
+  ├── GroupExpression 0: Get(t2)
+</div>
+
+<div class="callout callout-info">
+<strong>Memo = 一组 Group 的集合。</strong>每个 Group 包含一组<strong>逻辑上等价的</strong> GroupExpression。
+初始只有一个 GroupExpression 入组；随着 Exploration 规则被应用，每个 Group 里会不断长出等价的替代方案。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage4">Stage 4：多阶段搜索</h2>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/engine/CEngine.cpp:1674-1740</a> — <code>CEngine::Optimize()</code></div>
+
+<p>这是整个优化器的<strong>核心循环</strong>：</p>
+
+<pre><code>void CEngine::Optimize()
+{
+    CJobFactory jf(m_mp, ulJobs);
+    CScheduler sched(m_mp, ulJobs);
+    CSchedulerContext sc;
+    sc.Init(m_mp, &jf, &sched, this);
+
+    // 按阶段逐步搜索
+    for (ULONG ul = 0; !FSearchTerminated() && ul < ulSearchStages; ul++)
+    {
+        // 1. 为根 Group 创建 OptimizationContext
+        COptimizationContext *poc = GPOS_NEW(m_mp) COptimizationContext(
+            m_mp, PgroupRoot(), m_pqc->Prpp(), ...);
+
+        // 2. 调度根 Job
+        ScheduleMainJob(&sc, poc);
+
+        // 3. ★ 运行调度器 —— 所有 Job 在此并发执行
+        CScheduler::Run(&sc);
+
+        poc->Release();
+
+        // 4. 提取本阶段最优
+        CExpression *pexprPlan = m_pmemo->PexprExtractPlan(...);
+        PssCurrent()->SetBestExpr(pexprPlan);
+
+        // 5. 阶段收尾：合并 Group、收紧代价阈值
+        FinalizeSearchStage();
+    }
+}</code></pre>
+
+<h3>4.1 Job 依赖树</h3>
+
+<p><code>ScheduleMainJob()</code> 只做一件事：调度一个 <code>CJobGroupOptimization</code>（根 Group 的优化 Job）。
+这个 Job 会<strong>递归地派生子 Job</strong>，形成一棵依赖树：</p>
+
+<div class="diagram">
+                     ┌──────────────────────────┐
+                     │ CJobGroupOptimization     │  ← 根 Group
+                     │ "找到满足要求的最优计划"    │
+                     └──────────┬───────────────┘
+                                │ 派生出
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+   ┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐
+   │CJobGroupExploration│ │CJobGroupImpl.│ │CJobGroupExprOpt. │
+   │ "探索所有逻辑等价" │ │"生成物理候选"│ │"优化每个GE"      │
+   └────────┬─────────┘ └──────┬───────┘ └────────┬─────────┘
+            │                  │                   │
+      ┌─────┴─────┐     ┌─────┴─────┐       ┌─────┴─────┐
+      ▼           ▼     ▼           ▼       ▼           ▼
+ CJobGroupExpr  CJobTransformation   CJobGroupExpr   CJobGroup
+ Exploration   (单个规则应用)        Implementation  Optimization
+                                    (对子Group)
+</div>
+
+<h3>4.2 六种核心 Job 类型</h3>
+
+<table>
+<tr><th>Job 类</th><th>职责</th><th>产生什么</th></tr>
+<tr>
+  <td><code>CJobGroupOptimization</code></td>
+  <td>优化一个 Group：找到满足 Required Props 的最优计划</td>
+  <td>派生子 Job</td>
+</tr>
+<tr>
+  <td><code>CJobGroupExploration</code></td>
+  <td>对一个 Group 的每个 GE 应用 Exploration 规则</td>
+  <td>新的逻辑等价 GroupExpression</td>
+</tr>
+<tr>
+  <td><code>CJobGroupImplementation</code></td>
+  <td>对一个 Group 的每个 GE 应用 Implementation 规则</td>
+  <td>物理 GroupExpression（候选执行方式）</td>
+</tr>
+<tr>
+  <td><code>CJobGroupExpressionExploration</code></td>
+  <td>对单个 GroupExpression 应用所有匹配的 Exploration 规则</td>
+  <td>新的逻辑等价表达式入组</td>
+</tr>
+<tr>
+  <td><code>CJobGroupExpressionImplementation</code></td>
+  <td>对单个 GroupExpression 应用所有匹配的 Implementation 规则</td>
+  <td>物理候选（如 InnerJoin→HashJoin）</td>
+</tr>
+<tr>
+  <td><code>CJobTransformation</code></td>
+  <td>执行<strong>一个</strong>具体的变换规则</td>
+  <td>Binding → Transform → 新表达式入 Memo</td>
+</tr>
+</table>
+
+<h3>4.3 变换规则：探索空间的核心引擎</h3>
+
+<p>Job 的最终执行落在 <code>CJobTransformation</code> 上，它执行一个具体的变换规则。规则分两类：</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4><span class="badge badge-purple">Exploration</span> 逻辑→逻辑</h4>
+    <p>产生<strong>逻辑等价</strong>的替代表达式，加入同一 Group。不改变语义，只改变表达形式。</p>
+    <p>例如：
+      <code>CXformJoinAssociativity</code> — (A⋈B)⋈C → A⋈(B⋈C)<br>
+      <code>CXformJoinCommutativity</code> — A⋈B → B⋈A<br>
+      <code>CXformLeftSemiJoin2InnerJoin</code> — SemiJoin → InnerJoin + GroupBy
+    </p>
+  </div>
+  <div class="card">
+    <h4><span class="badge badge-accent">Implementation</span> 逻辑→物理</h4>
+    <p>将逻辑算子<strong>具体化</strong>为物理执行算子。每个逻辑算子可能对应多种物理实现。</p>
+    <p>例如：
+      <code>CXformInnerJoin2HashJoin</code> → <code>CPhysicalInnerHashJoin</code><br>
+      <code>CXformInnerJoin2NLJoin</code> → <code>CPhysicalInnerNLJoin</code><br>
+      <code>CXformGet2TableScan</code> → <code>CPhysicalTableScan</code>
+    </p>
+  </div>
+</div>
+
+<h3>4.4 多阶段搜索策略</h3>
+
+<p>ORCA 的搜索分<strong>多个 SearchStage</strong>，每个阶段控制应用哪些变换规则 + 使用什么时间/代价阈值：</p>
+
+<div class="diagram">
+ Stage 1 (低代价阈值)                    Stage 2 (放宽阈值)                  Stage N (最终)
+ ┌─────────────────────┐           ┌─────────────────────┐           ┌─────────────────────┐
+ │ 只应用关键 Exploration │    →     │ 应用更多 Exploration │    →     │ 应用所有规则          │
+ │ 规则（如 Join 交换律） │           │ 规则                 │           │ 无代价限制            │
+ │ Timeout: 0.5s        │           │ Timeout: 2s          │           │ 找到最优或超时         │
+ │ Cost threshold: 低    │           │ Cost threshold: 中   │           │                      │
+ └─────────────────────┘           └─────────────────────┘           └─────────────────────┘
+</div>
+
+<div class="callout callout-info">
+<strong>设计意图：</strong>这是 ORCA 独有的"渐进式优化"策略。早期阶段以低代价阈值快速剪枝，即使丢失最优解，也能给出一个还不错的结果。后期阶段逐步放宽限制，逼近全局最优。这使得 ORCA 满足数据库"至少给出一个可行计划"的时效性要求。
+</div>
+
+<h3>4.5 并行搜索：CScheduler</h3>
+
+<p><code>CScheduler::Run()</code> 驱动所有 Job 的并发执行。调度器维护一个<strong>可运行 Job 队列</strong>
+（没有未完成依赖的 Job），多 Worker 从中取 Job 执行：</p>
+
+<div class="diagram">
+ CScheduler::Run(&sc)
+ ─────────────────────────────────────────────────
+
+  WaitQueue (有依赖未满足)          RunnableQueue (依赖已满足)
+  ┌─────────────────────┐          ┌─────────────────────┐
+  │ Job-A (等待子Job)    │  依赖    │ Job-X               │  Worker 1 ──▶ FExecute()
+  │ Job-B (等待子Job)    │  完成    │ Job-Y               │  Worker 2 ──▶ FExecute()
+  │ ...                  │ ──────▶ │ Job-Z               │  Worker 3 ──▶ FExecute()
+  └─────────────────────┘          └─────────────────────┘
+
+ 每个 Job::FExecute() 返回 FExecuteResult:
+   - fCompleted=true  → Job 完成，通知父 Job（引用计数-1）
+   - fCompleted=false → Job 暂停/等待子Job，依赖的子Job 入队
+
+  当根 Job 完成 → 调度结束</div>
+
+<div class="callout callout-info">
+<strong>关键设计：Job 是可重入的 (reentrant)。</strong>每个 Job 内部有一个状态机 (<code>CJobStateMachine</code>)，
+<code>FExecute()</code> 可能被多次调用，每次从一个"断点"继续执行。
+这使得调度器可以在 Job 之间自由切换，无需 OS 线程级别的上下文切换开销。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="stage5">Stage 5：计划提取</h2>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/engine/CEngine.cpp:1786</a> — <code>CEngine::PexprExtractPlan()</code></div>
+
+<p>搜索结束后，Memo 的根 Group 中已经存在<strong>多个物理候选</strong>，
+每个候选在特定的 <code>COptimizationContext</code>（即特定的 Required Properties）下有计算好的代价。
+提取最优计划的逻辑是：</p>
+
+<pre><code>// 从 Memo 的 TreeMap 中提取代价最低的物理表达式树
+CExpression *pexprPlan = m_pmemo->PexprExtractPlan(
+    m_mp,
+    m_pmemo->PgroupRoot(),              // 从根 Group 开始
+    m_pqc->Prpp(),                      // 满足根查询要求的 Required Props
+    m_search_stage_array->Size());</code></pre>
+
+<p>提取过程从根 Group 的<strong>最优 CostContext</strong> 出发，递归地选取每个子 Group 的最优物理表达式，最终组装成一棵纯物理算子树：</p>
+
+<div class="diagram">
+ Memo (Group 0 = Root)                        提取出的 Plan
+ ──────────────────────                        ──────────────
+ Group 0:                                       CPhysicalMotionGather
+   CCostContext[c=100]: MotionGather[Group1]      └─ CPhysicalInnerHashJoin
+   CCostContext[c=150]: MotionGather[Group1']           ├─ CPhysicalTableScan("t1")
+                                                        └─ CPhysicalTableScan("t2")
+ Group 1:
+   CCostContext[c=80]:  InnerHashJoin[Group2, Group3]
+   CCostContext[c=130]: InnerNLJoin[Group2, Group3]
+ Group 2:
+   CCostContext[c=10]:  TableScan("t1")
+ Group 3:
+   CCostContext[c=20]:  TableScan("t2")</div>
+
+<!-- ============================================================ -->
+<h2 id="stage6">Stage 6：CExpression → DXL（翻译出）</h2>
+
+<div class="file-ref">📄 <a href="#">libgpopt/src/optimizer/COptimizer.cpp:320-321</a></div>
+
+<pre><code>// 回到 PdxlnOptimize() 中:
+pdxlnPlan = CreateDXLNode(mp, md_accessor, pexprPlan,
+                          pqc->PdrgPcr(), pdrgpmdname, ulHosts);</code></pre>
+
+<p><code>CTranslatorExprToDXL</code> 遍历物理 CExpression 树，为每个物理/标量算子生成对应的 DXL 节点。
+最终 <code>pdxlnPlan</code> 被返回给 GPDB，由 Executor 执行。</p>
+
+<div class="callout callout-info">
+<strong>闭环：</strong>整个过程形成对称的翻译对 —— <code>CTranslatorDXLToExpr</code>（入）和 <code>CTranslatorExprToDXL</code>（出）。中间的 CExpression/Memo/Search 是 ORCA 的全部价值所在。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="summary">端到端总结</h2>
+
+<div class="diagram">
+                           ┌─────────────────────────────────────────────┐
+                           │           COptimizer::PdxlnOptimize()        │
+                           │              (唯一对外入口)                     │
+                           └──────────────────────┬──────────────────────┘
+                                                  │
+    ┌─────────────────────────────────────────────┼─────────────────────────────────────────────┐
+    │                                             ▼                                             │
+    │  Step 1:  DXL ──▶ CExpression            CTranslatorDXLToExpr::PexprTranslateQuery()     │
+    │                                             │                                             │
+    │  Step 2:  预处理 + 属性推导                CQueryContext::PqcGenerate()                    │
+    │                                             │                                             │
+    │  Step 3:  表达式 ──▶ Memo                 CEngine::Init() → InitLogicalExpression()      │
+    │                                             │                                             │
+    │  Step 4:  多阶段并行搜索                   CEngine::Optimize()                             │
+    │            ┌──────────────────────────────────┐                                          │
+    │            │  for each SearchStage:            │                                          │
+    │            │    ScheduleMainJob()              │ ← CJobGroupOptimization                   │
+    │            │    CScheduler::Run()              │ ← Worker 并发生成/执行 Job DAG            │
+    │            │      ├─ Exploration (逻辑→逻辑)    │                                          │
+    │            │      ├─ Statistics Derivation     │                                          │
+    │            │      ├─ Implementation (逻辑→物理) │                                          │
+    │            │      └─ Optimization  (代价剪枝)   │                                          │
+    │            │    FinalizeSearchStage()          │ ← 提取本阶段最优、收紧阈值                 │
+    │            └──────────────────────────────────┘                                          │
+    │                                             │                                             │
+    │  Step 5:  提取最优计划                      CEngine::PexprExtractPlan()                   │
+    │                                             │                                             │
+    │  Step 6:  CExpression ──▶ DXL              CTranslatorExprToDXL (CreateDXLNode)          │
+    │                                             │                                             │
+    └─────────────────────────────────────────────┼─────────────────────────────────────────────┘
+                                                  │
+                                                  ▼
+                                          CDXLNode *pdxlnPlan
+                                          (返回给 GPDB Executor)
+</div>
+
+<!-- ============================================================ -->
+<h2 id="files">关键文件索引</h2>
+
+<p>按数据流顺序排列，聚焦于"主路径"上的文件：</p>
+
+<table>
+<tr><th>#</th><th>文件</th><th>角色</th></tr>
+<tr>
+  <td>1</td>
+  <td><code>libgpopt/src/optimizer/COptimizer.cpp</code></td>
+  <td><strong>总入口</strong> — <code>PdxlnOptimize()</code> 编排全部 6 步</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>libgpopt/src/translate/CTranslatorDXLToExpr.cpp</code></td>
+  <td>DXL → CExpression 翻译</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>libgpopt/include/gpopt/operators/CLogical.h</code></td>
+  <td>逻辑算子基类（定义"做什么"）</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>libgpopt/include/gpopt/operators/CPhysical.h</code></td>
+  <td>物理算子基类（定义"怎么做"）</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>libgpopt/include/gpopt/operators/CScalar.h</code></td>
+  <td>标量算子基类（表达式/谓词）</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>libgpopt/src/base/CQueryContext.cpp</code></td>
+  <td>查询上下文构建 + 表达式预处理</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>libgpopt/src/engine/CEngine.cpp</code></td>
+  <td><strong>搜索引擎</strong> — <code>Init()</code> → <code>Optimize()</code></td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>libgpopt/include/gpopt/search/CMemo.h</code></td>
+  <td>Memo (DP 表) — 所有 Group 和 GroupExpression</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>libgpopt/include/gpopt/search/CGroup.h</code></td>
+  <td>Group — 等价表达式集合</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>libgpopt/include/gpopt/search/CGroupExpression.h</code></td>
+  <td>单个等价表达式（算子 + 子 Group 指针）</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>libgpopt/include/gpopt/search/CJob.h</code></td>
+  <td>Job 基类 — 依赖树、状态机、可重入设计</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>libgpopt/include/gpopt/search/CScheduler.h</code></td>
+  <td>并行调度器 — Runnable/Waiting 队列管理</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>libgpopt/include/gpopt/search/CJobGroupOptimization.h</code></td>
+  <td>根 Job — 优化一个 Group</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>libgpopt/include/gpopt/xforms/CXform.h</code></td>
+  <td>变换规则基类 — Pattern Match + Transform</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>libgpopt/src/translate/CTranslatorExprToDXL.cpp</code></td>
+  <td>CExpression → DXL 翻译（输出）</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>libgpopt/include/gpopt/base/CReqdProp.h</code></td>
+  <td>Required Properties（要求属性）</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>libgpopt/include/gpopt/base/CDrvdProp.h</code></td>
+  <td>Derived Properties（推导属性）</td>
+</tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="reading">建议阅读顺序</h2>
+
+<p>如果想逐文件精读，这是推荐的顺序（按数据流走，不跳步）：</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4><span class="step">1</span> 入口</h4>
+    <p>从 <code>COptimizer::PdxlnOptimize()</code> 开始，建心态："这就是唯一入口"。</p>
+    <p class="file-ref">COptimizer.cpp ~Line 227</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">2</span> 翻译入</h4>
+    <p>看 <code>CTranslatorDXLToExpr::PexprTranslateQuery()</code>，理解 DXL 节点如何变成 Logical CExpression 树。</p>
+    <p class="file-ref">CTranslatorDXLToExpr.cpp ~Line 356</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">3</span> 算子体系</h4>
+    <p>快速浏览 <code>CLogical.h</code> / <code>CPhysical.h</code> / <code>CScalar.h</code> 三个基类，建立"三层算子模型"的心智。</p>
+    <p class="file-ref">operators/CLogical.h, CPhysical.h, CScalar.h</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">4</span> 预处理</h4>
+    <p>读 <code>CQueryContext::PqcGenerate()</code>，理解表达式在进 Memo 之前做了什么规范化。</p>
+    <p class="file-ref">CQueryContext.cpp</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">5</span> Memo 构建</h4>
+    <p>看 <code>CEngine::Init()</code> → <code>InitLogicalExpression()</code> → <code>PgroupInsert()</code>，理解一棵表达式树如何拆成 Group/GroupExpression 并倒入 Memo。</p>
+    <p class="file-ref">CEngine.cpp ~Line 131</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">6</span> 搜索主循环</h4>
+    <p>精读 <code>CEngine::Optimize()</code> (Line 1674)，理解多阶段循环、ScheduleMainJob、CScheduler::Run、FinalizeSearchStage 四个拍子。</p>
+    <p class="file-ref">CEngine.cpp ~Line 1674</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">7</span> Job 体系</h4>
+    <p>读 <code>CJob.h</code>（Job 基类设计思想）、然后选读 <code>CJobGroupOptimization::FExecute()</code> 的状态机实现。</p>
+    <p class="file-ref">search/CJob.h, CJobGroupOptimization.cpp</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">8</span> 变换规则</h4>
+    <p>读 <code>CXform.h</code>，然后选读一个 Exploration（如 JoinAssociativity）和一个 Implementation（如 InnerJoin2HashJoin）。</p>
+    <p class="file-ref">xforms/CXform.h, CXformJoinAssociativity.h, CXformInnerJoin2HashJoin.h</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">9</span> 计划提取</h4>
+    <p>看 <code>CEngine::PexprExtractPlan()</code>，理解如何从 Memo 的 CostContext 中反序列化出最优物理计划树。</p>
+    <p class="file-ref">CEngine.cpp ~Line 1786</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">10</span> 翻译出</h4>
+    <p>回到 <code>CreateDXLNode()</code> → <code>CTranslatorExprToDXL</code>，收束闭环。</p>
+    <p class="file-ref">COptimizer.cpp ~Line 320</p>
+  </div>
+</div>
+
+<div class="callout callout-info" style="margin-top: 1.5rem;">
+<strong>调试建议：</strong>用 GDB/LLDB 在 <code>COptimizer::PdxlnOptimize()</code> 设断点，
+然后对 <code>data/dxl/query/</code> 下的一个简单查询单步跟踪，沿着上面的 Step 1→10 走一遍。
+亲眼看一次数据的流转，比读十遍文档都管用。
+</div>
+
+<hr>
+
+<p style="text-align: center; color: var(--subtle); font-size: .85rem;">
+  ORCA (GPORCA) — Greenplum Next Generation Query Optimizer<br>
+  Repository: <a href="https://github.com/greenplum-db/gporca">github.com/greenplum-db/gporca</a>
+</p>
+
+</body>
+</html>

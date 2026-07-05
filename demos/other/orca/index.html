@@ -82,8 +82,56 @@
 
   /* Diagram / flow chart */
   .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: center; font-family: monospace;
-             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto; }
+             padding: 1.2rem 1.5rem; margin: 1rem 0; text-align: left;
+             font-family: "JetBrains Mono", "Noto Sans Mono CJK SC", "Source Han Mono SC",
+                          "Sarasa Mono SC", "Microsoft YaHei Mono", "SF Mono", Consolas, monospace;
+             white-space: pre; font-size: .85rem; line-height: 1.4; overflow-x: auto;
+             width: fit-content; max-width: 100%; min-width: min(100%, 32rem); }
+  .flow-diagram, .tree-compare, .job-diagram, .stage-flow, .queue-diagram, .memo-plan {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.2rem 1.5rem; margin: 1rem 0; max-width: 100%; overflow-x: auto;
+  }
+  .flow-diagram, .stage-flow { display: flex; align-items: stretch; gap: .8rem; }
+  .flow-node, .stage-card, .tree-panel, .queue-panel, .memo-column, .job-node {
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    padding: .8rem 1rem;
+  }
+  .flow-node { min-width: 9.5rem; text-align: center; }
+  .flow-node strong, .stage-card strong, .queue-panel strong, .memo-column strong, .job-node strong {
+    display: block; margin-bottom: .25rem;
+  }
+  .flow-arrow, .compare-arrow, .job-arrow {
+    display: flex; align-items: center; justify-content: center; color: var(--accent);
+    font-weight: 700; white-space: nowrap; min-width: 2.5rem;
+  }
+  .tree-compare { display: grid; grid-template-columns: minmax(18rem, 1fr) auto minmax(20rem, 1.2fr); gap: 1rem; align-items: stretch; }
+  .tree-panel h4, .queue-panel h4, .memo-column h4 { margin: 0 0 .6rem; color: var(--fg); }
+  .tree-list { list-style: none; padding-left: 0; margin: 0; font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: .88rem; line-height: 1.55; }
+  .tree-list ul { list-style: none; margin: .25rem 0 .25rem 1rem; padding-left: .9rem; border-left: 1px solid var(--border); }
+  .tree-list li { margin: .2rem 0; }
+  .tree-compare > .tree-panel:only-child { grid-column: 1 / -1; }
+  .job-diagram { display: grid; gap: .85rem; }
+  .job-level { display: flex; gap: .8rem; justify-content: center; align-items: stretch; flex-wrap: wrap; }
+  .job-node { min-width: 12rem; max-width: 16rem; }
+  .job-node.root { max-width: 24rem; text-align: center; margin: 0 auto; }
+  .job-node small, .stage-card small, .flow-node small { color: var(--subtle); display: block; line-height: 1.45; }
+  .stage-card { min-width: 15rem; flex: 1 0 15rem; }
+  .stage-card ul, .queue-panel ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+  .queue-diagram { display: grid; grid-template-columns: minmax(15rem, 1fr) auto minmax(15rem, 1fr); gap: 1rem; align-items: stretch; }
+  .queue-note { grid-column: 1 / -1; margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .8rem; }
+  .memo-plan { display: grid; grid-template-columns: minmax(18rem, 1fr) minmax(18rem, 1fr); gap: 1rem; }
+  .memo-item { margin: .45rem 0; padding: .45rem .6rem; border-left: 3px solid var(--accent); background: var(--code-bg); border-radius: 4px; }
+  .mini-label { color: var(--subtle); font-size: .82rem; }
+  .memo-rel-diagram { display: grid; grid-template-columns: minmax(17rem, 1fr) auto minmax(17rem, 1.15fr); gap: 1rem; align-items: stretch; }
+  .memo-rel-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: .9rem 1rem; min-width: 0; }
+  .memo-rel-panel h4 { margin: 0 0 .6rem; color: var(--fg); }
+  .memo-rel-box { margin: .45rem 0; padding: .55rem .65rem; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg); font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: .86rem; line-height: 1.45; }
+  .memo-rel-box strong { display: block; margin-bottom: .2rem; font-family: inherit; }
+  .memo-rel-arrow { display: flex; align-items: center; justify-content: center; color: var(--accent); font-weight: 700; min-width: 3rem; white-space: nowrap; }
+  .memo-rel-caption { color: var(--subtle); font-size: .84rem; margin-top: .5rem; }
+  .flow-node, .stage-card, .tree-panel, .queue-panel, .memo-column, .job-node, .memo-item {
+    min-width: 0; overflow-wrap: anywhere;
+  }
 
   /* Pipeline stages */
   .pipeline { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; align-items: center; }
@@ -103,10 +151,13 @@
 
   @media (max-width: 700px) {
     .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .tree-compare, .queue-diagram, .memo-plan, .memo-rel-diagram { grid-template-columns: 1fr; }
     .toc ol { columns: 1; }
     body { padding: 1rem; }
     .pipeline { flex-direction: column; }
     .pipeline-arrow { transform: rotate(90deg); }
+    .flow-diagram, .stage-flow { flex-direction: column; }
+    .flow-arrow, .compare-arrow, .job-arrow, .memo-rel-arrow { min-height: 1.5rem; transform: rotate(90deg); }
   }
 </style>
 </head>
@@ -126,8 +177,11 @@
   <li><a href="#stage0">Stage 0：SQL → DXL（外部）</a></li>
   <li><a href="#stage1">Stage 1：DXL → CExpression（翻译入）</a></li>
   <li><a href="#stage2">Stage 2：预处理 &amp; QueryContext</a></li>
+  <li><a href="#expr-model">CExpression：ORCA 的表达式树</a></li>
   <li><a href="#stage3">Stage 3：Memo 初始化</a></li>
   <li><a href="#stage4">Stage 4：多阶段搜索</a></li>
+  <li><a href="#xform-mechanics">规则如何应用到表达式上</a></li>
+  <li><a href="#orca-unnest">Unnest in ORCA</a></li>
   <li><a href="#stage5">Stage 5：计划提取</a></li>
   <li><a href="#stage6">Stage 6：CExpression → DXL（翻译出）</a></li>
   <li><a href="#files">关键文件索引</a></li>
@@ -171,12 +225,21 @@
   通过进程间通信传给 ORCA。
 </p>
 
-<div class="diagram">
-┌─────────────┐      SQL       ┌──────────────┐     DXL (XML)    ┌──────────────┐
-│   Client    │ ─────────────▶ │    GPDB      │ ───────────────▶ │    ORCA      │
-│             │                │  Parser /     │                  │  Optimizer   │
-│  SELECT ... │                │  Analyzer     │                  │              │
-└─────────────┘                └──────────────┘                  └──────────────┘
+<div class="flow-diagram" aria-label="SQL 到 DXL 再到 ORCA 的输入链路">
+  <div class="flow-node">
+    <strong>Client</strong>
+    <small>SELECT ...</small>
+  </div>
+  <div class="flow-arrow">SQL →</div>
+  <div class="flow-node">
+    <strong>GPDB</strong>
+    <small>Parser / Analyzer</small>
+  </div>
+  <div class="flow-arrow">DXL (XML) →</div>
+  <div class="flow-node">
+    <strong>ORCA</strong>
+    <small>Optimizer</small>
+  </div>
 </div>
 
 <div class="callout callout-warn">
@@ -222,14 +285,40 @@ CExpression *pexprTranslated = dxltr.PexprTranslateQuery(
 
 <p><code>CTranslatorDXLToExpr</code> 遍历 DXL 树，为每个 DXL 节点创建对应的<strong>逻辑算子 (CLogical)</strong>，组装成一棵 <code>CExpression</code> 树：</p>
 
-<div class="diagram">
- DXL 节点                               CExpression 树
- ─────────                              ──────────────
- CDXLLogicalSelect               CExpression( CLogicalSelect )
-   ├─ CDXLLogicalJoin      ──▶     ├─ CExpression( CLogicalInnerJoin )
-   │    ├─ CDXLLogicalGet              │    ├─ CExpression( CLogicalGet("t1") )
-   │    └─ CDXLLogicalGet              │    └─ CExpression( CLogicalGet("t2") )
-   └─ CDXLScalarCmp                   └─ CExpression( CScalarCmp(a > 10) )
+<div class="tree-compare" aria-label="DXL 节点翻译为 CExpression 树">
+  <div class="tree-panel">
+    <h4>DXL 节点</h4>
+    <ul class="tree-list">
+      <li>CDXLLogicalSelect
+        <ul>
+          <li>CDXLLogicalJoin
+            <ul>
+              <li>CDXLLogicalGet</li>
+              <li>CDXLLogicalGet</li>
+            </ul>
+          </li>
+          <li>CDXLScalarCmp</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+  <div class="compare-arrow">→</div>
+  <div class="tree-panel">
+    <h4>CExpression 树</h4>
+    <ul class="tree-list">
+      <li>CExpression(CLogicalSelect)
+        <ul>
+          <li>CExpression(CLogicalInnerJoin)
+            <ul>
+              <li>CExpression(CLogicalGet("t1"))</li>
+              <li>CExpression(CLogicalGet("t2"))</li>
+            </ul>
+          </li>
+          <li>CExpression(CScalarCmp(a &gt; 10))</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
 </div>
 
 <div class="callout callout-info">
@@ -272,6 +361,206 @@ CExpression *pexprTranslated = dxltr.PexprTranslateQuery(
 </div>
 
 <!-- ============================================================ -->
+<h2 id="expr-model">CExpression：ORCA 的表达式树</h2>
+
+<p>
+  如果目标是理解 subquery unnesting，而不是先看物理算子绑定，那么最重要的对象不是
+  <code>CPhysical*</code>，而是 <code>CExpression</code>。ORCA 的逻辑 rewrite、subquery→Apply、
+  Apply→Join 都是在 <code>CExpression</code> 树和后续 Memo 里的 <code>CGroupExpression</code> 上发生的。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/operators/CExpression.h:58-150</code></div>
+
+<p><code>CExpression</code> 本质上是一个“算子 + 子表达式数组 + 属性缓存”的节点：</p>
+
+<pre><code>class CExpression : public CRefCount
+{
+    CMemoryPool *m_mp;
+    COperator *m_pop;                    // 当前节点的算子：CLogical / CScalar / CPhysical
+    CExpressionArray *m_pdrgpexpr;       // 子节点数组
+
+    CDrvdPropRelational *m_pdprel;       // relational derived props
+    CDrvdPropScalar *m_pdpscalar;        // scalar derived props
+    CReqdPropPlan *m_prpp;               // plan required props
+    CDrvdPropPlan *m_pdpplan;            // physical derived props
+
+    CGroupExpression *m_pgexpr;          // 如果从 Memo 抽出，指回来源 group expression
+    CCost m_cost;                        // 从 Memo 抽出物理计划时携带的 cost
+
+public:
+    CExpression(CMemoryPool *mp, COperator *pop);
+    CExpression(CMemoryPool *mp, COperator *pop, CExpression *child);
+    CExpression(CMemoryPool *mp, COperator *pop, CExpression *left, CExpression *right);
+    CExpression(CMemoryPool *mp, COperator *pop, CExpressionArray *children);
+
+    CExpression *operator[](ULONG pos) const;
+    ULONG Arity() const;
+    COperator *Pop() const;
+};</code></pre>
+
+<p>这意味着一个逻辑查询在 ORCA 里不是“SQL AST”，而是下面这种统一树形对象：</p>
+
+<div class="tree-compare" aria-label="CExpression 逻辑查询树">
+  <div class="tree-panel">
+    <h4>CExpression 根节点</h4>
+    <ul class="tree-list">
+      <li>Pop() = CLogicalSelect
+        <ul>
+          <li>child[0] = CExpression
+            <ul>
+              <li>Pop() = CLogicalGet("students s1")</li>
+              <li>...</li>
+            </ul>
+          </li>
+          <li>child[1] = CExpression
+            <ul>
+              <li>Pop() = CScalarCmp(=)</li>
+              <li>child[0] = CScalarIdent(s1.score)</li>
+              <li>child[1] = CScalarSubquery
+                <ul>
+                  <li>child[0] = CLogicalGbAgg(MAX(s2.score))</li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>Logical</h4>
+    <p><code>CLogical*</code> 描述关系代数节点：Get、Select、Project、GbAgg、Join、Apply 等。</p>
+  </div>
+  <div class="card">
+    <h4>Scalar</h4>
+    <p><code>CScalar*</code> 描述谓词和表达式：列引用、比较、函数、聚合函数、subquery 标量节点。</p>
+  </div>
+  <div class="card">
+    <h4>Physical</h4>
+    <p><code>CPhysical*</code> 是后面 implementation 规则生成的执行方式；理解 unnest 之前可以先放后。</p>
+  </div>
+</div>
+
+<p>
+  关键是：<strong>subquery 一开始常常藏在 scalar child 里</strong>，例如 Select 的 predicate 或 Project 的 scalar list。
+  ORCA 的 subquery handler 会把这些 scalar subquery 拆出来，把原来的 logical child 包成 Apply tree，
+  同时返回一个不再含 subquery 的 residual scalar。这样后续 xform 就能像处理普通逻辑树一样处理它。
+</p>
+
+<div class="tree-compare" aria-label="CSubqueryHandler 前后的表达式树">
+  <div class="tree-panel">
+    <h4>Before</h4>
+    <ul class="tree-list">
+      <li>Select
+        <ul>
+          <li>Get(students s1)</li>
+          <li>ScalarCmp
+            <ul>
+              <li>s1.score</li>
+              <li>ScalarSubquery
+                <ul>
+                  <li>GbAgg(MAX(s2.score))
+                    <ul>
+                      <li>Select[s2.major = s1.major]</li>
+                      <li>Get(students s2)</li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+  <div class="compare-arrow">→</div>
+  <div class="tree-panel">
+    <h4>After CSubqueryHandler</h4>
+    <ul class="tree-list">
+      <li>Select
+        <ul>
+          <li>LeftOuterApply
+            <ul>
+              <li>Get(students s1)</li>
+              <li>GbAgg(MAX(s2.score))
+                <ul>
+                  <li>Select[s2.major = s1.major]</li>
+                  <li>Get(students s2)</li>
+                </ul>
+              </li>
+              <li>scalar true / apply predicate slot</li>
+            </ul>
+          </li>
+          <li>ScalarCmp
+            <ul>
+              <li>s1.score</li>
+              <li>subquery_output_col</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout callout-info">
+<strong>阅读重点：</strong><code>CExpression</code> 是 rewrite 的载体，<code>COperator</code> 决定节点类型，
+<code>DeriveOuterReferences()</code> / <code>DeriveUsedColumns()</code> 这类属性告诉规则“这棵子树是否还读外层列”。
+相关子查询能否 unnest，本质上就是能否把这些 outer references 从 RHS 中安全移走。
+</div>
+
+<h3>CExpression 与 CGroupExpression 的关系</h3>
+
+<p>
+  <code>CExpression</code> 和 <code>CGroupExpression</code> 不是同一个层次的对象：
+  前者是一棵<strong>具体树</strong>，子节点仍然是具体 <code>CExpression *</code>；
+  后者是 Memo 里的<strong>等价类成员</strong>，子节点不再指向具体表达式，而是指向一组可替换实现的
+  <code>CGroup *</code>。
+</p>
+
+<div class="memo-rel-diagram" aria-label="CExpression 和 CGroupExpression 的关系">
+  <div class="memo-rel-panel">
+    <h4>CExpression：树形表达式</h4>
+    <div class="memo-rel-box">
+      <strong>Select</strong>
+      child[0] → Join<br>
+      child[1] → ScalarCmp
+    </div>
+    <div class="memo-rel-box">
+      <strong>Join</strong>
+      child[0] → Get(t1)<br>
+      child[1] → Get(t2)<br>
+      child[2] → join predicate
+    </div>
+    <p class="memo-rel-caption">用于翻译、预处理、xform binding、计划提取后的物理 plan 表示。</p>
+  </div>
+  <div class="memo-rel-arrow">插入 Memo →</div>
+  <div class="memo-rel-panel">
+    <h4>CGroupExpression：Memo 中的表达式</h4>
+    <div class="memo-rel-box">
+      <strong>Group 0</strong>
+      GExpr: Select[Group 1, Group 4]
+    </div>
+    <div class="memo-rel-box">
+      <strong>Group 1</strong>
+      GExpr: InnerJoin[Group 2, Group 3, Group 5]<br>
+      GExpr: InnerJoin[Group 3, Group 2, Group 5]
+    </div>
+    <p class="memo-rel-caption">一个 Group 保存等价表达式；一个 GroupExpression 保存 operator + child groups。</p>
+  </div>
+</div>
+
+<p>
+  因此，<code>CExpression::m_pgexpr</code> 是一个回指针：当某棵 <code>CExpression</code>
+  是从 Memo binding 或计划提取过程中构造出来时，它可以通过 <code>m_pgexpr</code>
+  找回来源 <code>CGroupExpression</code>，再访问所在 <code>CGroup</code> 的属性、统计信息、来源 xform 和 child groups。
+  普通手工构造的表达式通常没有这个来源，<code>m_pgexpr</code> 就是 <code>NULL</code>。
+</p>
+
+<!-- ============================================================ -->
 <h2 id="stage3">Stage 3：Memo 初始化</h2>
 
 <div class="file-ref">📄 <a href="#">libgpopt/src/optimizer/COptimizer.cpp:414-420</a> — <code>PexprOptimize()</code></div>
@@ -301,25 +590,275 @@ COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
 
 <p><code>PgroupInsert()</code> 递归地将表达式树的每个节点插入 Memo：</p>
 
-<div class="diagram">
- Memo
- ──────────────────────────────────────────
-  Group 0 (Root)                            ← CLogicalSelect
-  ├── GroupExpression 0: Select[Group1, Group3]
-  │
-  Group 1                                   ← CLogicalInnerJoin
-  ├── GroupExpression 0: InnerJoin[Group2, Group3]
-  │
-  Group 2                                   ← CLogicalGet("t1")
-  ├── GroupExpression 0: Get(t1)
-  │
-  Group 3                                   ← CLogicalGet("t2")
-  ├── GroupExpression 0: Get(t2)
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/search/CMemo.h</code>；<code>libgpopt/include/gpopt/search/CGroup.h</code>；<code>libgpopt/include/gpopt/search/CGroupExpression.h</code></div>
+
+<div class="memo-plan" aria-label="Memo 初始化后的 Group 结构">
+  <div class="memo-column">
+    <h4>Memo Groups</h4>
+    <div class="memo-item"><strong>Group 0 (Root)</strong><span class="mini-label">CLogicalSelect</span><br>GroupExpression 0: Select[Group1, Group3]</div>
+    <div class="memo-item"><strong>Group 1</strong><span class="mini-label">CLogicalInnerJoin</span><br>GroupExpression 0: InnerJoin[Group2, Group3]</div>
+    <div class="memo-item"><strong>Group 2</strong><span class="mini-label">CLogicalGet("t1")</span><br>GroupExpression 0: Get(t1)</div>
+    <div class="memo-item"><strong>Group 3</strong><span class="mini-label">CLogicalGet("t2")</span><br>GroupExpression 0: Get(t2)</div>
+  </div>
 </div>
 
 <div class="callout callout-info">
 <strong>Memo = 一组 Group 的集合。</strong>每个 Group 包含一组<strong>逻辑上等价的</strong> GroupExpression。
 初始只有一个 GroupExpression 入组；随着 Exploration 规则被应用，每个 Group 里会不断长出等价的替代方案。
+</div>
+
+<h3>Memo / Group / GroupExpression 的组织方式</h3>
+
+<p>
+  Cascades 优化器的关键不是保存“很多棵完整树”，而是把所有候选计划压缩进一个共享图结构。
+  ORCA 的 Memo 就是这个共享搜索空间：相同语义的子查询只存一份 Group，父表达式通过 child group 引用它们，
+  这样 join reorder、predicate move-around、implementation rule 产生的候选计划可以复用同一批子问题。
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>对象</th>
+      <th>保存什么</th>
+      <th>在搜索中的作用</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>CMemo</code></td>
+      <td>所有 <code>CGroup</code>，以及根 group 指针</td>
+      <td>整个优化搜索空间；负责插入、去重、合并 duplicate group、最后从 root 提取最优计划</td>
+    </tr>
+    <tr>
+      <td><code>CGroup</code></td>
+      <td>一组逻辑等价的 <code>CGroupExpression</code>，以及 group 级属性和统计信息</td>
+      <td>动态规划的子问题：优化一个 group，就是在它的所有等价表达式里找满足 required props 的最低成本实现</td>
+    </tr>
+    <tr>
+      <td><code>CGroupExpression</code></td>
+      <td>一个 <code>COperator *</code> 加一组 child <code>CGroup *</code></td>
+      <td>Memo 里的候选表达式；xform 以它为单位做 pattern binding、生成新表达式并插回 Memo</td>
+    </tr>
+    <tr>
+      <td><code>CCostContext</code></td>
+      <td>某个 group expression 在特定 required properties 下的 child contexts、cost 和 derived plan props</td>
+      <td>记录物理优化结果；同一个 group expression 在不同 required props 下可能有不同最优成本</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Memo 相关对象的字段地图</h3>
+
+<p>
+  如果把 <code>CExpression</code> 看成“树节点”，Memo 这套对象可以按下面的字段结构来记：
+  <code>CMemo</code> 管全局搜索空间，<code>CGroup</code> 管一个等价类，
+  <code>CGroupExpression</code> 管等价类里的一个候选表达式，
+  <code>COptimizationContext</code> 和 <code>CCostContext</code> 则记录“在某组 required properties 下怎么优化、成本是多少”。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/search/CMemo.h</code></div>
+
+<pre><code>class CMemo
+{
+    CMemoryPool *m_mp;
+
+    ULONG m_aul;                         // group id 分配器
+    CGroup *m_pgroupRoot;                // 根 Group，对应整个查询
+    ULONG_PTR m_ulpGrps;                 // Memo 中 Group 数量
+
+    MemoTreeMap *m_pmemotmap;            // plan extraction 用的 tree map
+    CSyncList&lt;CGroup&gt; m_listGroups;      // 所有 Group 的链表
+
+    CSyncHashtable&lt;CGroupExpression,
+                   CGroupExpression&gt; m_sht;
+                                           // 全局 GroupExpression 哈希表，用于去重
+};</code></pre>
+
+<p>
+  <code>CMemo</code> 是全局容器。它不表示某一个算子，而是保存整个查询的搜索空间。
+  插入表达式时，Memo 会递归创建 / 查找 <code>CGroup</code> 和 <code>CGroupExpression</code>；
+  搜索结束后，又从 <code>m_pgroupRoot</code> 出发提取最终物理计划。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/search/CGroup.h</code></div>
+
+<pre><code>class CGroup : public CRefCount
+{
+    CMemoryPool *m_mp;
+    ULONG m_id;                           // group id，打印 Memo 时使用
+    BOOL m_fScalar;                       // 这个 Group 是否保存 scalar 表达式
+
+    CList&lt;CGroupExpression&gt; m_listGExprs;
+                                           // 当前等价类里的候选 GroupExpression
+    CList&lt;CGroupExpression&gt; m_listDupGExprs;
+                                           // group merge 过程中识别出的重复表达式
+
+    CDrvdProp *m_pdp;                     // group 级 derived properties
+    IStatistics *m_pstats;                // group 级统计信息
+
+    CExpression *m_pexprScalarRep;        // scalar group 的代表表达式
+    BOOL m_pexprScalarRepIsExact;
+
+    CCostContext *m_pccDummy;             // scalar group 枚举计划时使用的 dummy context
+    CGroup *m_pgroupDuplicate;            // 如果本 group 被合并，指向真实承载者
+
+    ShtOC m_sht;                          // OptimizationContext 哈希表
+    ULONG m_ulGExprs;                     // GroupExpression 数量
+    ReqdPropPlanToCostMap *m_pcostmap;    // required props → cost lower bound
+
+    EState m_estate;                      // explored / implemented / optimized 状态
+    EOptimizationLevel m_eolMax;          // 成员表达式里的最高优化等级
+
+    CJobQueue m_jqExploration;            // exploration job 队列
+    CJobQueue m_jqImplementation;         // implementation job 队列
+};</code></pre>
+
+<p>
+  <code>CGroup</code> 是 Memo 里的“等价类”。同一个 Group 中的所有
+  <code>CGroupExpression</code> 都表达同一段关系代数语义，只是写法或物理实现不同。
+  优化一个 Group，本质上就是在这些候选表达式里寻找满足 required properties 的最低成本实现。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/search/CGroupExpression.h</code></div>
+
+<pre><code>class CGroupExpression : public CRefCount
+{
+    CMemoryPool *m_mp;
+    ULONG m_id;                           // group expression id
+    CGroupExpression *m_pgexprDuplicate;  // 重复表达式指针
+
+    COperator *m_pop;                     // 当前表达式的算子：logical / physical / scalar
+    CGroupArray *m_pdrgpgroup;            // child groups，而不是 child expressions
+    CGroupArray *m_pdrgpgroupSorted;      // 对交换律算子做快速比较时使用
+
+    CGroup *m_pgroup;                     // 反向指针：自己属于哪个 Group
+
+    CXform::EXformId m_exfidOrigin;       // 哪个 xform 生成了它
+    CGroupExpression *m_pgexprOrigin;     // 从哪个 GroupExpression 变换而来
+    BOOL m_fIntermediate;                 // 插入 Memo 时产生的中间节点
+
+    EState m_estate;                      // unexplored / explored / implemented
+    EOptimizationLevel m_eol;             // 优化等级
+
+    PartialPlanToCostMap *m_ppartialplancostmap;
+                                           // partial plan → cost lower bound
+    ECircularDependency m_ecirculardependency;
+
+    ShtCC m_sht;                          // CostContext 哈希表
+};</code></pre>
+
+<p>
+  <code>CGroupExpression</code> 是 Memo 里的“表达式节点”。它和 <code>CExpression</code>
+  最容易混淆：两者都有 <code>m_pop</code>，但 <code>CExpression</code> 的 child 是
+  <code>CExpression *</code>，而 <code>CGroupExpression</code> 的 child 是 <code>CGroup *</code>。
+  这就是 Memo 能共享子问题的核心。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/base/COptimizationContext.h</code></div>
+
+<pre><code>class COptimizationContext : public CRefCount
+{
+    CMemoryPool *m_mp;
+    ULONG m_id;                           // owner group 内部的 context id
+    CGroup *m_pgroup;                     // 这个 context 属于哪个 Group
+
+    CReqdPropPlan *m_prpp;                // required plan properties
+                                           // 例如分布、排序、rewindability 等
+    CReqdPropRelational *m_prprel;        // stats derivation 用的 required relational props
+    IStatisticsArray *m_pdrgpstatCtxt;    // 已优化表达式的 stats context
+
+    ULONG m_ulSearchStageIndex;           // 属于哪个 search stage
+    CCostContext *m_pccBest;              // 当前 context 下的最优 cost context
+
+    EState m_estate;                      // unoptimized / optimizing / optimized
+    BOOL m_fHasMultiStageAggPlan;
+
+    CJobQueue m_jqOptimization;           // optimization job 队列
+};</code></pre>
+
+<p>
+  <code>COptimizationContext</code> 代表“优化某个 Group 时，父节点要求它交付什么性质”。
+  同一个 Group 面对不同 required properties，可能需要不同物理实现；例如一个父节点要求 hash distribution，
+  另一个父节点要求 sorted order，这会产生不同 context。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/base/CCostContext.h</code></div>
+
+<pre><code>class CCostContext : public CRefCount
+{
+    CMemoryPool *m_mp;
+    CCost m_cost;                         // 当前 group expression 在某个 context 下的成本
+    EState m_estate;                      // uncosted / costing / costed
+
+    CGroupExpression *m_pgexpr;           // owner group expression
+    CGroupExpression *m_pgexprForStats;   // costing 时用于推导 stats 的表达式
+
+    COptimizationContextArray *m_pdrgpoc; // child groups 选择的 optimization contexts
+    CDrvdPropPlan *m_pdpplan;             // 当前物理计划推导出的 plan properties
+
+    ULONG m_ulOptReq;                     // optimization request number
+    BOOL m_fPruned;                       // branch-and-bound 中是否被剪枝
+
+    IStatistics *m_pstats;                // owner group expression 的 stats
+
+    COptimizationContext *m_poc;          // 所属 optimization context
+    SLink m_link;                         // 挂到 CGroupExpression::m_sht 的链表节点
+};</code></pre>
+
+<p>
+  <code>CCostContext</code> 是真正记录成本的对象。它绑定的是：
+  “某个 <code>CGroupExpression</code>，在某个 <code>COptimizationContext</code> 下，
+  选择哪些 child contexts，最终 cost 和 derived plan properties 是什么”。
+  <code>COptimizationContext::m_pccBest</code> 最后就会指向当前 required properties 下最好的
+  <code>CCostContext</code>。
+</p>
+
+<div class="tree-compare" aria-label="表达式树到 Memo DAG 的结构变化">
+  <div class="tree-panel">
+    <h4>输入 CExpression 树</h4>
+    <ul class="tree-list">
+      <li>Select
+        <ul>
+          <li>Join
+            <ul>
+              <li>Get(t1)</li>
+              <li>Get(t2)</li>
+            </ul>
+          </li>
+          <li>Predicate</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+  <div class="compare-arrow">→</div>
+  <div class="tree-panel">
+    <h4>Memo DAG</h4>
+    <ul class="tree-list">
+      <li>Group 0: Select[Group 1, Group 4]
+        <ul>
+          <li>Group 1: Join[Group 2, Group 3]</li>
+          <li>Group 1: Join[Group 3, Group 2] <span class="mini-label">探索阶段新增</span></li>
+          <li>Group 2: Get(t1)</li>
+          <li>Group 3: Get(t2)</li>
+          <li>Group 4: Predicate</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<p>
+  这个结构解释了 ORCA 为什么会频繁在 <code>CExpression</code> 和 <code>CGroupExpression</code> 之间转换：
+  xform 需要一棵具体树来做模式匹配和构造结果，所以会从 <code>CGroupExpression</code> binding 出
+  <code>CExpression</code>；而搜索空间需要共享和去重，所以 xform 结果又会被重新插入 Memo，
+  变回新的 group 或新的 group expression。
+</p>
+
+<div class="callout callout-warn">
+<strong>容易混淆的一点：</strong><code>CGroupExpression</code> 的 child 是 <code>CGroup *</code>，
+不是 <code>CExpression *</code>。这意味着 <code>InnerJoin[Group2, Group3]</code>
+并没有固定选择 Group2 里的哪一个实现；直到 costing / plan extraction 阶段，
+优化器才会根据 required properties 和 cost context 递归选择具体物理表达式。
 </div>
 
 <!-- ============================================================ -->
@@ -365,24 +904,47 @@ COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
 <p><code>ScheduleMainJob()</code> 只做一件事：调度一个 <code>CJobGroupOptimization</code>（根 Group 的优化 Job）。
 这个 Job 会<strong>递归地派生子 Job</strong>，形成一棵依赖树：</p>
 
-<div class="diagram">
-                     ┌──────────────────────────┐
-                     │ CJobGroupOptimization     │  ← 根 Group
-                     │ "找到满足要求的最优计划"    │
-                     └──────────┬───────────────┘
-                                │ 派生出
-                ┌───────────────┼───────────────┐
-                ▼               ▼               ▼
-   ┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐
-   │CJobGroupExploration│ │CJobGroupImpl.│ │CJobGroupExprOpt. │
-   │ "探索所有逻辑等价" │ │"生成物理候选"│ │"优化每个GE"      │
-   └────────┬─────────┘ └──────┬───────┘ └────────┬─────────┘
-            │                  │                   │
-      ┌─────┴─────┐     ┌─────┴─────┐       ┌─────┴─────┐
-      ▼           ▼     ▼           ▼       ▼           ▼
- CJobGroupExpr  CJobTransformation   CJobGroupExpr   CJobGroup
- Exploration   (单个规则应用)        Implementation  Optimization
-                                    (对子Group)
+<div class="job-diagram" aria-label="Job 依赖树">
+  <div class="job-level">
+    <div class="job-node root">
+      <strong>CJobGroupOptimization</strong>
+      <small>根 Group：找到满足 Required Properties 的最优计划</small>
+    </div>
+  </div>
+  <div class="job-arrow">派生子 Job ↓</div>
+  <div class="job-level">
+    <div class="job-node">
+      <strong>CJobGroupExploration</strong>
+      <small>探索所有逻辑等价表达式</small>
+    </div>
+    <div class="job-node">
+      <strong>CJobGroupImplementation</strong>
+      <small>生成物理候选表达式</small>
+    </div>
+    <div class="job-node">
+      <strong>CJobGroupExpressionOptimization</strong>
+      <small>优化每个 GroupExpression</small>
+    </div>
+  </div>
+  <div class="job-arrow">继续展开 ↓</div>
+  <div class="job-level">
+    <div class="job-node">
+      <strong>CJobGroupExpressionExploration</strong>
+      <small>对单个 GE 做探索</small>
+    </div>
+    <div class="job-node">
+      <strong>CJobTransformation</strong>
+      <small>应用一条具体规则</small>
+    </div>
+    <div class="job-node">
+      <strong>CJobGroupExpressionImplementation</strong>
+      <small>对单个 GE 生成物理实现</small>
+    </div>
+    <div class="job-node">
+      <strong>CJobGroupOptimization</strong>
+      <small>递归优化子 Group</small>
+    </div>
+  </div>
 </div>
 
 <h3>4.2 六种核心 Job 类型</h3>
@@ -446,18 +1008,129 @@ COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
   </div>
 </div>
 
+<!-- ============================================================ -->
+<h2 id="xform-mechanics">规则如何应用到表达式上</h2>
+
+<p>
+  ORCA 的 rule 不是直接在 SQL 文本上运行，而是在 Memo 中的 <code>CGroupExpression</code> 上运行。
+  一个 <code>CJobTransformation</code> 拿到“某个 group expression + 某条 xform”，调用
+  <code>CGroupExpression::Transform()</code>，把匹配到的表达式 binding 抽出来，再调用具体 xform 的
+  <code>Transform()</code>。结果进入 <code>CXformResult</code>，最后插回 Memo。
+</p>
+
+<div class="file-ref">📄 <code>libgpopt/src/search/CJobTransformation.cpp:126-143</code>；<code>libgpopt/src/search/CGroupExpression.cpp:795-836</code></div>
+
+<div class="stage-flow" aria-label="CJobTransformation 应用规则的流程">
+  <div class="stage-card">
+    <strong>CJobTransformation::EevtTransform()</strong>
+    <small>拿到 group expression + xform</small>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>pgexpr-&gt;Transform(...)</strong>
+    <ul>
+      <li><code>pxform-&gt;Exfp(exprhdl)</code> 判断 rule promise</li>
+      <li><code>binding.PexprExtract(pattern)</code> 抽取匹配表达式</li>
+      <li><code>pxform-&gt;Transform(ctx, result, e)</code> 执行规则</li>
+    </ul>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>CEngine::InsertXformResult(...)</strong>
+    <small>把新的 logical / physical expression 插回 Memo</small>
+  </div>
+</div>
+
+<pre><code>// CJobTransformation::EevtTransform()
+CXformResult *pxfres = GPOS_NEW(pmpGlobal) CXformResult(pmpGlobal);
+pgexpr->Transform(pmpGlobal, pmpLocal, pxform, pxfres,
+                  &amp;ulElapsedTime, &amp;ulNumberOfBindings);
+psc->Peng()-&gt;InsertXformResult(pgexpr-&gt;Pgroup(), pxfres,
+                               pxform-&gt;Exfid(), pgexpr,
+                               ulElapsedTime, ulNumberOfBindings);</code></pre>
+
+<pre><code>// CGroupExpression::Transform()
+CExpressionHandle exprhdl(mp);
+exprhdl.Attach(this);
+exprhdl.DeriveProps(NULL);
+if (CXform::ExfpNone == pxform-&gt;Exfp(exprhdl)) return;
+
+CExpression *pexpr = binding.PexprExtract(mp, this, pxform-&gt;PexprPattern(), NULL);
+while (NULL != pexpr)
+{
+    pxform-&gt;Transform(pxfctxt, pxfres, pexpr);
+    pexpr = binding.PexprExtract(mp, this, pxform-&gt;PexprPattern(), pexprLast);
+}</code></pre>
+
+<p>所以看一条 rule，建议按下面四个点读：</p>
+
+<table>
+<tr><th>问题</th><th>对应源码</th><th>读法</th></tr>
+<tr>
+  <td>它匹配什么形状？</td>
+  <td><code>PexprPattern()</code> / 构造函数中的 pattern tree</td>
+  <td>看根算子和 child 是 <code>CPatternLeaf</code>、<code>CPatternTree</code> 还是具体算子。</td>
+</tr>
+<tr>
+  <td>什么时候值得应用？</td>
+  <td><code>Exfp(CExpressionHandle &amp;)</code></td>
+  <td>看它依赖哪些 derived properties，例如 outer refs、是否含 subquery、是否已有 required columns。</td>
+</tr>
+<tr>
+  <td>真正改了什么？</td>
+  <td><code>Transform(ctx, result, expr)</code></td>
+  <td>看它新建了哪些 <code>CExpression</code>，把哪些 child/标量谓词搬到了哪里。</td>
+</tr>
+<tr>
+  <td>失败怎么处理？</td>
+  <td>返回空 result、生成 correlated apply、或保留原表达式</td>
+  <td>这点对 subquery unnest 特别重要：不是所有相关子查询都能安全变成普通 join。</td>
+</tr>
+</table>
+
+<div class="callout callout-info">
+<strong>和 unnest 的关系：</strong>subquery unnest 不是一个孤立函数一次做完。
+它先通过 subquery handler 生成 Apply 形态，再通过 Apply2Join 类 xform 调 decorrelator。
+这些步骤都作为 exploration rule 的结果进入 Memo，让后续规则继续改写。
+</div>
+
 <h3>4.4 多阶段搜索策略</h3>
 
 <p>ORCA 的搜索分<strong>多个 SearchStage</strong>，每个阶段控制应用哪些变换规则 + 使用什么时间/代价阈值：</p>
 
-<div class="diagram">
- Stage 1 (低代价阈值)                    Stage 2 (放宽阈值)                  Stage N (最终)
- ┌─────────────────────┐           ┌─────────────────────┐           ┌─────────────────────┐
- │ 只应用关键 Exploration │    →     │ 应用更多 Exploration │    →     │ 应用所有规则          │
- │ 规则（如 Join 交换律） │           │ 规则                 │           │ 无代价限制            │
- │ Timeout: 0.5s        │           │ Timeout: 2s          │           │ 找到最优或超时         │
- │ Cost threshold: 低    │           │ Cost threshold: 中   │           │                      │
- └─────────────────────┘           └─────────────────────┘           └─────────────────────┘
+<div class="stage-flow" aria-label="ORCA 多阶段搜索策略">
+  <div class="stage-card">
+    <strong>Stage 1</strong>
+    <small>低代价阈值</small>
+    <ul>
+      <li>只应用关键 Exploration 规则</li>
+      <li>例如 Join 交换律</li>
+      <li>Timeout: 0.5s</li>
+      <li>Cost threshold: 低</li>
+    </ul>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>Stage 2</strong>
+    <small>放宽阈值</small>
+    <ul>
+      <li>应用更多 Exploration 规则</li>
+      <li>继续扩大搜索空间</li>
+      <li>Timeout: 2s</li>
+      <li>Cost threshold: 中</li>
+    </ul>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>Stage N</strong>
+    <small>最终阶段</small>
+    <ul>
+      <li>应用所有规则</li>
+      <li>无代价限制</li>
+      <li>找到最优或超时</li>
+      <li>提取阶段最优计划</li>
+    </ul>
+  </div>
 </div>
 
 <div class="callout callout-info">
@@ -469,27 +1142,344 @@ COptimizer::PexprOptimize(CMemoryPool *mp, CQueryContext *pqc,
 <p><code>CScheduler::Run()</code> 驱动所有 Job 的并发执行。调度器维护一个<strong>可运行 Job 队列</strong>
 （没有未完成依赖的 Job），多 Worker 从中取 Job 执行：</p>
 
-<div class="diagram">
- CScheduler::Run(&sc)
- ─────────────────────────────────────────────────
-
-  WaitQueue (有依赖未满足)          RunnableQueue (依赖已满足)
-  ┌─────────────────────┐          ┌─────────────────────┐
-  │ Job-A (等待子Job)    │  依赖    │ Job-X               │  Worker 1 ──▶ FExecute()
-  │ Job-B (等待子Job)    │  完成    │ Job-Y               │  Worker 2 ──▶ FExecute()
-  │ ...                  │ ──────▶ │ Job-Z               │  Worker 3 ──▶ FExecute()
-  └─────────────────────┘          └─────────────────────┘
-
- 每个 Job::FExecute() 返回 FExecuteResult:
-   - fCompleted=true  → Job 完成，通知父 Job（引用计数-1）
-   - fCompleted=false → Job 暂停/等待子Job，依赖的子Job 入队
-
-  当根 Job 完成 → 调度结束</div>
+<div class="queue-diagram" aria-label="CScheduler 队列调度">
+  <div class="queue-panel">
+    <h4>WaitQueue</h4>
+    <p class="mini-label">有依赖未满足</p>
+    <ul>
+      <li>Job-A：等待子 Job</li>
+      <li>Job-B：等待子 Job</li>
+      <li>...</li>
+    </ul>
+  </div>
+  <div class="compare-arrow">依赖完成 →</div>
+  <div class="queue-panel">
+    <h4>RunnableQueue</h4>
+    <p class="mini-label">依赖已满足，Worker 可执行</p>
+    <ul>
+      <li>Worker 1 → Job-X → FExecute()</li>
+      <li>Worker 2 → Job-Y → FExecute()</li>
+      <li>Worker 3 → Job-Z → FExecute()</li>
+    </ul>
+  </div>
+  <div class="queue-note">
+    <strong>Job::FExecuteResult</strong>
+    <ul>
+      <li><code>fCompleted=true</code>：Job 完成，通知父 Job（引用计数 -1）</li>
+      <li><code>fCompleted=false</code>：Job 暂停/等待子 Job，依赖的子 Job 入队</li>
+      <li>根 Job 完成后，调度结束</li>
+    </ul>
+  </div>
+</div>
 
 <div class="callout callout-info">
 <strong>关键设计：Job 是可重入的 (reentrant)。</strong>每个 Job 内部有一个状态机 (<code>CJobStateMachine</code>)，
 <code>FExecute()</code> 可能被多次调用，每次从一个"断点"继续执行。
 这使得调度器可以在 Job 之间自由切换，无需 OS 线程级别的上下文切换开销。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="orca-unnest">Unnest in ORCA</h2>
+
+<p>
+  这一节只看 rewrite / transform 层，不进入 Stage 5/6 的物理计划提取和 DXL 输出。
+  PR #19 的 unnest 文档用 students 示例解释了 2015 BTW 论文的核心直觉：相关子查询先表示成
+  dependent join / Apply，再把 RHS 中对外层列的依赖拉出来，必要时给聚合补 group key，最后变成普通 join。
+  ORCA archive 中能看到非常接近这套说法的工程实现。
+</p>
+
+<h3>示例 SQL</h3>
+
+<p>示范查询是“找每个专业中分数等于本专业最高分的学生”：</p>
+
+<pre><code>SELECT name, major
+FROM students AS s1
+WHERE score = (
+  SELECT MAX(s2.score)
+  FROM students AS s2
+  WHERE s2.major = s1.major
+);</code></pre>
+
+<p>
+  这里的 <code>s1.major</code> 是内层子查询的 outer reference。直觉执行是：
+  对外层每个 <code>s1</code> 行，重新算一次“该专业最高分”。Unnest 的目标是把它改成一次关系计算：
+  先按 <code>major</code> 聚合 <code>s2</code>，再 join 回 <code>s1</code>。
+</p>
+
+<div class="stage-flow" aria-label="Scalar subquery 到普通 Join 的 ORCA 改写路径">
+  <div class="stage-card">
+    <strong>SQL scalar subquery</strong>
+    <small><code>score = (SELECT MAX(s2.score) ... WHERE s2.major = s1.major)</code></small>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>CScalarSubquery</strong>
+    <small>子查询先存在于 scalar child 里</small>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>CLogicalLeftOuterApply / CLogical*Apply</strong>
+    <small>保留 RHS 读取外层列的 dependent join 语义</small>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>CXform*Apply2*Join</strong>
+    <ul>
+      <li><code>CDecorrelator::FProcess(inner)</code></li>
+      <li>上拉 <code>s2.major = s1.major</code></li>
+      <li>补 <code>GROUP BY s2.major</code></li>
+      <li>生成普通 Join predicate</li>
+    </ul>
+  </div>
+</div>
+
+<h3>1. Scalar subquery 先变成 Apply</h3>
+
+<div class="file-ref">📄 <code>libgpopt/src/xforms/CSubqueryHandler.cpp:8-23</code>；<code>CSubqueryHandler.cpp:2212-2237</code></div>
+
+<p>
+  <code>CSubqueryHandler</code> 的文件注释已经把职责说得很直白：给定一个 scalar child 含 subquery 的
+  Select / Project / GbAgg / SequenceProject，它会创建一个新的表达式：logical child 变成 Apply tree，
+  scalar child 则变成 subquery-free 的 residual scalar。
+</p>
+
+<pre><code>// CSubqueryHandler.cpp file comment
+// transforming subquery expressions to Apply expressions;
+// Given a SELECT/PROJECT/Gb-Agg/SEQUENCE-PROJECT expression whose scalar
+// child involves subqueries, this class is used for unnesting subqueries by
+// creating a new expression whose logical child is an Apply tree and whose
+// scalar child is subquery-free</code></pre>
+
+<p>对于 scalar subquery，ORCA 会优先构造 outer apply：</p>
+
+<pre><code>// CSubqueryHandler::FCreateOuterApplyForScalarSubquery()
+CExpression *pexprLeftOuterApply =
+    CUtils::PexprLogicalApply&lt;CLogicalLeftOuterApply&gt;(
+        mp, pexprOuter, pexprInner, colref, popSubquery-&gt;Eopid());</code></pre>
+
+<p>
+  这一步对应 2015/PPT 里的 dependent join：左侧是外层 <code>students s1</code>，
+  右侧是内层 <code>students s2</code> + filter + aggregate。Apply 节点保留了“右侧可以读左侧列”的语义。
+</p>
+
+<h3>2. Apply2Join rule 调用 decorrelator</h3>
+
+<div class="file-ref">📄 <code>libgpopt/include/gpopt/xforms/CXformApply2Join.h:28-31</code>；<code>CXformApply2Join.h:133-219</code></div>
+
+<p>
+  <code>CXformApply2Join</code> 是一组 Apply→Join 规则的模板基类，注释写明：
+  “Transform Apply into Join by decorrelating the inner side”。它的子类包括
+  <code>CXformInnerApply2InnerJoin</code>、<code>CXformLeftOuterApply2LeftOuterJoin</code>、
+  <code>CXformLeftSemiApply2LeftSemiJoin</code>、<code>CXformLeftAntiSemiApply2LeftAntiSemiJoin</code> 等。
+</p>
+
+<pre><code>// CXformApply2Join::Decorrelate()
+if (CUtils::FHasSubqueryOrApply((*pexprApply)[1]))
+{
+    // Subquery/Apply must be unnested before reaching here
+    return;
+}
+
+if (!FDecorrelate(mp, pexprApply, &amp;pexprInner, &amp;pdrgpexpr))
+{
+    // decorrelation failed, create correlated apply expression if possible
+    CreateCorrelatedApply(mp, pexprApply, pxfres);
+    return;
+}
+
+CExpression *pexprPredicate =
+    CPredicateUtils::PexprConjunction(mp, pdrgpexpr);
+CExpression *pexprResult =
+    GPOS_NEW(mp) CExpression(mp, GPOS_NEW(mp) TJoin(mp),
+                             pexprOuter, pexprInner, pexprPredicate);
+pxfres-&gt;Add(CNormalizer::PexprNormalize(mp, pexprResult));</code></pre>
+
+<p>
+  这里有两个重要信号：
+</p>
+<ul>
+  <li><strong>内部 subquery / Apply 要先处理：</strong>如果 inner child 里还有 subquery 或 Apply，当前 Apply2Join 直接返回。这说明 ORCA archive 更偏 staged pipeline，不是 2025 论文那种 holistic 一次性全局处理所有 dependent join。</li>
+  <li><strong>失败时保留 correlated apply：</strong>decorrelation 不安全时，规则会尝试生成 <code>CLogical*CorrelatedApply</code>，最后在 GPDB 中可能成为 correlated join / subplan，而不是强行改成普通 join。</li>
+</ul>
+
+<h3>3. Decorrelator 把相关谓词拉上来</h3>
+
+<div class="file-ref">📄 <code>libgpopt/src/xforms/CDecorrelator.cpp:157-187</code>；<code>CDecorrelator.cpp:353-390</code></div>
+
+<p>
+  <code>CDecorrelator::FProcess()</code> 的输入是 Apply 的 inner child，以及外层输出列集合
+  <code>(*pexprApply)[0]-&gt;DeriveOutputColumns()</code>。它递归处理 inner tree，
+  目标是产出一个不再引用外层列的 inner expression，并把被拉出来的相关谓词放进
+  <code>pdrgpexprCorrelations</code>。
+</p>
+
+<pre><code>// CDecorrelator::FProcess()
+if (outerRefsToRemove-&gt;IsDisjoint(pexpr-&gt;DeriveOuterReferences()))
+{
+    pexpr-&gt;AddRef();
+    *ppexprDecorrelated = pexpr;
+    return true;
+}
+
+BOOL fSuccess =
+    FProcessOperator(mp, pexpr, fEqualityOnly, ppexprDecorrelated,
+                     pdrgpexprCorrelations, outerRefsToRemove);</code></pre>
+
+<p>
+  对 Select，decorrelator 会把 predicate 的 conjuncts 分成两类：
+  不含 outer ref 的 residual 留在 RHS；含 outer ref 且可延迟的 correlation 被上拉到 join predicate。
+</p>
+
+<div class="stage-flow" aria-label="Decorrelator 把相关谓词拉上来的过程">
+  <div class="stage-card">
+    <strong>Inner before decorrelation</strong>
+    <ul>
+      <li>Select [s2.major = s1.major]</li>
+      <li>Get(students s2)</li>
+    </ul>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>After CDecorrelator</strong>
+    <ul>
+      <li><code>inner = Get(students s2)</code></li>
+      <li><code>correlations += (s2.major = s1.major)</code></li>
+    </ul>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="stage-card">
+    <strong>Apply2Join result</strong>
+    <ul>
+      <li>Join(Get students s1, inner subtree)</li>
+      <li>predicate: <code>s2.major = s1.major</code> AND original apply predicate</li>
+    </ul>
+  </div>
+</div>
+
+<h3>4. 聚合场景：补 group key 是语义要求</h3>
+
+<div class="file-ref">📄 <code>libgpopt/src/xforms/CDecorrelator.cpp:411-482</code></div>
+
+<p>
+  students 示例的核心难点是 aggregate。原始子查询写的是一个 scalar aggregate：
+  <code>MAX(s2.score)</code>。但它是在每个外层 <code>s1.major</code> 绑定下计算的。
+  一旦把多次绑定合并成一次关系计算，聚合就必须按相关列分组，否则会变成全表一个最大值。
+</p>
+
+<p>ORCA 的 <code>FProcessGbAgg()</code> 正是这么做的：</p>
+
+<pre><code>// CDecorrelator::FProcessGbAgg()
+// Get the columns from pexprRelational that are referenced in the pulled-up correlated
+// "=" predicates in pdrgpexprCorrelations and add them to the grouping columns.
+// ...
+// Example:
+//   select *
+//   from foo
+//   where foo.a in (select count(*) from bar where bar.b=foo.b)
+//
+// gets transformed into
+//   select *
+//   from foo semijoin (select bar.b, count(*) from bar group by bar.b) subq(b, cnt)
+//        on foo.a = subq.cnt and foo.b = subq.b
+pcrs-&gt;Intersection(pcrsOutput);
+pcrs-&gt;Include(popAggOriginal-&gt;Pdrgpcr());
+CColRefArray *colref_array = pcrs-&gt;Pdrgpcr(mp);
+CLogicalGbAgg *popAgg =
+    GPOS_NEW(mp) CLogicalGbAgg(mp, colref_array, popAggOriginal-&gt;Egbaggtype());</code></pre>
+
+<p>
+  映射到 students 示例，就是把内侧聚合从：
+</p>
+
+<pre><code>GbAgg [global]
+  MAX(s2.score)
+  input: Select[s2.major = s1.major](Get s2)</code></pre>
+
+<p>改成：</p>
+
+<pre><code>GbAgg [group by s2.major]
+  MAX(s2.score)
+  input: Get s2
+
+Join predicate:
+  s2.major = s1.major
+  AND s1.score = max_score</code></pre>
+
+<div class="callout callout-info">
+<strong>这就是 2015 BTW 论文和 ORCA 实现最贴近的地方：</strong>
+论文里说 dependent join 下推穿过 aggregate 时要把绑定域列加入 group by；
+ORCA 里则表现为 decorrelator 从被拉起的等值相关谓词中找 inner columns，并把它们加入
+<code>CLogicalGbAgg</code> 的 grouping columns。
+</div>
+
+<h3>5. 在 ORCA 里怎么跑这个 case 看中间态</h3>
+
+<p>
+  ORCA archive 不是直接吃 SQL 的库；它的测试入口吃的是 minidump / DXL。
+  所以如果想用上面的 SQL 看 ORCA 内部中间态，推荐流程是先在 GPDB/Greenplum 里生成 minidump，
+  再用 <code>gporca_test -d</code> 重放。
+</p>
+
+<div class="file-ref">📄 <code>gporca-archive/README.md:99-143</code></div>
+
+<pre><code>-- 在 GPDB / Greenplum psql session 中
+set optimizer=on;
+set optimizer_enumerate_plans=on;
+set optimizer_minidump=always;
+set optimizer_enable_constant_expression_evaluation=off;
+
+CREATE TABLE students(name text, major text, score int);
+
+SELECT name, major
+FROM students AS s1
+WHERE score = (
+  SELECT MAX(s2.score)
+  FROM students AS s2
+  WHERE s2.major = s1.major
+);</code></pre>
+
+<pre><code># 找到生成的 minidump 后，复制/格式化到 gporca-archive
+xmllint --format $MASTER_DATA_DIRECTORY/minidumps/Minidump_*.mdp \
+  &gt; data/dxl/minidump/StudentsCorrelatedMax.mdp
+
+# 在 gporca-archive build 目录对应位置重放
+./server/gporca_test -d ../data/dxl/minidump/StudentsCorrelatedMax.mdp</code></pre>
+
+<p>调试断点建议从这几个位置开始：</p>
+
+<table>
+<tr><th>想看什么</th><th>断点</th><th>观察点</th></tr>
+<tr>
+  <td>SQL/DXL 进 ORCA 后的表达式树</td>
+  <td><code>CTranslatorDXLToExpr::PexprTranslateQuery()</code></td>
+  <td>确认 predicate scalar tree 中出现 <code>CScalarSubquery</code>。</td>
+</tr>
+<tr>
+  <td>subquery 何时变成 Apply</td>
+  <td><code>CSubqueryHandler::FProcess()</code><br><code>FCreateOuterApplyForScalarSubquery()</code></td>
+  <td>看新 outer 是否变成 <code>CLogicalLeftOuterApply</code>，residual scalar 是否改成 subquery output column。</td>
+</tr>
+<tr>
+  <td>Apply2Join 规则是否触发</td>
+  <td><code>CXformLeftOuterApply2LeftOuterJoin::Transform()</code><br><code>CXformApply2Join::Decorrelate()</code></td>
+  <td>看 inner child 是否还有 subquery/Apply；如果有，当前规则会先返回。</td>
+</tr>
+<tr>
+  <td>相关谓词如何上拉</td>
+  <td><code>CDecorrelator::FProcessSelect()</code></td>
+  <td>看 <code>s2.major = s1.major</code> 是否进入 <code>pdrgpexprCorrelations</code>。</td>
+</tr>
+<tr>
+  <td>聚合如何补 group key</td>
+  <td><code>CDecorrelator::FProcessGbAgg()</code></td>
+  <td>看 <code>pcrs-&gt;Intersection(pcrsOutput)</code> 后哪些 inner columns 被加入 grouping columns。</td>
+</tr>
+</table>
+
+<div class="callout callout-warn">
+<strong>边界说明：</strong>这套链路解释的是 ORCA archive 中 2015/PPT 风格的局部 unnest / decorrelation。
+源码里 <code>CXformApply2Join</code> 明确要求 inner child 里的 Subquery/Apply 先被 unnested；
+这不是 2025 论文提出的 holistic unnesting。
 </div>
 
 <!-- ============================================================ -->
@@ -510,20 +1500,30 @@ CExpression *pexprPlan = m_pmemo->PexprExtractPlan(
 
 <p>提取过程从根 Group 的<strong>最优 CostContext</strong> 出发，递归地选取每个子 Group 的最优物理表达式，最终组装成一棵纯物理算子树：</p>
 
-<div class="diagram">
- Memo (Group 0 = Root)                        提取出的 Plan
- ──────────────────────                        ──────────────
- Group 0:                                       CPhysicalMotionGather
-   CCostContext[c=100]: MotionGather[Group1]      └─ CPhysicalInnerHashJoin
-   CCostContext[c=150]: MotionGather[Group1']           ├─ CPhysicalTableScan("t1")
-                                                        └─ CPhysicalTableScan("t2")
- Group 1:
-   CCostContext[c=80]:  InnerHashJoin[Group2, Group3]
-   CCostContext[c=130]: InnerNLJoin[Group2, Group3]
- Group 2:
-   CCostContext[c=10]:  TableScan("t1")
- Group 3:
-   CCostContext[c=20]:  TableScan("t2")</div>
+<div class="memo-plan" aria-label="从 Memo 提取最优物理计划">
+  <div class="memo-column">
+    <h4>Memo (Group 0 = Root)</h4>
+    <div class="memo-item"><strong>Group 0</strong>CCostContext[c=100]: MotionGather[Group1]<br>CCostContext[c=150]: MotionGather[Group1']</div>
+    <div class="memo-item"><strong>Group 1</strong>CCostContext[c=80]: InnerHashJoin[Group2, Group3]<br>CCostContext[c=130]: InnerNLJoin[Group2, Group3]</div>
+    <div class="memo-item"><strong>Group 2</strong>CCostContext[c=10]: TableScan("t1")</div>
+    <div class="memo-item"><strong>Group 3</strong>CCostContext[c=20]: TableScan("t2")</div>
+  </div>
+  <div class="memo-column">
+    <h4>提取出的 Plan</h4>
+    <ul class="tree-list">
+      <li>CPhysicalMotionGather
+        <ul>
+          <li>CPhysicalInnerHashJoin
+            <ul>
+              <li>CPhysicalTableScan("t1")</li>
+              <li>CPhysicalTableScan("t2")</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="stage6">Stage 6：CExpression → DXL（翻译出）</h2>
@@ -544,41 +1544,50 @@ pdxlnPlan = CreateDXLNode(mp, md_accessor, pexprPlan,
 <!-- ============================================================ -->
 <h2 id="summary">端到端总结</h2>
 
-<div class="diagram">
-                           ┌─────────────────────────────────────────────┐
-                           │           COptimizer::PdxlnOptimize()        │
-                           │              (唯一对外入口)                     │
-                           └──────────────────────┬──────────────────────┘
-                                                  │
-    ┌─────────────────────────────────────────────┼─────────────────────────────────────────────┐
-    │                                             ▼                                             │
-    │  Step 1:  DXL ──▶ CExpression            CTranslatorDXLToExpr::PexprTranslateQuery()     │
-    │                                             │                                             │
-    │  Step 2:  预处理 + 属性推导                CQueryContext::PqcGenerate()                    │
-    │                                             │                                             │
-    │  Step 3:  表达式 ──▶ Memo                 CEngine::Init() → InitLogicalExpression()      │
-    │                                             │                                             │
-    │  Step 4:  多阶段并行搜索                   CEngine::Optimize()                             │
-    │            ┌──────────────────────────────────┐                                          │
-    │            │  for each SearchStage:            │                                          │
-    │            │    ScheduleMainJob()              │ ← CJobGroupOptimization                   │
-    │            │    CScheduler::Run()              │ ← Worker 并发生成/执行 Job DAG            │
-    │            │      ├─ Exploration (逻辑→逻辑)    │                                          │
-    │            │      ├─ Statistics Derivation     │                                          │
-    │            │      ├─ Implementation (逻辑→物理) │                                          │
-    │            │      └─ Optimization  (代价剪枝)   │                                          │
-    │            │    FinalizeSearchStage()          │ ← 提取本阶段最优、收紧阈值                 │
-    │            └──────────────────────────────────┘                                          │
-    │                                             │                                             │
-    │  Step 5:  提取最优计划                      CEngine::PexprExtractPlan()                   │
-    │                                             │                                             │
-    │  Step 6:  CExpression ──▶ DXL              CTranslatorExprToDXL (CreateDXLNode)          │
-    │                                             │                                             │
-    └─────────────────────────────────────────────┼─────────────────────────────────────────────┘
-                                                  │
-                                                  ▼
-                                          CDXLNode *pdxlnPlan
-                                          (返回给 GPDB Executor)
+<div class="job-diagram" aria-label="ORCA 端到端优化流程总结">
+  <div class="job-level">
+    <div class="job-node root">
+      <strong>COptimizer::PdxlnOptimize()</strong>
+      <small>唯一对外入口</small>
+    </div>
+  </div>
+  <div class="job-arrow">↓</div>
+  <div class="job-level">
+    <div class="job-node">
+      <strong>Step 1</strong>
+      <small>DXL → CExpression<br><code>CTranslatorDXLToExpr::PexprTranslateQuery()</code></small>
+    </div>
+    <div class="job-node">
+      <strong>Step 2</strong>
+      <small>预处理 + 属性推导<br><code>CQueryContext::PqcGenerate()</code></small>
+    </div>
+    <div class="job-node">
+      <strong>Step 3</strong>
+      <small>表达式 → Memo<br><code>CEngine::InitLogicalExpression()</code></small>
+    </div>
+  </div>
+  <div class="job-arrow">↓</div>
+  <div class="job-level">
+    <div class="job-node root">
+      <strong>Step 4：多阶段并行搜索</strong>
+      <small><code>CEngine::Optimize()</code>：每个 SearchStage 调度 <code>CJobGroupOptimization</code>，由 <code>CScheduler::Run()</code> 并发执行 Job DAG，完成 Exploration、统计推导、Implementation 和代价剪枝。</small>
+    </div>
+  </div>
+  <div class="job-arrow">↓</div>
+  <div class="job-level">
+    <div class="job-node">
+      <strong>Step 5</strong>
+      <small>提取最优计划<br><code>CEngine::PexprExtractPlan()</code></small>
+    </div>
+    <div class="job-node">
+      <strong>Step 6</strong>
+      <small>CExpression → DXL<br><code>CTranslatorExprToDXL</code> / <code>CreateDXLNode</code></small>
+    </div>
+    <div class="job-node">
+      <strong>输出</strong>
+      <small><code>CDXLNode *pdxlnPlan</code><br>返回给 GPDB Executor</small>
+    </div>
+  </div>
 </div>
 
 <!-- ============================================================ -->
@@ -615,61 +1624,81 @@ pdxlnPlan = CreateDXLNode(mp, md_accessor, pexprPlan,
 </tr>
 <tr>
   <td>6</td>
+  <td><code>libgpopt/include/gpopt/operators/CExpression.h</code></td>
+  <td><strong>表达式树节点</strong> — 算子 + 子表达式 + 属性缓存，是 rewrite 的基本载体</td>
+</tr>
+<tr>
+  <td>7</td>
   <td><code>libgpopt/src/base/CQueryContext.cpp</code></td>
   <td>查询上下文构建 + 表达式预处理</td>
 </tr>
 <tr>
-  <td>7</td>
+  <td>8</td>
   <td><code>libgpopt/src/engine/CEngine.cpp</code></td>
   <td><strong>搜索引擎</strong> — <code>Init()</code> → <code>Optimize()</code></td>
 </tr>
 <tr>
-  <td>8</td>
+  <td>9</td>
   <td><code>libgpopt/include/gpopt/search/CMemo.h</code></td>
   <td>Memo (DP 表) — 所有 Group 和 GroupExpression</td>
 </tr>
 <tr>
-  <td>9</td>
+  <td>10</td>
   <td><code>libgpopt/include/gpopt/search/CGroup.h</code></td>
   <td>Group — 等价表达式集合</td>
 </tr>
 <tr>
-  <td>10</td>
+  <td>11</td>
   <td><code>libgpopt/include/gpopt/search/CGroupExpression.h</code></td>
   <td>单个等价表达式（算子 + 子 Group 指针）</td>
 </tr>
 <tr>
-  <td>11</td>
+  <td>12</td>
   <td><code>libgpopt/include/gpopt/search/CJob.h</code></td>
   <td>Job 基类 — 依赖树、状态机、可重入设计</td>
 </tr>
 <tr>
-  <td>12</td>
+  <td>13</td>
   <td><code>libgpopt/include/gpopt/search/CScheduler.h</code></td>
   <td>并行调度器 — Runnable/Waiting 队列管理</td>
 </tr>
 <tr>
-  <td>13</td>
+  <td>14</td>
   <td><code>libgpopt/include/gpopt/search/CJobGroupOptimization.h</code></td>
   <td>根 Job — 优化一个 Group</td>
 </tr>
 <tr>
-  <td>14</td>
+  <td>15</td>
   <td><code>libgpopt/include/gpopt/xforms/CXform.h</code></td>
   <td>变换规则基类 — Pattern Match + Transform</td>
 </tr>
 <tr>
-  <td>15</td>
+  <td>16</td>
+  <td><code>libgpopt/src/xforms/CSubqueryHandler.cpp</code></td>
+  <td>把 scalar subquery 从标量树中移除，生成 Apply tree</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>libgpopt/include/gpopt/xforms/CXformApply2Join.h</code></td>
+  <td>Apply → Join 模板规则，调用 decorrelator 处理 inner side</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>libgpopt/src/xforms/CDecorrelator.cpp</code></td>
+  <td>去相关化核心：上拉相关谓词、补聚合分组键、失败时允许保留 correlated Apply</td>
+</tr>
+<tr>
+  <td>19</td>
   <td><code>libgpopt/src/translate/CTranslatorExprToDXL.cpp</code></td>
   <td>CExpression → DXL 翻译（输出）</td>
 </tr>
 <tr>
-  <td>16</td>
+  <td>20</td>
   <td><code>libgpopt/include/gpopt/base/CReqdProp.h</code></td>
   <td>Required Properties（要求属性）</td>
 </tr>
 <tr>
-  <td>17</td>
+  <td>21</td>
   <td><code>libgpopt/include/gpopt/base/CDrvdProp.h</code></td>
   <td>Derived Properties（推导属性）</td>
 </tr>
@@ -702,32 +1731,42 @@ pdxlnPlan = CreateDXLNode(mp, md_accessor, pexprPlan,
     <p class="file-ref">CQueryContext.cpp</p>
   </div>
   <div class="card">
-    <h4><span class="step">5</span> Memo 构建</h4>
+    <h4><span class="step">5</span> 表达式树</h4>
+    <p>读 <code>CExpression.h</code>，建立“算子 + 子表达式 + 属性缓存”的心智；这是理解 rewrite 的入口。</p>
+    <p class="file-ref">operators/CExpression.h</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">6</span> Memo 构建</h4>
     <p>看 <code>CEngine::Init()</code> → <code>InitLogicalExpression()</code> → <code>PgroupInsert()</code>，理解一棵表达式树如何拆成 Group/GroupExpression 并倒入 Memo。</p>
     <p class="file-ref">CEngine.cpp ~Line 131</p>
   </div>
   <div class="card">
-    <h4><span class="step">6</span> 搜索主循环</h4>
+    <h4><span class="step">7</span> 搜索主循环</h4>
     <p>精读 <code>CEngine::Optimize()</code> (Line 1674)，理解多阶段循环、ScheduleMainJob、CScheduler::Run、FinalizeSearchStage 四个拍子。</p>
     <p class="file-ref">CEngine.cpp ~Line 1674</p>
   </div>
   <div class="card">
-    <h4><span class="step">7</span> Job 体系</h4>
+    <h4><span class="step">8</span> Job 体系</h4>
     <p>读 <code>CJob.h</code>（Job 基类设计思想）、然后选读 <code>CJobGroupOptimization::FExecute()</code> 的状态机实现。</p>
     <p class="file-ref">search/CJob.h, CJobGroupOptimization.cpp</p>
   </div>
   <div class="card">
-    <h4><span class="step">8</span> 变换规则</h4>
-    <p>读 <code>CXform.h</code>，然后选读一个 Exploration（如 JoinAssociativity）和一个 Implementation（如 InnerJoin2HashJoin）。</p>
-    <p class="file-ref">xforms/CXform.h, CXformJoinAssociativity.h, CXformInnerJoin2HashJoin.h</p>
+    <h4><span class="step">9</span> 变换规则</h4>
+    <p>读 <code>CXform.h</code>、<code>CJobTransformation.cpp</code>、<code>CGroupExpression::Transform()</code>，理解 pattern binding 和 result 入 Memo。</p>
+    <p class="file-ref">xforms/CXform.h, search/CJobTransformation.cpp, search/CGroupExpression.cpp</p>
   </div>
   <div class="card">
-    <h4><span class="step">9</span> 计划提取</h4>
+    <h4><span class="step">10</span> Unnest</h4>
+    <p>按 <code>CSubqueryHandler</code> → <code>CXformApply2Join</code> → <code>CDecorrelator</code> 的顺序读，重点看 Apply 和 group key augmentation。</p>
+    <p class="file-ref">xforms/CSubqueryHandler.cpp, CXformApply2Join.h, CDecorrelator.cpp</p>
+  </div>
+  <div class="card">
+    <h4><span class="step">11</span> 计划提取</h4>
     <p>看 <code>CEngine::PexprExtractPlan()</code>，理解如何从 Memo 的 CostContext 中反序列化出最优物理计划树。</p>
     <p class="file-ref">CEngine.cpp ~Line 1786</p>
   </div>
   <div class="card">
-    <h4><span class="step">10</span> 翻译出</h4>
+    <h4><span class="step">12</span> 翻译出</h4>
     <p>回到 <code>CreateDXLNode()</code> → <code>CTranslatorExprToDXL</code>，收束闭环。</p>
     <p class="file-ref">COptimizer.cpp ~Line 320</p>
   </div>

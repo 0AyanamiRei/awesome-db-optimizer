@@ -1183,14 +1183,136 @@ while (NULL != pexpr)
 
 <p>
   这一节只看 rewrite / transform 层，不进入 Stage 5/6 的物理计划提取和 DXL 输出。
-  PR #19 的 unnest 文档用 students 示例解释了 2015 BTW 论文的核心直觉：相关子查询先表示成
-  dependent join / Apply，再把 RHS 中对外层列的依赖拉出来，必要时给聚合补 group key，最后变成普通 join。
-  ORCA archive 中能看到非常接近这套说法的工程实现。
+  目标是把两件事讲清楚：<strong>(A)</strong> Neumann &amp; Kemper 在
+  <em>Unnesting Arbitrary Queries</em>（BTW 2015）里到底提出了什么算法；
+  <strong>(B)</strong> ORCA 的 <code>CSubqueryHandler</code> → <code>CXformApply2Join</code> →
+  <code>CDecorrelator</code> 这条链路，在多大程度上是这套算法的工程落地，又在哪里走了不同的路。
 </p>
+
+<p>先把结论放前面，后面逐条对照源码验证：</p>
+
+<table>
+<tr><th>论文概念</th><th>ORCA 对应物</th><th>吻合度</th></tr>
+<tr>
+  <td>dependent join <code>T₁ ⋈ᵈᵉᵖ T₂</code>（右侧按左侧每行求值）</td>
+  <td><code>CLogical*Apply</code>（Apply 就是 dependent join 的算子表示）</td>
+  <td><span class="badge badge-green">高</span></td>
+</tr>
+<tr>
+  <td>把 dependent join 下推穿过算子的等价规则集</td>
+  <td><code>CDecorrelator</code> 的 <code>FProcess*</code> 递归 + 相关谓词上拉</td>
+  <td><span class="badge badge-amber">部分</span></td>
+</tr>
+<tr>
+  <td>穿过 group by 时把绑定域列加入 group key（<code>Γ_A → Γ_{A∪A(D)}</code>）</td>
+  <td><code>FProcessGbAgg()</code> 把相关等值列并入 grouping columns</td>
+  <td><span class="badge badge-green">高</span></td>
+</tr>
+<tr>
+  <td>显式物化域 <code>D = Π_{F(T₂)∩A(T₁)}(T₁)</code> 并 magic-set 侧传</td>
+  <td>ORCA 不构造显式 <code>D</code>，改用<strong>相关谓词上拉</strong>（≈ 论文的 simple unnesting）</td>
+  <td><span class="badge badge-amber">走了不同路</span></td>
+</tr>
+<tr>
+  <td>无法去相关时保留 dependent join</td>
+  <td>decorrelation 失败时生成 <code>CLogical*CorrelatedApply</code></td>
+  <td><span class="badge badge-green">高</span></td>
+</tr>
+</table>
+
+<h3>0. 论文算法：把 dependent join 推下去，直到它变回普通 join</h3>
+
+<p>
+  论文的出发点是一个关系代数算子 —— <strong>dependent join</strong>（记作 <code>T₁ ⋈ᵈᵉᵖ T₂</code>）。
+  它和普通 join 的唯一区别是：右侧 <code>T₂</code> 不是一个固定关系，而是<strong>依赖左侧当前行</strong>的关系
+  <code>T₂(t₁)</code>。形式化定义是
+</p>
+
+<pre><code>T₁ ⋈ᵈᵉᵖ_p T₂ := { t₁ ∘ t₂ | t₁ ∈ T₁ ∧ t₂ ∈ T₂(t₁) ∧ p(t₁ ∘ t₂) }</code></pre>
+
+<p>
+  可求值的前提是 <code>F(T₂) ⊆ A(T₁)</code>：右侧用到的自由变量（outer references）必须由左侧产出。
+  <code>A(·)</code> 是一个表达式产出的属性集，<code>F(·)</code> 是其中的自由变量集。
+  相关子查询翻译成代数式后，天然就是这种形式 —— 而它意味着<strong>对左侧每一行都要重算一次右侧</strong>，
+  是 O(n²) 的 nested-loop。整套算法的唯一目标，就是通过等价变换把
+  <code>⋈ᵈᵉᵖ</code> 变回可以用 hash join 执行的普通 <code>⋈</code>。
+</p>
+
+<div class="callout callout-info">
+<strong>核心洞察：</strong>论文不做 case-by-case 的模式匹配（“IN 子查询这样、EXISTS 子查询那样”）。
+它只做一件事 —— 把 dependent join 当成一个普通算子，用一组等价规则<strong>系统地往树下方推</strong>，
+穿过它遇到的每一种算子；推到叶子（base relation）时依赖自然消失，就地降级成普通 join。
+因为规则覆盖了 σ / Π / Γ / join / 集合运算全部算子，所以<strong>任意</strong>嵌套查询都能去相关，这正是标题
+“Unnesting <em>Arbitrary</em> Queries” 的含义。
+</div>
+
+<h4>第一步：引入域 D，把“按行求值”降为“按 distinct 绑定求值”</h4>
+
+<p>
+  直接下推 <code>T₁ ⋈ᵈᵉᵖ T₂</code> 不好操作，因为左侧 <code>T₁</code> 可能是一棵很大的子树。
+  论文的第一条等价规则先把它整形成一个更好推的形态：
+</p>
+
+<pre><code>T₁ ⋈ᵈᵉᵖ_p T₂  ≡  T₁ ⋈_{p ∧ T₁=D} (D ⋈ᵈᵉᵖ T₂)
+
+其中   D := Π_{F(T₂) ∩ A(T₁)}(T₁)      // D 去重，是一个"集合"</code></pre>
+
+<p>
+  <code>D</code> 是<strong>所有相关列的 distinct 取值集合</strong>（论文称为 domain / 绑定域）。
+  变换后左侧的 <code>T₁</code> 用一个普通 join 接回来，真正带着依赖往下走的是那个又小又去重的
+  <code>D ⋈ᵈᵉᵖ T₂</code>。收益是：原来对 <code>T₁</code> 每一行（可能上百万）求一次 <code>T₂</code>，
+  现在只对每个 distinct 绑定求一次。这就是 <strong>sideways information passing / magic set</strong> 的思路。
+  而且 <code>|D| ≤ |T₁|</code>，最坏情况下内存也只翻一倍。
+</p>
+
+<h4>第二步：把 <code>D ⋈ᵈᵉᵖ T₂</code> 下推穿过每一种算子</h4>
+
+<p>
+  因为 <code>D</code> 是集合，下推规则非常干净。核心几条：
+</p>
+
+<pre><code>选择   D ⋈ᵈᵉᵖ σ_p(T)      ≡  σ_p(D ⋈ᵈᵉᵖ T)
+投影   D ⋈ᵈᵉᵖ Π_A(T)      ≡  Π_{A ∪ A(D)}(D ⋈ᵈᵉᵖ T)     // 必须保留 D 的列
+聚合   D ⋈ᵈᵉᵖ Γ_{A;a:f}(T) ≡  Γ_{A ∪ A(D); a:f}(D ⋈ᵈᵉᵖ T)  // ★ 绑定域列加入 group key
+集合   D ⋈ᵈᵉᵖ (T₁ ∪ T₂)   ≡  (D ⋈ᵈᵉᵖ T₁) ∪ (D ⋈ᵈᵉᵖ T₂)   // ∩ \ 同理</code></pre>
+
+<p>下推穿过二元 join 时要判断依赖落在哪一侧，决定推左、推右、还是两侧都推：</p>
+
+<pre><code>D ⋈ᵈᵉᵖ (T₁ ⋈_p T₂) ≡
+    (D ⋈ᵈᵉᵖ T₁) ⋈_p T₂                       若 F(T₂) ∩ A(D) = ∅   // 依赖只在左
+    T₁ ⋈_p (D ⋈ᵈᵉᵖ T₂)                       若 F(T₁) ∩ A(D) = ∅   // 依赖只在右
+    (D ⋈ᵈᵉᵖ T₁) ⋈_{p ∧ 自然连接 D} (D ⋈ᵈᵉᵖ T₂)   否则                 // 两侧复制，用 D 对齐</code></pre>
+
+<div class="callout callout-warn">
+<strong>方向反直觉：</strong>这里是把 join<strong>往下推</strong>、把 selection 也<strong>留在上面</strong>，
+和平时“谓词下推”正好相反。原因是：此刻唯一目标是消灭 <code>⋈ᵈᵉᵖ</code>。
+等所有 dependent join 都变回普通 join 之后，再用常规的 selection 下推 / join reorder 重新优化。
+聚合那条规则（把 <code>A(D)</code> 并进 group key）是整套算法里语义上最关键的一步 ——
+少了它，“每个绑定一个聚合值”就会塌缩成“全表一个聚合值”。
+</div>
+
+<h4>第三步：消除 —— 降级为普通 join，或干脆替换掉</h4>
+
+<p>不断下推后，右侧迟早不再引用 <code>D</code> 的列。此时 dependent join 直接降级：</p>
+
+<pre><code>D ⋈ᵈᵉᵖ T  ≡  D ⋈ T        当  F(T) ∩ A(D) = ∅</code></pre>
+
+<p>
+  更进一步：如果 <code>D</code> 的所有列都和已有列做了<strong>等值</strong> join（例如 <code>d.id = e2.sid</code>），
+  那么连这个 join 都能省掉 —— 用一个 map 算子 <code>χ_{d.id : e2.sid}</code> 直接从现有列派生绑定域，
+  查询里就再也看不到任何 nesting 的痕迹（论文 Q1 的最终形态）。但替换会放大中间结果、去掉 join 的过滤作用，
+  所以是否替换是交给<strong>代价优化器</strong>的决定，不是无条件做。
+</p>
+
+<div class="callout callout-info">
+<strong>两条路径：</strong>论文先试 <strong>simple unnesting</strong>（仅把相关谓词沿树上拉，够用就收工，处理 TPC-H Q21 这类
+EXISTS），不够再上 <strong>general unnesting</strong>（引入 <code>D</code> + 系统下推，处理 Q2 那种
+<code>s.year</code> 无法被替换的硬核相关）。<strong>记住这个分叉 —— 下面会看到 ORCA 只完整实现了前者的谓词上拉思路。</strong>
+</div>
 
 <h3>示例 SQL</h3>
 
-<p>示范查询是“找每个专业中分数等于本专业最高分的学生”：</p>
+<p>下面用一个具体查询把论文算法和 ORCA 实现对上。示范查询是“找每个专业中分数等于本专业最高分的学生”：</p>
 
 <pre><code>SELECT name, major
 FROM students AS s1
@@ -1298,8 +1420,8 @@ pxfres-&gt;Add(CNormalizer::PexprNormalize(mp, pexprResult));</code></pre>
   这里有两个重要信号：
 </p>
 <ul>
-  <li><strong>内部 subquery / Apply 要先处理：</strong>如果 inner child 里还有 subquery 或 Apply，当前 Apply2Join 直接返回。这说明 ORCA archive 更偏 staged pipeline，不是 2025 论文那种 holistic 一次性全局处理所有 dependent join。</li>
-  <li><strong>失败时保留 correlated apply：</strong>decorrelation 不安全时，规则会尝试生成 <code>CLogical*CorrelatedApply</code>，最后在 GPDB 中可能成为 correlated join / subplan，而不是强行改成普通 join。</li>
+  <li><strong>内部 subquery / Apply 要先处理：</strong>如果 inner child 里还有 subquery 或 Apply，当前 Apply2Join 直接返回。这说明 ORCA 是<strong>逐层 staged pipeline</strong> —— 一次只消一个 Apply，靠外层 exploration 反复触发；而不是论文那种“把整棵树的 dependent join 系统下推”的一趟式处理。</li>
+  <li><strong>失败时保留 correlated apply：</strong>decorrelation 不安全时（例如非等值相关），规则会尝试生成 <code>CLogical*CorrelatedApply</code>，最后在 GPDB 中可能成为 correlated join / subplan，而不是强行改成普通 join。这对应论文里“无法消除时保留 dependent join”的兜底 —— 区别是论文声称总能消除，ORCA 则明确承认有消不掉的情况。</li>
 </ul>
 
 <h3>3. Decorrelator 把相关谓词拉上来</h3>
@@ -1328,6 +1450,10 @@ BOOL fSuccess =
 <p>
   对 Select，decorrelator 会把 predicate 的 conjuncts 分成两类：
   不含 outer ref 的 residual 留在 RHS；含 outer ref 且可延迟的 correlation 被上拉到 join predicate。
+  这里第一行 <code>IsDisjoint(...DeriveOuterReferences())</code> 就是论文的<strong>消除条件</strong>
+  <code>F(T) ∩ A(D) = ∅</code>：一旦某棵子树不再引用外层列，就原样返回、停止下钻 ——
+  等价于把 <code>⋈ᵈᵉᵖ</code> 降级为普通 <code>⋈</code>。所谓“上拉相关谓词”，正是论文“下推 dependent join”的对偶操作：
+  论文让算子留在原地、把 join 往下搬；ORCA 让算子留在原地、把谓词往上搬。方向相反，代数结果等价。
 </p>
 
 <div class="stage-flow" aria-label="Decorrelator 把相关谓词拉上来的过程">
@@ -1406,10 +1532,24 @@ Join predicate:
   AND s1.score = max_score</code></pre>
 
 <div class="callout callout-info">
-<strong>这就是 2015 BTW 论文和 ORCA 实现最贴近的地方：</strong>
-论文里说 dependent join 下推穿过 aggregate 时要把绑定域列加入 group by；
-ORCA 里则表现为 decorrelator 从被拉起的等值相关谓词中找 inner columns，并把它们加入
-<code>CLogicalGbAgg</code> 的 grouping columns。
+<strong>这就是论文和 ORCA 实现严丝合缝的一步 —— 直接对应聚合下推规则</strong>
+<code>D ⋈ᵈᵉᵖ Γ_{A;a:f}(T) ≡ Γ_{A ∪ A(D); a:f}(D ⋈ᵈᵉᵖ T)</code>。
+论文里 <code>A(D)</code> 是显式域 <code>D</code> 的列；ORCA 没有显式 <code>D</code>，于是改从被拉起的等值相关谓词
+（<code>pdrgpexprCorrelations</code>）里反推出这批“绑定域列”—— 代码就是那句
+<code>pcrs-&gt;Intersection(pcrsOutput)</code>：取相关谓词用到的列 ∩ 内侧输出列，再 <code>Include</code>
+原有 group key，一起交给新的 <code>CLogicalGbAgg</code>。
+</div>
+
+<div class="callout callout-warn">
+<strong>但这里也暴露了两处偏离论文的地方（值得记住）：</strong>
+<ul>
+  <li><code>FProcessGbAgg()</code> 对关系子节点强制 <code>fEqualityOnly = true</code> —— 只有<strong>等值</strong>相关谓词
+  才能被上拉并补进 group key。论文的 <code>A(D)</code> 来自域投影 <code>Π_{F(T₂)∩A(T₁)}</code>，
+  对相关谓词是不是等值<strong>没有</strong>这个限制。这正是 ORCA 处理不了 Q2 那种非等值相关
+  （<code>s.year &gt; e2.date</code>）的原因。</li>
+  <li>论文靠去重的 <code>D</code> 保证“每个绑定恰好一组”；ORCA 没有 <code>D</code>，靠的是
+  “这些新 group key 对外层每一行只有一个取值”这个前提（见代码注释里的推理）。语义结论相同，机制不同。</li>
+</ul>
 </div>
 
 <h3>5. 在 ORCA 里怎么跑这个 case 看中间态</h3>
@@ -1477,9 +1617,21 @@ xmllint --format $MASTER_DATA_DIRECTORY/minidumps/Minidump_*.mdp \
 </table>
 
 <div class="callout callout-warn">
-<strong>边界说明：</strong>这套链路解释的是 ORCA archive 中 2015/PPT 风格的局部 unnest / decorrelation。
-源码里 <code>CXformApply2Join</code> 明确要求 inner child 里的 Subquery/Apply 先被 unnested；
-这不是 2025 论文提出的 holistic unnesting。
+<strong>边界说明 —— ORCA 是论文的“子集实现”，不是全量实现：</strong>
+<ul>
+  <li><strong>共享的部分：</strong>Apply = dependent join；把相关谓词沿树上拉直到依赖消失、再降级成普通 join
+  = 论文的 <strong>simple unnesting</strong>（谓词上拉）；聚合补 group key 精确对应 <code>Γ</code> 下推规则。</li>
+  <li><strong>ORCA 没做的部分：</strong>论文的 <strong>general unnesting</strong> —— 显式物化去重域
+  <code>D = Π_{F(T₂)∩A(T₁)}(T₁)</code> 并把 <code>D ⋈ᵈᵉᵖ T₂</code> 系统下推 —— ORCA 并没有这套机制。
+  因此非等值相关（论文 Q2 的 <code>s.year &gt; e2.date</code>）无法去相关：<code>FProcessGbAgg()</code>
+  的 <code>fEqualityOnly</code> 限制会让 decorrelation 失败。</li>
+  <li><strong>失败时的兜底：</strong><code>CXformApply2Join::Decorrelate()</code> 会退回生成
+  <code>CLogical*CorrelatedApply</code>，最终在 GPDB 里落成 correlated join / subplan（仍是 nested-loop 语义）。
+  同时它明确要求 inner child 里的 Subquery/Apply 先被 unnested —— 是<strong>逐层 staged pipeline</strong>，
+  不是把整棵树的 dependent join 一次性 holistic 消除。</li>
+</ul>
+一句话：ORCA 拿到了论文“把 dependent join 推下去”的骨架和聚合那条关键规则，但没有实现让算法能处理<em>任意</em>查询的
+domain/magic-set 引擎。
 </div>
 
 <!-- ============================================================ -->

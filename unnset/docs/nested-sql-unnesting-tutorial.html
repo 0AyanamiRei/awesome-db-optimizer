@@ -602,7 +602,7 @@ WHERE score = (
 
     <section id="paper-2015">
       <h2>3. 2015：任意查询的代数级 Unnesting</h2>
-      <p>前一节已经用教学 PPT 把 students 例子的执行形状讲完了：相关子查询先变成 dependent join，再引入绑定域 <code>D</code>，下推到 RHS，最后转成普通 join。因此这一节不再重复同一个 SQL 例子，而是看 2015 论文把这套直觉推广成了什么。</p>
+      <p>前一节已经用教学 PPT 把 students 例子的执行形状讲完了：相关子查询先变成 dependent join，再引入绑定域 <code>D</code>，下推到 RHS，最后转成普通 join。不过 2015 论文的完整路线不是一上来就造 <code>D</code>：它先尝试 <em>simple unnesting</em>，只有简单谓词上提不能消除依赖时，才进入带绑定域 <code>D</code> 的 general unnesting。</p>
 
       <h3>3.1 PPT 之后，论文新增了什么？</h3>
       <table>
@@ -618,6 +618,10 @@ WHERE score = (
             <td>任意相关子查询都可以先表达成 dependent join，再用代数规则消除。</td>
           </tr>
           <tr>
+            <td>有些相关性只是 SQL 写法造成的，例如 <code>EXISTS</code> 子查询里的等值谓词。</td>
+            <td>先做 simple unnesting：把 dependent predicate 往上提到两侧列都可见的位置，直接把 dependent join 变成普通 join / semi join。</td>
+          </tr>
+          <tr>
             <td><code>DUP_ELIM_SCAN</code> 表示只按不同绑定值执行 RHS。</td>
             <td><code>D := Π<sub>F(T2)∩A(T1)</sub>(T1)</code> 精确定义了绑定域来自哪些外层列。</td>
           </tr>
@@ -631,14 +635,34 @@ WHERE score = (
           </tr>
         </tbody>
       </table>
-      <p>所以，2015 论文的重点不是“又举了一个能改写的 SQL”，而是把 PPT 中的动画步骤抽象成优化器可以机械应用的一组关系代数规则。</p>
+      <p>所以，2015 论文的重点不是“又举了一个能改写的 SQL”，而是把常见相关谓词上提和更通用的 <code>D</code> 下推都抽象成优化器可以机械应用的代数规则。</p>
+
+      <h3>3.2 Simple unnesting：先把相关谓词上提</h3>
+      <p>论文第 3.1 节先处理一种更轻量的路径：相关子查询有时只是 SQL 表达方便造成的，并不真的需要为每个外层 tuple 单独执行 RHS。典型例子是 <code>EXISTS</code> 里把内外表连接条件写在子查询内部：</p>
+      <pre><code>SELECT ...
+FROM lineitem l1
+WHERE EXISTS (
+  SELECT *
+  FROM lineitem l2
+  WHERE l2.l_orderkey = l1.l_orderkey
+);</code></pre>
+      <p>规范翻译会得到类似下面的 dependent semi join：右侧 selection 读了左侧的 <code>l1.l_orderkey</code>，因此看起来有依赖。</p>
+      <span class="formula">l1 ⋉<sub>dep</sub> σ<sub>l1.okey = l2.okey</sub>(l2)</span>
+      <p>simple unnesting 的做法不是构造 <code>D</code>，而是把这个 dependent predicate 沿代数树向上移动，直到谓词引用的列都来自当前算子的输入。到达 semi join 位置以后，依赖消失，计划可以直接写成普通 semi join：</p>
+      <span class="formula">l1 ⋉<sub>l1.okey = l2.okey</sub> l2</span>
+      <p>这个阶段的目标很朴素：如果相关性只是谓词放在 RHS 内部造成的，就把谓词提到 join 条件上，让 dependent join 直接退化成普通 join / semi join。论文也提醒，这种谓词上提是为了 decorrelation；等 dependent join 消掉以后，常规优化器仍然可以再把谓词或其中一部分下推回去，继续做过滤下推和 join reorder。</p>
+
+      <div class="note">
+        <p class="callout-title">simple 路径和 D 路径的分界</p>
+        <p>如果所有外层引用都能通过谓词上提消掉，就不需要绑定域 <code>D</code>；如果 RHS 里仍有聚合、投影、集合操作或更深层算子必须按外层绑定值分别计算，simple unnesting 就不够了，才进入 general unnesting。</p>
+      </div>
 
       <figure>
         <img src="assets/paper2015-fig1-pushdown-crop-p7.png" alt="2015 论文 Figure 1 dependent join push-down">
         <figcaption>2015 论文第 7 页 Figure 1：这里仍是一个 correlated aggregate 的例子，但读图重点应放在“把外层绑定域 <code>D</code> 送进内层子树”这个通用形状，而不是 SQL 表名本身。</figcaption>
       </figure>
 
-      <h3>3.2 核心等价式：先造 D，再下推 D</h3>
+      <h3>3.3 General unnesting：再造 D、下推 D</h3>
       <p>2015 算法最关键的一步，是把原来的 dependent join 拆成两个部分：一个普通 join 加一个以去重绑定域驱动的新 dependent join。</p>
       <span class="formula">T1 ⧑p T2 ≡ T1 ⋈(p ∧ T1=A(D)D) (D ⧑ T2)，其中 D := Π<sub>F(T2)∩A(T1)</sub>(T1)</span>
       <p>这里的 <code>T1=A(D)D</code> 表示普通 join 需要把外层原列和投影/重命名后的 <code>D</code> 列对应起来，不是随便做一个自然连接。比如论文的等值聚合示例把 <code>s.id</code> 投影成 <code>d.id</code>，接回外层时要用 <code>s.id = d.id</code>。</p>
@@ -655,7 +679,7 @@ WHERE score = (
         <p>论文后续下推规则依赖 <code>D</code> 是集合而不是 SQL bag。去重只发生在绑定域上，不表示整个查询丢掉了 SQL 多重集语义中的重复行。</p>
       </div>
 
-      <h3>3.3 下推规则的直觉</h3>
+      <h3>3.4 下推规则的直觉</h3>
       <p>有了 <code>D</code>，算法把 <code>D ⧑ T</code> 一路往右侧子树下推。遇到不同算子时做相应改写：</p>
       <table>
         <thead>
@@ -699,7 +723,7 @@ WHERE score = (
         <figcaption>2015 论文第 11 页 Figures 6-7：读图重点是 dependent join 下推到底后变成普通 join，随后常规优化再把过滤条件推回去。</figcaption>
       </figure>
 
-      <h3>3.4 什么时候可以把 D 整个消掉？</h3>
+      <h3>3.5 什么时候可以把 D 整个消掉？</h3>
       <p>有时 <code>D</code> 的列和内层已有列通过等值条件绑定。在论文的等值聚合示例中，<code>d.id = e2.sid</code>，所以可以用 map/substitution 把 <code>d.id</code> 替换成 <code>e2.sid</code>，让计划看起来完全像普通手写 join。</p>
 
       <figure>
@@ -709,7 +733,7 @@ WHERE score = (
 
       <p>但论文强调：替换不总是更快。消掉 <code>D</code> 的 join 会丢掉早期过滤能力，可能制造更大的中间结果。最终要不要替换，应交给成本模型。</p>
 
-      <h3>3.5 更复杂的 Q2：非等值条件让 D 留在计划里</h3>
+      <h3>3.6 更复杂的 Q2：非等值条件让 D 留在计划里</h3>
       <p>Q2 计算“学生某门考试是否比自己或高年级同专业学生的平均成绩差一档以上”。它的相关条件包含 <code>OR</code>、<code>s.year &gt; e2.date</code> 这类非等值比较。这里无法简单用内层已有列替代外层 <code>s.year</code>、<code>s.major</code>，因此 <code>D</code> 作为 sideways information passing 保留下来。</p>
 
       <div class="note">
@@ -1019,14 +1043,14 @@ WHERE rn BETWEEN offset + 1 AND offset + limit;</code></pre>
         <span class="pill">相关子查询 = 内层有外层自由变量</span>
         <span class="pill">Dependent join = 代数里的函数调用</span>
         <span class="pill">D = 去重后的绑定域</span>
-        <span class="pill">2015 = 下推 D 消除 dependent join</span>
+        <span class="pill">2015 = 先 simple，再下推 D</span>
         <span class="pill">2025 = top-down 避免多层 D 爆炸</span>
       </div>
     </section>
 
     <section id="summary">
       <h2>8. 一页总结</h2>
-      <p>嵌套 SQL 优化的核心，不是把 SQL 文本改得更漂亮，而是让优化器摆脱“外层每行调用一次内层”的执行形状。2015 论文给出通用代数方法：把相关子查询表达为 dependent join，抽出外层绑定域 <code>D</code>，把 <code>D</code> 下推到内层，最终把 dependent join 替换成普通 join。2025 论文进一步指出，多层相关子查询不能天真地自底向上逐个处理；应该从上到下整体识别和改写相关性，避免多个绑定域制造无用的中间交叉组合。</p>
+      <p>嵌套 SQL 优化的核心，不是把 SQL 文本改得更漂亮，而是让优化器摆脱“外层每行调用一次内层”的执行形状。2015 论文先尝试 simple unnesting：把只是语法位置造成的相关谓词提到 join 条件上；如果仍消不掉依赖，再抽出外层绑定域 <code>D</code>，把 <code>D</code> 下推到内层，最终把 dependent join 替换成普通 join。2025 论文进一步指出，多层相关子查询不能天真地自底向上逐个处理；应该从上到下整体识别和改写相关性，避免多个绑定域制造无用的中间交叉组合。</p>
       <p>如果你只记一个心法：相关子查询的优化，就是把“逐行执行的函数调用”重写成“按绑定域分组的一次性关系计算”。</p>
     </section>
   </main>

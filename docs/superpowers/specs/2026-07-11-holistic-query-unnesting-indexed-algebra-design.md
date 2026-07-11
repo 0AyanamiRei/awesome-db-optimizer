@@ -165,7 +165,7 @@ LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/
 - 现有 `nested-sql-unnesting-tutorial.html` 的“2025 改进”后加入跨页“2025 深入”。
 - 现有 4.5 Indexed Algebra 段落后加入新页的展开阅读链接。
 - 新页 hero 和 footer 反链 `nested-sql-unnesting-tutorial.html#paper-2025`。
-- 顺手把现有 hero 中裸 `&` 改为 `&amp;`，不做其他无关重写。
+- 顺手把现有 hero 中裸 `&` 改为 `&amp;`，并把小写 doctype 规范为 HTML Validate 接受的 `<!DOCTYPE html>`，不做其他无关重写。
 
 ## 可访问性与失败处理
 

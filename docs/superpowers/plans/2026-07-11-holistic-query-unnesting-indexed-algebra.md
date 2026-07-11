@@ -350,10 +350,11 @@ Expected: FAIL。
 
 只做以下改动：
 
-1. Hero 阅读材料中的 Neumann & Kemper 改为 Neumann &amp; Kemper。
-2. sticky nav 的“2025 改进”之后加入跨页链接“2025 深入”。
-3. 4.5 Indexed Algebra 说明后加入 note，链接新页的 #indexed-model。
-4. footer 加入新页面链接，不修改其他章节正文。
+1. 首行小写 doctype 改为 HTML Validate 接受的 `<!DOCTYPE html>`。
+2. Hero 阅读材料中的 Neumann & Kemper 改为 Neumann &amp; Kemper。
+3. sticky nav 的“2025 改进”之后加入跨页链接“2025 深入”。
+4. 4.5 Indexed Algebra 说明后加入 note，链接新页的 #indexed-model。
+5. footer 加入新页面链接，不修改其他章节正文。
 
 - [ ] **Step 3: 验证双向链接与本地资源**
 

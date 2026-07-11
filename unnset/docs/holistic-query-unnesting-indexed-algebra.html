@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Indexed Algebra 与 Holistic Query Unnesting：两层相关聚合详解</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f8fafc;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-2: #8a5a12;
+      --accent-3: #4f6f52;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --bad-bg: #fff0ed;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.68;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 36px;
+      align-items: end;
+      padding: 48px 0 30px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 14px;
+      font-size: 14px;
+      font-weight: 650;
+      text-decoration: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 50px);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .hero-summary {
+      max-width: 780px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f6fbfd;
+      font-size: 14px;
+    }
+
+    .source-box strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .source-box ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .source-box li {
+      margin: 7px 0;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: #ffffff;
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #ffffff;
+      color: var(--accent);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    main {
+      padding: 34px 0 60px;
+    }
+
+    section {
+      margin: 0 0 38px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      scroll-margin-top: 76px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 28px;
+      line-height: 1.24;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 21px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+
+    h4 {
+      margin: 22px 0 8px;
+      color: var(--accent);
+      font-size: 17px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      padding: 16px;
+      border-radius: 8px;
+      background: #111827;
+      color: #e7edf5;
+      font-size: 14px;
+      line-height: 1.48;
+    }
+
+    pre code {
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .note,
+    .warning,
+    .good,
+    .bad {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .note {
+      border-color: #c8dce7;
+      background: #f2f7fb;
+    }
+
+    .warning {
+      border-color: #eed58d;
+      background: var(--warn-bg);
+    }
+
+    .good {
+      border-color: #b8dfc4;
+      background: var(--good-bg);
+    }
+
+    .bad {
+      border-color: #efb3a8;
+      background: var(--bad-bg);
+    }
+
+    .callout-title {
+      margin: 0 0 6px;
+      font-weight: 750;
+    }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      white-space: normal;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      margin: 14px 0 20px;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3f5;
+    }
+
+    .compact th,
+    .compact td {
+      padding: 8px 10px;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid #c8d8df;
+      border-radius: 999px;
+      background: #f7fbfc;
+      color: #245160;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .result {
+      display: inline-block;
+      padding: 7px 14px;
+      border: 1px solid #b8dfc4;
+      border-radius: 999px;
+      background: var(--good-bg);
+      color: #245b35;
+      font-weight: 800;
+    }
+
+    footer {
+      padding: 30px 0 50px;
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--muted);
+    }
+
+    footer p {
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 860px) {
+      .hero,
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 22px 18px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Query Optimizer Deep Dive</p>
+        <a class="back-link" href="nested-sql-unnesting-tutorial.html#paper-2025">← 返回主教程的 2025 论文入口</a>
+        <h1>Indexed Algebra 与 Holistic Query Unnesting</h1>
+        <p class="hero-summary">用一条两层相关聚合 SQL，把“计划中的列从哪里来”“哪个 dependent join 负责绑定它”与“如何整体消除相关性”串成一条可执行的推理链。</p>
+      </div>
+      <aside class="source-box">
+        <strong>原始材料（可点击）</strong>
+        <ul>
+          <li><a href="../paper/UnnestQuery-btw2025.pdf">2025：Improving Unnesting of Complex Queries</a></li>
+          <li><a href="../paper/UnnestQuery-btw2015.pdf">2015：Unnesting Arbitrary Queries</a></li>
+          <li><a href="https://www.vldb.org/pvldb/vol16/p3018-fent.pdf">2023：Indexed Algebra</a></li>
+          <li><a href="https://arxiv.org/abs/2412.04294">2024：unnesting formalization</a></li>
+        </ul>
+      </aside>
+    </div>
+    <nav aria-label="页内目录">
+      <div class="wrap">
+        <a href="#concept-split">三个概念</a>
+        <a href="#running-example">运行例</a>
+        <a href="#indexed-model">IA 模型</a>
+        <a href="#lca">LCA</a>
+        <a href="#accessing">accessing</a>
+        <a href="#bottom-up-cost">旧策略成本</a>
+        <a href="#holistic-trace">整体追踪</a>
+        <a href="#domain-or-repr">D 或替换</a>
+        <a href="#final-plan">最终计划</a>
+        <a href="#boundaries">语义边界</a>
+        <a href="#reading-map">阅读地图</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="concept-split">
+      <h2>1. 先拆开三个常被混用的概念</h2>
+      <p>这里的三件事位于不同层次。先分层，后面的 LCA 与改写才不会被误读成“给表建一个索引就能消除子查询”。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>概念</th>
+              <th>它索引或改变什么</th>
+              <th>本页中的职责</th>
+              <th>不是什么</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Indexed Algebra</strong></td>
+              <td>查询计划及其 information unit（IU）数据流；动态维护“定义在哪里、引用在哪里、路径在哪里”等辅助索引。</td>
+              <td>快速回答 source、consumer、LCA 和路径问题，为识别 <code>accessing</code> 提供分析信息。</td>
+              <td>不是 B-tree，不是 tuple lineage，不是 provenance，也不是 unnesting rewrite。</td>
+            </tr>
+            <tr>
+              <td><strong>data index</strong></td>
+              <td>表数据，例如 B-tree、hash index 或 bitmap index。</td>
+              <td>帮助扫描、点查或连接访问数据。</td>
+              <td>不描述计划中一个 IU 从哪个算子流到哪个表达式。</td>
+            </tr>
+            <tr>
+              <td><strong>Holistic Unnesting</strong></td>
+              <td>含 dependent join 的关系代数计划。</td>
+              <td>自顶向下携带状态，整体改写多层相关性，最终生成普通 join/group-by 计划。</td>
+              <td>不是索引结构，也不是列血缘查询接口。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">题名与章节名不要互换</p>
+        <p>2025 论文的题名是 <em>Improving Unnesting of Complex Queries</em>；<em>Holistic Query Unnesting</em> 只是该论文的 §3。本文为了聚焦而沿用章节名，但不把它虚构成论文题名。</p>
+      </div>
+
+      <p>一句话分工：Indexed Algebra 让优化器更快地<strong>看清计划</strong>；Holistic Unnesting 根据这些事实<strong>改写计划</strong>；data index 则在执行时帮助算子<strong>访问表数据</strong>。</p>
+    </section>
+
+    <section id="running-example">
+      <h2>2. 一条贯穿全文的两层相关聚合</h2>
+      <p>目标是找出 EAST 区域中，某财政年度至少有三名员工全年报销总额超过 10000 的部门。内层 <code>SUM</code> 同时引用员工层与部门层，外层 <code>COUNT</code> 又依赖部门绑定，因此正好暴露两层相关性。</p>
+
+      <pre><code>SELECT d.dept_id
+FROM department AS d
+WHERE d.region='EAST'
+  AND (SELECT COUNT(*) FROM employee AS e
+       WHERE e.dept_id=d.dept_id
+         AND (SELECT SUM(x.amount) FROM expense AS x
+              WHERE x.emp_id=e.emp_id
+                AND x.fiscal_year=d.fiscal_year)&gt;10000)&gt;=3;</code></pre>
+
+      <div class="note">
+        <p class="callout-title">主线数据约束</p>
+        <p>本例把业务键 <code>dept_id</code>、<code>emp_id</code>、<code>fiscal_year</code> 及对应相关列都设为 <code>NOT NULL</code>；<code>(dept_id,fiscal_year)</code> 是唯一的部门年度绑定，<code>emp_id</code> 唯一标识员工。这样可以先专注于绑定传播；一般情况下的 NULL-safe 回接在“语义边界”一节单独处理。</p>
+      </div>
+
+      <h3>2.1 三张输入表</h3>
+      <div class="grid-2">
+        <div>
+          <h4>department</h4>
+          <div class="table-wrap">
+            <table class="compact">
+              <thead>
+                <tr><th>dept_id</th><th>region</th><th>fiscal_year</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>D10</td><td>EAST</td><td>2025</td></tr>
+                <tr><td>D20</td><td>EAST</td><td>2025</td></tr>
+                <tr><td>D30</td><td>WEST</td><td>2025</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h4>employee</h4>
+          <div class="table-wrap">
+            <table class="compact">
+              <thead>
+                <tr><th>emp_id</th><th>dept_id</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>e1</td><td>D10</td></tr>
+                <tr><td>e2</td><td>D10</td></tr>
+                <tr><td>e3</td><td>D10</td></tr>
+                <tr><td>e4</td><td>D10</td></tr>
+                <tr><td>e5</td><td>D20</td></tr>
+                <tr><td>e6</td><td>D20</td></tr>
+                <tr><td>e7</td><td>D30</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <h4>expense</h4>
+      <div class="table-wrap">
+        <table class="compact">
+          <thead>
+            <tr><th>expense_id</th><th>emp_id</th><th>fiscal_year</th><th>amount</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>x01</td><td>e1</td><td>2025</td><td>6000</td></tr>
+            <tr><td>x02</td><td>e1</td><td>2025</td><td>5001</td></tr>
+            <tr><td>x03</td><td>e1</td><td>2024</td><td>9000</td></tr>
+            <tr><td>x04</td><td>e2</td><td>2025</td><td>8000</td></tr>
+            <tr><td>x05</td><td>e2</td><td>2025</td><td>3000</td></tr>
+            <tr><td>x06</td><td>e3</td><td>2025</td><td>7000</td></tr>
+            <tr><td>x07</td><td>e4</td><td>2025</td><td>10001</td></tr>
+            <tr><td>x08</td><td>e5</td><td>2025</td><td>12000</td></tr>
+            <tr><td>x09</td><td>e6</td><td>2025</td><td>9000</td></tr>
+            <tr><td>x10</td><td>e7</td><td>2025</td><td>20000</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.2 先手算结果</h3>
+      <p>按部门年度与员工分组后，内层标量聚合得到下面的年度费用。e1 的 2024 费用不属于 d.fiscal_year=2025，因此不计入。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>dept_id</th><th>fiscal_year</th><th>emp_id</th><th>SUM(amount)</th><th>&gt; 10000</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>D10</td><td>2025</td><td>e1</td><td>11001</td><td>是</td></tr>
+            <tr><td>D10</td><td>2025</td><td>e2</td><td>11000</td><td>是</td></tr>
+            <tr><td>D10</td><td>2025</td><td>e3</td><td>7000</td><td>否</td></tr>
+            <tr><td>D10</td><td>2025</td><td>e4</td><td>10001</td><td>是</td></tr>
+            <tr><td>D20</td><td>2025</td><td>e5</td><td>12000</td><td>是</td></tr>
+            <tr><td>D20</td><td>2025</td><td>e6</td><td>9000</td><td>否</td></tr>
+            <tr><td>D30</td><td>2025</td><td>e7</td><td>20000</td><td>是，但部门不在 EAST</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compact">
+          <thead>
+            <tr><th>dept_id</th><th>region</th><th>fiscal_year</th><th>费用 &gt; 10000 的员工数</th><th>&gt;= 3</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>D10</td><td>EAST</td><td>2025</td><td>3（e1、e2、e4）</td><td>是</td></tr>
+            <tr><td>D20</td><td>EAST</td><td>2025</td><td>1（e5）</td><td>否</td></tr>
+            <tr><td>D30</td><td>WEST</td><td>2025</td><td>1（e7）</td><td>先被 region 过滤</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><span class="result">最终输出：D10</span></p>
+
+      <h3>2.3 规范代数树：先保留相关性</h3>
+      <p><code>R_D/R_E/R_X</code> 是三张表的 scan operator，<code>S_D/S_E/S_X</code> 是各自上方的 selection operator，<code>G_E</code> 与 <code>G_X</code> 是两层 group-by operator；<code>J_D</code> 与 <code>J_E</code> 是两层 dependent join。每个名字只指一个真实算子。这里先忠实表示 SQL 语义，还没有做 unnesting。</p>
+      <pre><code>π[d.dept_id]
+└─ σ[qualified_employee_count &gt;= 3]
+   └─ J_D  dependent join
+      ├─ S_D := σ[d.region = 'EAST']
+      │  └─ R_D := scan(department d)
+      └─ G_E := γ[∅; COUNT(*) → qualified_employee_count]
+         └─ σ[annual_spend &gt; 10000]
+            └─ J_E  dependent join
+               ├─ S_E := σ[e.dept_id = d.dept_id]
+               │  └─ R_E := scan(employee e)
+               └─ G_X := γ[∅; SUM(x.amount) → annual_spend]
+                  └─ S_X := σ[x.emp_id = e.emp_id
+                               ∧ x.fiscal_year = d.fiscal_year]
+                     └─ R_X := scan(expense x)</code></pre>
+      <p class="mini"><code>∅</code> 表示未 unnest 时的 static aggregate：每次在当前外层绑定下算一行，绑定列还不是 group keys；它们是在改写返回路径上加入的。关键观察是 <code>S_E</code> 读取部门绑定，而 <code>S_X</code> 同时读取员工绑定与跨过一层的部门年度绑定。</p>
+    </section>
+
+    <section id="indexed-model">
+      <h2>3. Indexed Algebra 到底给计划加了什么</h2>
+      <p>Indexed Algebra（IA）把计划看成算子树与显式 IU 数据流的组合。它的价值不是改变关系代数语义，而是让计划在持续改写时仍能高效回答结构查询。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>术语</th><th>工作定义</th><th>运行例</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>operator</strong></td>
+              <td>计划中的算子节点；拥有零个或多个计划 child，并承载表达式。</td>
+              <td><code>R_D</code> scan、<code>S_E</code> selection、<code>G_X</code> group by、<code>J_D</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>expression</strong></td>
+              <td>算子内部的谓词、映射、分组键或聚合参数，会引用 IU。</td>
+              <td><code>e.dept_id=d.dept_id</code>、<code>SUM(x.amount)</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>information unit（IU）</strong></td>
+              <td>计划中的一个命名信息项，常对应列或中间表达式结果；每个 IU 有且仅有一个 source，可以有多个 consumer。</td>
+              <td><code>d.fiscal_year</code> 由 <code>R_D</code> 定义，却可被 <code>S_X</code> 引用。</td>
+            </tr>
+            <tr>
+              <td><strong>source</strong></td>
+              <td>定义并输出某 IU 的唯一 source operator。</td>
+              <td><code>R_D</code> 定义 <code>d.dept_id</code> 与 <code>d.fiscal_year</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>consumer</strong></td>
+              <td>引用 IU 的表达式；同一 IU 可以流向多个 consumer。</td>
+              <td><code>d.fiscal_year</code> 被费用侧年度谓词消费。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.1 两种边不要画成一种边</h3>
+      <pre><code>计划 parent/child 边（执行结构）
+J_D
+├─ S_D
+│  └─ R_D
+└─ ... J_E
+    ├─ S_E
+    │  └─ R_E
+    └─ G_X
+       └─ S_X
+          └─ R_X
+
+IU source → reference 链接（数据流）
+R_D 定义 d.fiscal_year ─────────────────→ S_X 中的引用
+R_E 定义 e.emp_id       ────────────────→ S_X 中的引用
+R_X 定义 x.amount       ────────────────→ G_X 中的引用</code></pre>
+      <p>parent/child 边说“哪个算子以哪个子计划为输入”；source→reference 链接说“某个表达式读到的 IU 在哪里定义”。相关引用恰恰会让后一种链接跨越 sibling branch，因此不能只沿计划 child 指针猜列来源。</p>
+
+      <div class="note">
+        <p class="callout-title">动态树只当黑盒使用</p>
+        <p>IA 可在计划改写期间用 link/cut tree 一类动态树结构维护计划，从而支持 LCA 与路径查询，摊还复杂度为 <code>O(log n)</code>；本文只把它作为提供这些查询的黑盒。</p>
+      </div>
+    </section>
+
+    <section id="lca">
+      <h2>4. 用 LCA 找到“谁负责绑定”</h2>
+      <p>对一次 IU 引用，记访问该 IU 的算子为 <code>o_access</code>，定义该 IU 的算子为 <code>o_source</code>。识别阶段计算：</p>
+      <span class="formula">j = LCA(o_access, o_source)</span>
+
+      <div class="grid-2">
+        <div class="good">
+          <p class="callout-title">本地或正常向上的数据流</p>
+          <p>若 source 位于 consumer 的输入子树里，<code>o_access</code> 本身就是两条路径第一次相遇的位置，所以 <code>j = o_access</code>。这不是相关访问，不标 dependent join。</p>
+        </div>
+        <div class="warning">
+          <p class="callout-title">跨另一个分支的数据流</p>
+          <p>若 <code>j != o_access</code>，source 不在 consumer 的本地输入子树中；引用跨过了另一个分支。在良构的相关查询计划里，这个 <code>j</code> 就是负责提供绑定的 dependent join。</p>
+        </div>
+      </div>
+
+      <h3>4.1 逐步看一个跨分支引用</h3>
+      <p>以 <code>S_E</code> 中的 <code>d.dept_id</code> 为例：</p>
+      <ol>
+        <li><code>o_access = S_E</code>，因为员工侧谓词在这里读取 <code>d.dept_id</code>。</li>
+        <li><code>o_source = R_D</code>，即部门侧产生该 IU 的位置。</li>
+        <li>从 <code>S_E</code> 向根走，会经过员工计数子树再到 <code>J_D</code>；从 <code>R_D</code> 向根走，则先经过它的 parent <code>S_D</code>，再到 <code>J_D</code>。</li>
+        <li>两条路径第一次相遇于 <code>J_D</code>，所以 <code>LCA(S_E,R_D)=J_D</code>。</li>
+        <li>因为 <code>J_D != S_E</code>，把 <code>S_E</code> 加入 <code>accessing(J_D)</code>。</li>
+      </ol>
+
+      <pre><code>访问路径：S_E ─────→ ... ──→ J_D ──→ root
+来源路径：R_D ──→ S_D ─────→ J_D ──→ root
+                              ↑
+                       第一个公共祖先</code></pre>
+
+      <h3>4.2 为什么不能只比较两个算子是否相等</h3>
+      <p>即使是完全本地的数据流，定义列的 scan 与使用列的 selection 通常也是两个不同算子，因此 <code>o_access != o_source</code> 很常见，却不代表相关性。单纯比较身份也无法说出 source 是在 consumer 下方，还是在 sibling branch。LCA 同时编码了<strong>路径位置</strong>与<strong>跨分支边界</strong>，得到的 <code>j</code> 才能直接指向负责绑定的 dependent join。</p>
+    </section>
+
+    <section id="accessing">
+      <h2>5. 把每个引用归到 accessing 集合</h2>
+      <p>本表严格按真实 operator 计算每个引用：<code>R_D/R_E/R_X</code> 是唯一 source operator；<code>S_E/S_X</code> 消费谓词 IU；<code>G_X</code> 消费聚合参数 <code>x.amount</code>。这些名字不是新增关系，也不把多个 operator 合并成“表达式区域”。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>consumer / 表达式</th>
+              <th>引用 IU</th>
+              <th>IU source</th>
+              <th>LCA 结果</th>
+              <th>处理</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>S_E: e.dept_id=d.dept_id</code></td>
+              <td><code>d.dept_id</code></td>
+              <td><code>R_D</code></td>
+              <td><code>J_D</code></td>
+              <td><strong>标记：</strong><code>S_E ∈ accessing(J_D)</code></td>
+            </tr>
+            <tr>
+              <td><code>S_X: x.fiscal_year=d.fiscal_year</code></td>
+              <td><code>d.fiscal_year</code></td>
+              <td><code>R_D</code></td>
+              <td><code>J_D</code></td>
+              <td><strong>标记：</strong><code>S_X ∈ accessing(J_D)</code></td>
+            </tr>
+            <tr>
+              <td><code>S_X: x.emp_id=e.emp_id</code></td>
+              <td><code>e.emp_id</code></td>
+              <td><code>R_E</code></td>
+              <td><code>J_E</code></td>
+              <td><strong>标记：</strong><code>S_X ∈ accessing(J_E)</code></td>
+            </tr>
+            <tr>
+              <td><code>S_E</code> 本地谓词</td>
+              <td><code>e.dept_id</code></td>
+              <td><code>R_E</code></td>
+              <td><code>S_E</code>（等于 consumer）</td>
+              <td>不标记</td>
+            </tr>
+            <tr>
+              <td><code>S_X</code> 本地谓词</td>
+              <td><code>x.emp_id</code></td>
+              <td><code>R_X</code></td>
+              <td><code>S_X</code>（等于 consumer）</td>
+              <td>不标记</td>
+            </tr>
+            <tr>
+              <td><code>S_X</code> 本地谓词</td>
+              <td><code>x.fiscal_year</code></td>
+              <td><code>R_X</code></td>
+              <td><code>S_X</code>（等于 consumer）</td>
+              <td>不标记</td>
+            </tr>
+            <tr>
+              <td><code>G_X</code> 聚合参数</td>
+              <td><code>x.amount</code></td>
+              <td><code>R_X</code></td>
+              <td><code>G_X</code>（等于 consumer）</td>
+              <td>不标记</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <span class="formula">accessing(J_D) = {S_E, S_X}</span>
+      <span class="formula">accessing(J_E) = {S_X}</span>
+
+      <p>若某个 dependent join 的 <code>accessing</code> 为空，它的 RHS 没有真正读取 LHS 的 IU，可以直接普通化为相应的 ordinary join。反过来，非空集合告诉 Holistic 算法要沿哪些路径处理外层引用。</p>
+
+      <div class="warning">
+        <p class="callout-title">识别信息不等于等价性证明</p>
+        <p>Indexed Algebra 只提供 source、consumer、LCA、路径等分析信息；它不构造绑定域 <code>D</code>，也不替 Holistic 算法证明改写等价。没有 IA 时仍可用较慢的树遍历与列集合分析得到相同事实，正确性不依赖该索引。</p>
+      </div>
+      <p>设计划有 <code>n</code> 个算子、待检查的 IU 引用有 <code>m</code> 个。IA 下每个 LCA 查询摊还 <code>O(log n)</code>，因此这里只能把<strong>识别阶段</strong>写成 <code>O(m log n)</code>；不能把整个 unnesting、成本优化或执行过程笼统说成 <code>O(log n)</code>。</p>
+    </section>
+
+    <section id="bottom-up-cost">
+      <h2>6. Bottom-up 为什么会先制造无效绑定</h2>
+      <p>2015 算法按局部 dependent join 自底向上处理时，结果仍然正确；2025 论文指出的是某些深层嵌套形状的<strong>中间工作量</strong>。下面用两个很小的域把问题算清楚。</p>
+
+      <div class="grid-2">
+        <div class="note">
+          <p class="callout-title">真实关系</p>
+          <p><code>T1(a) = {1,2}</code></p>
+          <p><code>T2(a,b) = {(1,x),(2,y)}</code></p>
+          <p>因此真实联合绑定 <code>P = {(1,x),(2,y)}</code>。</p>
+        </div>
+        <div class="bad">
+          <p class="callout-title">独立域相乘</p>
+          <p><code>D_a = {1,2}</code>，<code>D_b = {x,y}</code>。</p>
+          <p><code>D_a × D_b</code> 有四格；<code>(1,y)</code> 与 <code>(2,x)</code> 并不存在于真实绑定 <code>P</code>。</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compact">
+          <thead>
+            <tr><th scope="col">a \ b</th><th scope="col">x</th><th scope="col">y</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">1</th><td>(1,x) ✓</td><td>(1,y) 无效</td></tr>
+            <tr><th scope="row">2</th><td>(2,x) 无效</td><td>(2,y) ✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>6.1 聚合已经为四组付费</h3>
+      <p>令内层输入为：</p>
+      <div class="table-wrap">
+        <table class="compact">
+          <thead>
+            <tr><th>T3.a</th><th>T3.b</th><th>v</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>x</td><td>4</td></tr>
+            <tr><td>1</td><td>x</td><td>6</td></tr>
+            <tr><td>1</td><td>y</td><td>20</td></tr>
+            <tr><td>2</td><td>x</td><td>30</td></tr>
+            <tr><td>2</td><td>y</td><td>15</td></tr>
+            <tr><td>2</td><td>y</td><td>25</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>若中间计划先按 <code>D_a × D_b</code> 驱动内层聚合，就会先计算四组，再与 <code>T2(a,b)</code> 回接并过滤无效组合：</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>先计算的绑定组</th><th>参与 SUM 的 T3.v</th><th>SUM(v)</th><th>与真实 P 回接后</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>(1,x)</td><td>4, 6</td><td>10</td><td>保留</td></tr>
+            <tr><td>(1,y)</td><td>20</td><td>20</td><td>过滤</td></tr>
+            <tr><td>(2,x)</td><td>30</td><td>30</td><td>过滤</td></tr>
+            <tr><td>(2,y)</td><td>15, 25</td><td>40</td><td>保留</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="good">
+        <p class="callout-title">正确性没有坏，成本已经发生</p>
+        <p>后续过滤会删掉 (1,y) 与 (2,x)，所以 2015 算法的结果是正确的。问题在于这两组已经进入 hash table、聚合状态或排序输入，消耗 CPU、内存与聚合输入带宽。嵌套更深时，多个独立绑定域可能继续连乘；即便最后都被谓词消掉，中间代价也不会自动退还。</p>
+      </div>
+    </section>
+
+    <section id="holistic-trace">
+      <h2>7. 在运行例上追踪 Holistic 状态</h2>
+      <p>识别阶段结束后，主算法按 top-down 顺序处理 dependent join。下表固定选择与最终 CTE 一致的<strong>显式 D 路径</strong>：<code>cclasses</code> 只记录谓词提供的候选等价关系；<code>repr</code> 只记录成本模型已经决定采用的 substitution。因为本次 trace 不选择 substitution，所以 <code>repr</code> 从头到尾都是 <code>∅</code>。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>顺序 / 节点</th>
+              <th>accessing</th>
+              <th>outerRefs</th>
+              <th>cclasses</th>
+              <th>repr</th>
+              <th>动作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0. 识别结束</td>
+              <td><code>J_D:{S_E,S_X}</code><br><code>J_E:{S_X}</code></td>
+              <td>尚未启动</td>
+              <td><code>∅</code></td>
+              <td><code>∅</code></td>
+              <td>用 LCA 标出两个非平凡 dependent join。</td>
+            </tr>
+            <tr>
+              <td>1. 启动 <code>J_D</code></td>
+              <td><code>{S_E,S_X}</code></td>
+              <td><code>{d.dept_id,d.fiscal_year}</code></td>
+              <td><code>∅</code></td>
+              <td><code>∅</code></td>
+              <td>创建部门层 unnesting 状态，向 RHS 自顶向下推进。</td>
+            </tr>
+            <tr>
+              <td>2. 处理 <code>J_E</code> 左输入 <code>S_E</code></td>
+              <td><code>{S_E,S_X} → {S_X}</code></td>
+              <td><code>{d.dept_id,d.fiscal_year}</code></td>
+              <td><code>{{d.dept_id,e.dept_id}}</code></td>
+              <td><code>∅</code></td>
+              <td>读取等值谓词，只把它加入候选等价类；当前访问完成，从父层集合移除 <code>S_E</code>，不创建代表映射。</td>
+            </tr>
+            <tr>
+              <td>3. <code>S_E</code> 左分支停止点</td>
+              <td>该分支 <code>∅</code>；父状态仍待 <code>{S_X}</code></td>
+              <td><code>{d.dept_id,d.fiscal_year}</code></td>
+              <td><code>{{d.dept_id,e.dept_id}}</code></td>
+              <td><code>∅</code></td>
+              <td>选择显式插入 <code>D_D := δ(π_{d.dept_id,d.fiscal_year}(S_D))</code>。它利用 EAST 早过滤，并把部门与年度作为真实成对绑定带到 employee 分支。</td>
+            </tr>
+            <tr>
+              <td>4. <code>J_E</code> 转向右输入</td>
+              <td>子层 <code>{S_X}</code>；父层余项 <code>{S_X}</code></td>
+              <td>子层 <code>{e.emp_id}</code><br>父层 <code>{d.dept_id,d.fiscal_year}</code></td>
+              <td>子层 <code>∅</code>；父层保留部门/员工等价类</td>
+              <td><code>∅</code></td>
+              <td>建立 child→<code>parent</code> 指针；把仍位于右侧的父层访问 <code>S_X</code> 合并进本轮，使一次下降同时处理员工与部门年度引用。</td>
+            </tr>
+            <tr>
+              <td>5. 到达 <code>S_X</code></td>
+              <td>子层与父层的两个访问原因均移除</td>
+              <td><code>{e.emp_id}</code>，以及继承的 <code>d.fiscal_year</code></td>
+              <td><code>{{d.dept_id,e.dept_id}, {e.emp_id,x.emp_id}, {d.fiscal_year,x.fiscal_year}}</code></td>
+              <td><code>∅</code></td>
+              <td>把两个费用谓词加入候选等价类，使访问清空；此时仍未选择任何 substitution。</td>
+            </tr>
+            <tr>
+              <td>6. <code>S_X</code> 右分支停止点</td>
+              <td><code>∅</code></td>
+              <td>由显式联合绑定提供</td>
+              <td>保留三组候选等价类</td>
+              <td><code>∅</code></td>
+              <td>用 <code>D_DE := δ(π_{d.dept_id,d.fiscal_year,e.emp_id}(D_D ⋈_{d.dept_id=e.dept_id} R_E))</code> 驱动 <code>R_X</code>。这个 combined domain 来自已发生的真实 employee join，不是独立部门域与员工域的笛卡尔积。</td>
+            </tr>
+            <tr>
+              <td>7. 返回 <code>G_X</code> 与 <code>J_E</code></td>
+              <td><code>∅</code></td>
+              <td>显式 <code>d.dept_id,d.fiscal_year,e.emp_id</code></td>
+              <td>候选关系保持可用</td>
+              <td><code>∅</code></td>
+              <td>用显式绑定列改写费用普通 join 的谓词，并把三键加入 <code>G_X</code> 的 group keys；<code>annual_spend &gt; 10000</code> 原样保留。</td>
+            </tr>
+            <tr>
+              <td>8. 返回 <code>G_E</code> 与 <code>J_D</code></td>
+              <td><code>∅</code></td>
+              <td>显式 <code>d.dept_id,d.fiscal_year</code></td>
+              <td>候选关系无需转成 repr</td>
+              <td><code>∅</code></td>
+              <td>按部门年度改写 <code>G_E</code> 的 group keys 与普通回接谓词；两个 dependent join 都普通化，得到 Section 9 的显式域计划。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>7.1 parent state 的意义</h3>
+      <p>处理 <code>J_E</code> 右侧时，<code>S_X</code> 不只读取当前员工层的 <code>e.emp_id</code>，还读取祖先部门层的 <code>d.fiscal_year</code>。若新建 child state 后忘掉 parent state，就会漏掉跨两层引用。本次选择虽显式加入 <code>D_D</code>，却不再独立构造一个员工域与它相乘；算法先让 <code>D_D</code> 与 <code>R_E</code> 发生真实的部门—员工连接，再从其结果形成 <code>D_DE</code>。<code>parent</code> 让右侧一次下降同时看到两层访问，并保住部门、年度与员工的从属关系。</p>
+
+      <div class="warning">
+        <p class="callout-title">不要把不同 D 盲目穿过 dependent join</p>
+        <p>dependent join 本身正表达“右侧取决于左侧当前绑定”。错误形状是先独立得到部门域和员工域，再把二者交叉后驱动 expense；chosen trace 则用 <code>D_D ⋈ R_E</code> 的真实可达组合形成 combined domain。Holistic 的关键不是取消 <code>D</code>，而是让父子状态保留层次，并在真正的访问停止点加入已经正确关联的绑定。</p>
+      </div>
+    </section>
+
+    <section id="domain-or-repr">
+      <h2>8. 到达访问终点后：显式 D，还是 repr 替换</h2>
+      <p>当某条访问路径清空时，算法有两类等价实现选择。它们表达同一组逻辑绑定，但物理形状与过滤机会不同。Section 7 的 chosen trace 以及 Section 9 的最终 CTE 采用方案 A；方案 B 只是成本模型可以选择的另一条路径。</p>
+
+      <div class="grid-2">
+        <div class="good">
+          <p class="callout-title">方案 A：显式加入绑定域 D（本次采用）</p>
+          <span class="formula">D := δ(π<sub>outerRefs</sub>(L))</span>
+          <p>从 dependent join 左侧 <code>L</code> 投影所需外层引用并去重，再在停止位置把 <code>D</code> join 进来。对 <code>J_D</code> 而言，<code>L=S_D</code> 已含 <code>region='EAST'</code>，所以显式 D 可以把 EAST 的早期过滤保留下来，减少后续员工与费用输入。</p>
+          <p>代价是计划中多一个 distinct/domain 与 join，基数估计和物化成本也要纳入选择。</p>
+        </div>
+        <div class="note">
+          <p class="callout-title">方案 B：substitution / repr（本次未采用）</p>
+          <p>若等价类中已经存在 RHS 产生的代表 IU，成本模型也可以把外层引用替换为代表列，而不显式加入 D。三条候选映射是：</p>
+          <ul>
+            <li><code>d.dept_id → e.dept_id</code></li>
+            <li><code>e.emp_id → x.emp_id</code></li>
+            <li><code>d.fiscal_year → x.fiscal_year</code></li>
+          </ul>
+          <p>这种计划通常算子更少、形状更接近普通 join/group-by；但如果显式 D 原本很有选择性，拿掉它也可能让更多行进入后续算子。</p>
+        </div>
+      </div>
+
+      <p>二者是语义等价实现与成本选择，不是“新算法永远选 substitution”。<code>cclasses</code> 中存在候选关系也不等于 <code>repr</code> 已经写入映射：本页 trace 明确保持 <code>repr=∅</code>。局部成本模型可以比较 distinct、join、过滤选择率与基数，但 Holistic Unnesting 本身并不保证得到全局最优计划。</p>
+    </section>
+
+    <section id="final-plan">
+      <h2>9. 一个不含相关子查询的最终计划</h2>
+      <p>为了让结果可直接运行，下面选择显式 <code>binding_domain</code> 的版本。<code>filtered_department</code> 保留原查询的外层行多重性，去重后的绑定域只驱动 RHS；随后用普通 join 与两层 group by 一次性计算所有绑定。</p>
+
+      <pre><code>WITH filtered_department AS (
+  SELECT d.dept_id, d.fiscal_year
+  FROM department AS d
+  WHERE d.region = 'EAST'
+),
+binding_domain AS (
+  SELECT DISTINCT dept_id, fiscal_year
+  FROM filtered_department
+),
+employee_spend AS (
+  SELECT bd.dept_id,
+         bd.fiscal_year,
+         e.emp_id,
+         SUM(x.amount) AS annual_spend
+  FROM binding_domain AS bd
+  JOIN employee AS e
+    ON e.dept_id = bd.dept_id
+  JOIN expense AS x
+    ON x.emp_id = e.emp_id
+   AND x.fiscal_year = bd.fiscal_year
+  GROUP BY bd.dept_id, bd.fiscal_year, e.emp_id
+),
+qualified AS (
+  SELECT dept_id,
+         fiscal_year,
+         COUNT(*) AS qualified_employee_count
+  FROM employee_spend
+  WHERE annual_spend &gt; 10000
+  GROUP BY dept_id, fiscal_year
+)
+SELECT fd.dept_id
+FROM filtered_department AS fd
+JOIN qualified AS q
+  ON q.dept_id = fd.dept_id
+ AND q.fiscal_year = fd.fiscal_year
+WHERE q.qualified_employee_count &gt;= 3;</code></pre>
+
+      <h3>9.1 对应的普通 join/group-by 树</h3>
+      <pre><code>π[fd.dept_id]
+└─ σ[qualified_employee_count &gt;= 3]
+   └─ ⋈[q.dept_id = fd.dept_id
+        ∧ q.fiscal_year = fd.fiscal_year]
+      ├─ filtered_department
+      │  └─ σ[d.region='EAST'](department d)
+      └─ γ[dept_id,fiscal_year;
+           COUNT(*) → qualified_employee_count]
+         └─ σ[annual_spend &gt; 10000]
+            └─ γ[bd.dept_id,bd.fiscal_year,e.emp_id;
+                 SUM(x.amount) → annual_spend]
+               └─ ⋈[x.emp_id=e.emp_id
+                    ∧ x.fiscal_year=bd.fiscal_year]
+                  ├─ ⋈[e.dept_id=bd.dept_id]
+                  │  ├─ binding_domain
+                  │  │  └─ δ π[dept_id,fiscal_year]
+                  │  │     └─ filtered_department
+                  │  └─ employee e
+                  └─ expense x</code></pre>
+
+      <h3>9.2 三键是安全机械写法，不声称键最小</h3>
+      <p>内层 <code>SUM</code> 携带 <code>dept_id</code>、<code>fiscal_year</code>、<code>emp_id</code>，可以不依赖 functional dependency（FD）推理，机械地保留“部门—年度—员工”完整绑定；外层 <code>COUNT</code> 再按 <code>dept_id,fiscal_year</code> 分组。由于本例已经声明 <code>emp_id</code> 唯一，FD-aware 的后续优化器可能证明某些 group key 可省；但通用 unnesting rewrite 不假定这些 FD，也不需要在保证语义时把 group keys 最小化。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>原 SQL 语义</th><th>普通计划中的对应位置</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>d.region='EAST'</code></td><td><code>filtered_department</code> 的 selection；<code>binding_domain</code> 再从中只去重 RHS 所需绑定。</td></tr>
+            <tr><td><code>e.dept_id=d.dept_id</code></td><td><code>employee</code> 与 <code>binding_domain</code> 的普通 join。</td></tr>
+            <tr><td><code>x.emp_id=e.emp_id</code></td><td><code>expense</code> 与员工绑定的普通 join。</td></tr>
+            <tr><td><code>x.fiscal_year=d.fiscal_year</code></td><td>费用 join 同时携带部门年度键。</td></tr>
+            <tr><td>每名员工 <code>SUM(x.amount)&gt;10000</code></td><td>三键 group by 后过滤 <code>annual_spend</code>。</td></tr>
+            <tr><td>每部门 <code>COUNT(*)&gt;=3</code></td><td>部门年度 group by 后过滤 <code>qualified_employee_count</code>。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><span class="result">对本页数据，结果仍为 D10</span></p>
+    </section>
+
+    <section id="boundaries">
+      <h2>10. 正确实现必须守住的语义边界</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>边界</th><th>准确口径</th><th>本例为何看起来简单</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>NULL-safe 回接</td>
+              <td>论文的 <code>IS</code> 语义要求 NULL 作为可匹配的专门值；落到 SQL 时通常用 <code>IS NOT DISTINCT FROM</code> 回接 outer reference 与代表列，不能无条件换成普通 <code>=</code>。</td>
+              <td>主线关联键均为 <code>NOT NULL</code>，所以示例 SQL 中 <code>=</code> 足够；这不是通用证明。</td>
+            </tr>
+            <tr>
+              <td><code>D</code> duplicate-free</td>
+              <td><code>D := δ(π<sub>outerRefs</sub>(L))</code> 必须去重，相关下推等价式依赖这个性质。它只去重绑定域，不等于给最终查询加 <code>DISTINCT</code>。</td>
+              <td><code>binding_domain</code> 用 <code>SELECT DISTINCT</code> 明示该要求；最终投影仍由未去重的 <code>filtered_department</code> 驱动，以保留外层 bag multiplicity。</td>
+            </tr>
+            <tr>
+              <td>static aggregate 的空输入</td>
+              <td>无分组键的 <code>COUNT</code>/<code>SUM</code> 等静态聚合即使输入为空，也有“产生一行聚合结果”的 SQL 语义；通用改写可能需要 outer join 或 group join 来保住这行。</td>
+              <td>费用为空时，原查询的 <code>SUM</code> 为 NULL，<code>NULL&gt;10000</code> 不成立。若某部门没有合格员工，原外层 <code>COUNT(*)=0</code>；<code>qualified</code> CTE 则没有该部门组。因为本查询的 <code>0&gt;=3</code> 为 false，最终 inner join 同样排除该部门，所以这里仍等价；若谓词接受 0 或需要投影聚合值，就不能据此省略通用规则。</td>
+            </tr>
+            <tr>
+              <td>IA 与正确性</td>
+              <td>Indexed Algebra 是让 source/LCA/path 查询更快的性能基础设施，不是 unnesting 正确性的前提。</td>
+              <td>较慢的计划遍历、自由列集合与 source 映射同样可以识别相关访问。</td>
+            </tr>
+            <tr>
+              <td>识别条件的精确写法</td>
+              <td>课程 PPT 第 55 页写成 <code>o1 != o2</code> 不够严谨；论文需要的条件是 <code>LCA(o_access,o_source) != o_access</code>。</td>
+              <td>本地 scan 与 selection 本来就常是不同算子，直接比较身份会误报。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">不要补写不存在的定理</p>
+        <p>本页只陈述论文给出的算法条件、等价改写边界与成本动机；它不把 IA 的复杂度、Holistic 的经验效果或某个教学例子包装成新的 theorem，也不声称 2015 方法产生错误结果。</p>
+      </div>
+    </section>
+
+    <section id="reading-map">
+      <h2>11. 阅读地图与一页术语链</h2>
+      <p>建议先把“计划索引如何回答 LCA”与“unnesting 如何使用分析结果”分开阅读，再回到 2015 的绑定域背景。页码按 PDF 页计。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>顺序</th><th>材料</th><th>精读范围</th><th>带着什么问题读</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td><a href="https://www.vldb.org/pvldb/vol16/p3018-fent.pdf">2023 Indexed Algebra PDF</a></td>
+              <td>pp. 2–6，§2–§4.2</td>
+              <td>operator、expression、IU、source/consumer 怎样组成可查询的数据流？动态计划怎样回答 LCA/路径？</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><a href="../paper/UnnestQuery-btw2025.pdf">2025 Improving Unnesting of Complex Queries</a></td>
+              <td>pp. 6–16，§2.3、§3.1–§3.3</td>
+              <td>bottom-up 的无效域组合从哪里来？<code>accessing</code> 如何识别？<code>outerRefs</code>、<code>parent</code>、<code>cclasses</code>、<code>repr</code> 怎样协作？</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><a href="https://arxiv.org/abs/2412.04294">2024 formalization</a></td>
+              <td>定义、语义与等价改写部分</td>
+              <td>把教学直觉落回形式化的自由变量、dependent join 与等价条件，尤其检查 NULL 与多重集边界。</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><a href="../paper/UnnestQuery-btw2015.pdf">本地 2015 论文</a></td>
+              <td>作为绑定域与下推规则的背景回读</td>
+              <td><code>D</code> 为什么去重？何时保留 D、何时 substitution？为什么 2025 是改进中间计划，而不是推翻正确性？</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>11.1 一页总结</h3>
+      <pre><code>SQL 相关列引用
+  → consumer expression 读取一个 IU
+  → IU 的唯一 source 在哪里？
+  → 计算 LCA(o_access, o_source)
+  → 若 LCA != o_access，定位负责绑定的 dependent join
+  → 汇总 accessing(join)
+  → top-down 启动 outerRefs，并用 parent 保留嵌套层次
+  → 从等值谓词积累 cclasses
+  → 成本选择：显式 D 或 substitution/repr
+  → 返回路径重写谓词、group keys 与回接条件
+  → 得到只含 ordinary join/group-by 的计划</code></pre>
+
+      <div class="pill-row">
+        <span class="pill">IU：计划里的命名信息项</span>
+        <span class="pill">source：唯一的定义位置</span>
+        <span class="pill">consumer：一个或多个引用位置</span>
+        <span class="pill">LCA：跨分支绑定边界</span>
+        <span class="pill">accessing：真正读取外层列的位置</span>
+        <span class="pill">outerRefs：当前待绑定列</span>
+        <span class="pill">cclasses：等价列集合</span>
+        <span class="pill">repr：代表列替换</span>
+        <span class="pill">D：去重绑定域</span>
+      </div>
+
+      <div class="good">
+        <p class="callout-title">最后只记一句</p>
+        <p>Indexed Algebra 回答“相关引用跨过了哪个计划边界”；Holistic Query Unnesting 利用这个答案，在保持父子绑定关系的前提下决定“在哪里加入 D，或用哪个 RHS 列替换 outer reference”。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>本页是 2025 论文 §3 的独立中文详解，所有计划结构、LCA 路径、状态迁移与绑定域组合均以可搜索文本呈现。</p>
+      <p><a href="nested-sql-unnesting-tutorial.html#paper-2025">返回《嵌套 SQL 优化入门》的 2025 论文章节</a></p>
+    </div>
+  </footer>
+</body>
+</html>

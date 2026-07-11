@@ -2,11 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
-**Goal:** 新增一篇以具体数据和原创 TikZ 图逐步解释 Indexed Algebra 如何支撑 2025 Holistic Query Unnesting 的中文 HTML，并与现有教程双向接入。
+**Goal:** 新增一篇以具体数据、文本代数树和状态表逐步解释 Indexed Algebra 如何支撑 2025 Holistic Query Unnesting 的中文 HTML，并与现有教程双向接入。
 
-**Architecture:** 保持 unnset/docs 现有的纯静态 HTML 形态。六幅图以独立 TikZ 源维护，由 Python 调用 TinyTeX 编译为 PDF，再用 PyMuPDF 生成 SVG；正文以一个 department/employee/expense 主例贯穿，并用 HTML 表格保留所有关键事实的文本等价物。
+**Architecture:** 保持 unnset/docs 现有的纯静态 HTML 形态。正文以一个 department/employee/expense 主例贯穿，使用 HTML 表格和文本代数树表达所有关键事实，不依赖图片或浏览器脚本。
 
-**Tech Stack:** HTML5、内联 CSS、LaTeX/TikZ、TinyTeX latexmk、Python 3、PyMuPDF、HTML Validate。
+**Tech Stack:** HTML5、内联 CSS、Python 3 文档审计、HTML Validate。
+
+> **执行修订（2026-07-11）：** 用户要求暂时不处理画图问题。Task 1 的既有脚手架保留但本阶段不再修改或验收；Task 2 整体延期。当前执行从 Task 3 开始，页面不引用新 SVG；Task 5 只验证 HTML、链接、fragment、alt 与事实准确性。
 
 ---
 
@@ -14,13 +16,9 @@
 
 - Create: unnset/docs/holistic-query-unnesting-indexed-algebra.html — 独立中文详解页面。
 - Modify: unnset/docs/nested-sql-unnesting-tutorial.html — 增加双向入口并修复裸 &。
-- Create: unnset/docs/figures/.gitignore — 排除 LaTeX 中间产物。
-- Create: unnset/docs/figures/holistic-style.tex — 六图共享 TikZ 样式。
-- Create: unnset/docs/figures/render.py — 批量编译 LaTeX 并生成 SVG。
-- Create: unnset/docs/figures/holistic-01-scope-plan.tex through holistic-06-final-plan.tex — 六幅图源。
-- Create: unnset/docs/assets/holistic-01-scope-plan.svg through holistic-06-final-plan.svg — 六幅生成图。
+- Deferred: unnset/docs/figures 与新 SVG 资产 — 本阶段不继续修改或接入页面。
 
-## Task 1: 建立并验证 TikZ 图生成链
+## Task 1: 建立并验证 TikZ 图生成链（本阶段停止）
 
 **Files:**
 
@@ -144,7 +142,7 @@ Expected: PASS，无输出。
     git diff --cached --check
     git commit -m "docs: add TikZ figure rendering pipeline"
 
-## Task 2: 绘制六幅原创 LaTeX 图并生成 SVG
+## Task 2: 绘制六幅原创 LaTeX 图并生成 SVG（延期）
 
 **Files:**
 
@@ -282,7 +280,7 @@ Hero 必须反链 nested-sql-unnesting-tutorial.html#paper-2025，source box 必
 - 每次 LCA 摊还 O(log n)，总识别阶段 O(m log n)；
 - 没有 Indexed Algebra 时仍可较慢地得到相同信息。
 
-引用 holistic-01-scope-plan.svg、holistic-02-lca-accessing.svg，并给出非空 alt 与教学型 figcaption。
+作用域计划和 LCA 路径使用带清晰文本标签的 `<pre>` 代数树与 HTML 表格表达，不引用新图片。
 
 - [ ] **Step 4: 写完 2015 放大与 top-down trace**
 
@@ -296,7 +294,7 @@ Hero 必须反链 nested-sql-unnesting-tutorial.html#paper-2025，source box 必
 - 最终无相关 SQL/CTE 形状和普通代数计划；
 - 两层 group-by 为什么必须带上绑定键。
 
-引用 holistic-03-binding-blowup.svg 至 holistic-06-final-plan.svg。
+绑定域组合、top-down trace、成本选择和最终计划使用 HTML 表格、并排 callout 与 `<pre>` 文本树表达，不引用新图片。
 
 - [ ] **Step 5: 写完边界与阅读地图**
 
@@ -317,7 +315,6 @@ Run:
 
     page=unnset/docs/holistic-query-unnesting-indexed-algebra.html
     test "$(rg -o '<section id="[^"]+"' "$page" | wc -l)" -eq 11
-    test "$(rg -o '<img [^>]*alt="[^"]+"' "$page" | wc -l)" -eq 6
     for id in concept-split running-example indexed-model lca accessing \
       bottom-up-cost holistic-trace domain-or-repr final-plan boundaries reading-map; do
       rg -q -F "id=\"$id\"" "$page"
@@ -373,25 +370,13 @@ Expected: PASS。
     git diff --cached --check
     git commit -m "docs: link indexed algebra deep dive"
 
-## Task 5: 完整文档验收与事实复核
+## Task 5: 完整 HTML 文档验收与事实复核
 
 **Files:**
 
 - Verify: unnset/docs/*.html
-- Verify: unnset/docs/figures/*
-- Verify: unnset/docs/assets/holistic-*.svg
 
-- [ ] **Step 1: 从干净中间目录重建六图**
-
-Run:
-
-    rm -rf unnset/docs/figures/build
-    python unnset/docs/figures/render.py
-    python -m py_compile unnset/docs/figures/render.py
-
-Expected: 六图均显示 rendered，Python 检查退出码 0。
-
-- [ ] **Step 2: 校验 SVG、HTML fragment、本地资源、重复 ID 和 alt**
+- [ ] **Step 1: 校验 HTML fragment、本地资源、重复 ID 和 alt**
 
 Run:
 
@@ -399,7 +384,6 @@ Run:
     from html.parser import HTMLParser
     from pathlib import Path
     from urllib.parse import urlsplit
-    from xml.etree import ElementTree
 
     class Audit(HTMLParser):
         def __init__(self):
@@ -433,16 +417,12 @@ Run:
                 other.feed(target.read_text(encoding="utf-8"))
                 assert parsed.fragment in other.ids, f"missing fragment {ref}"
 
-    svgs = sorted((docs / "assets").glob("holistic-[0-9][0-9]-*.svg"))
-    assert len(svgs) == 6
-    for svg in svgs:
-        ElementTree.parse(svg)
-    print("document audit passed: 6 SVG figures")
+    print("document audit passed")
     PY
 
-Expected: document audit passed: 6 SVG figures。
+Expected: document audit passed。
 
-- [ ] **Step 3: 运行 HTML5 validator 和 diff 检查**
+- [ ] **Step 2: 运行 HTML5 validator 和 diff 检查**
 
 Run:
 
@@ -452,7 +432,7 @@ Run:
 
 Expected: HTML Validate 0 errors，git diff --check 无输出。
 
-- [ ] **Step 4: 逐条事实复核**
+- [ ] **Step 3: 逐条事实复核**
 
 对照设计说明检查并记录：
 
@@ -465,9 +445,9 @@ Expected: HTML Validate 0 errors，git diff --check 无输出。
     [ ] D 与 repr 明确是成本选择
     [ ] NULL-safe、duplicate-free、static aggregate 条件均存在
 
-若任一项不满足，修改 HTML 后重新执行 Steps 1–3。
+若任一项不满足，修改 HTML 后重新执行 Steps 1–2。
 
-- [ ] **Step 5: 检查版本控制结果**
+- [ ] **Step 4: 检查版本控制结果**
 
 Run:
 
@@ -475,4 +455,4 @@ Run:
     git status --short
     git diff HEAD^ --check
 
-Expected: 能看到设计、生成链、图、页面和导航的独立提交；工作树干净。
+Expected: 能看到设计、计划、页面和导航的独立提交；工作树干净。

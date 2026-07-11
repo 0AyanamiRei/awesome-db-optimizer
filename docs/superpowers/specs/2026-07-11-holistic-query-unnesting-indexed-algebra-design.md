@@ -125,6 +125,8 @@ Da x Db     = {(1,x), (1,y), (2,x), (2,y)}
 
 ## 图示设计
 
+> **当前阶段调整（2026-07-11）：** 用户要求暂时不处理画图问题。本节保留为未来阶段设计，但不属于当前 HTML 交付范围。当前页面不得依赖 TikZ/SVG；所有计划、LCA、状态迁移和绑定域组合均使用可搜索的 HTML 表格与文本代数树表达。已经存在的渲染脚手架不在本阶段继续修改或作为完成依据。
+
 所有新图均为原创 TikZ 图，使用新的业务例子、节点名、配色和版面；只借鉴论文的白底、细线、数学字体和稀疏代数树风格。不得描摹原论文 Figure 1/2/6，也不得复用其 `T1/T2/T3` 构图。
 
 LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/assets`。图注在 HTML 中写明“概念依据”及论文小节，不声称是论文图重绘。
@@ -145,7 +147,7 @@ LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/
 - 可独立编译的 `.tex`；
 - 不依赖浏览器脚本的 SVG 输出。
 
-## LaTeX 生成路线
+## LaTeX 生成路线（未来阶段）
 
 使用本机已有 TinyTeX、`latexmk`、TikZ 与 PyMuPDF，不安装额外系统包：
 
@@ -169,7 +171,7 @@ LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/
 
 ## 可访问性与失败处理
 
-- 所有图在 SVG 加载失败时仍可从正文表格和文字理解；图不能承载唯一事实。
+- 当前阶段不嵌入新图；计划结构和状态迁移必须完全由正文、表格和文本树表达。
 - 每个表格提供明确表头；颜色之外再使用线型、标签或符号区分状态。
 - sticky 导航在小屏横向滚动，六幅大图在 860px 以下单列显示。
 - 外部论文链接只作延伸阅读；核心内容和本地 2015/2025 PDF 链接可以离线访问。
@@ -177,11 +179,8 @@ LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/
 
 ## 验证范围
 
-本任务只修改 HTML、TikZ、SVG、Python 渲染辅助脚本和设计/计划文档，不触及 C++ 或可执行 demo，因此只运行文档级验证：
+当前阶段只修改 HTML 与设计/计划文档，不继续修改 TikZ、SVG 或 Python 渲染辅助脚本，也不触及 C++ 或可执行 demo，因此只运行 HTML 文档级验证：
 
-- 六幅 `.tex` 从干净的 build 目录重新编译并生成 SVG；
-- Python 语法检查；
-- SVG XML 解析；
 - HTML5 validation；
 - 所有本地 `src`/`href` 资源存在；
 - 页面内 fragment 对应现有 `id`；
@@ -197,6 +196,6 @@ LaTeX 源文件放入 `unnset/docs/figures`，生成的 SVG 放入 `unnset/docs/
 - 新页面可以让读者不先读 2023 Indexed Algebra 全文，也能准确推导 2025 Figure 2 式 `accessing` 标注。
 - 主例从 SQL、数据、计划、LCA、状态 trace 一直推到无 dependent join 的最终计划，中间没有跳步。
 - 至少两个例子包含具体输入关系和中间/最终关系，而不只是符号树。
-- 六幅图均有 LaTeX 源和可嵌入 HTML 的 SVG。
+- 即使没有新图，所有例子仍可通过具体关系数据、HTML 表格和文本代数树完整推演。
 - 页面准确区分 Indexed Algebra、Holistic Unnesting 和成本选择。
 - 新旧页面双向可达，所有文档级检查通过。

@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -398,7 +398,7 @@
       </div>
       <aside class="source-box">
         <strong>阅读材料</strong>
-        <div>Neumann & Kemper, <em>Unnesting Arbitrary Queries</em>, BTW 2015</div>
+        <div>Neumann &amp; Kemper, <em>Unnesting Arbitrary Queries</em>, BTW 2015</div>
         <div>Neumann, <em>Improving Unnesting of Complex Queries</em>, BTW 2025</div>
         <div>Andy Pavlo, <em>Unnesting Queries</em>, Spring 2025 PPT</div>
       </aside>
@@ -409,6 +409,7 @@
         <a href="#dependent-join">Dependent Join</a>
         <a href="#paper-2015">2015 算法</a>
         <a href="#paper-2025">2025 改进</a>
+        <a href="holistic-query-unnesting-indexed-algebra.html">2025 深入</a>
         <a href="#complex-sql">复杂 SQL</a>
         <a href="#pitfalls">易错点</a>
         <a href="#reading-path">学习路线</a>
@@ -818,6 +819,10 @@ WHERE EXISTS (
         <figcaption>2025 论文第 8 页 Figure 2：示例中 <code>accessing(⧑1) = {σ6, σ9}</code>，<code>accessing(⧑5) = {σ9}</code>。</figcaption>
       </figure>
 
+      <div class="note">
+        <a href="holistic-query-unnesting-indexed-algebra.html#indexed-model">单独阅读：从 IU、LCA 到 accessing 的完整推导</a>
+      </div>
+
       <p>这一步的意义是让算法知道“到底哪些算子在读外层列”。后续 unnesting 不再盲目把每个绑定域穿过所有位置，而是沿着 <code>accessing</code> 指出的路径推进。</p>
 
       <h3>4.6 Eliminating Dependent Joins：先 simple，再 full</h3>
@@ -1058,6 +1063,7 @@ WHERE rn BETWEEN offset + 1 AND offset + limit;</code></pre>
   <footer>
     <div class="wrap">
       <p>本文档依据本仓库 <code>unnset/paper</code> 下三份材料整理。图示截图来自对应 PDF 页面，文字说明为教学化转述。</p>
+      <p>可继续阅读 <a href="holistic-query-unnesting-indexed-algebra.html">Indexed Algebra / Holistic 详细推导</a>。</p>
     </div>
   </footer>
 </body>

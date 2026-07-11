@@ -8,7 +8,7 @@
 
 **Tech Stack:** HTML5、内联 CSS、Python 3 文档审计、HTML Validate。
 
-> **执行修订（2026-07-11）：** 用户要求暂时不处理画图问题。Task 1 的既有脚手架保留但本阶段不再修改或验收；Task 2 整体延期。当前执行从 Task 3 开始，页面不引用新 SVG；Task 5 只验证 HTML、链接、fragment、alt 与事实准确性。
+> **执行修订（2026-07-11）：** 用户要求暂时不处理画图问题。Task 1 的实验性渲染脚手架已从本阶段最终变更移除；Task 1 与 Task 2 整体延期。当前执行从 Task 3 开始，页面不引用新 SVG；Task 5 只验证 HTML、链接、fragment、alt 与事实准确性。
 
 ---
 

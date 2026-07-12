@@ -331,6 +331,26 @@
       font-weight: 800;
     }
 
+    .plan-figure {
+      margin: 20px 0;
+    }
+
+    .plan-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .plan-figure figcaption {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
     footer {
       padding: 30px 0 50px;
       border-top: 1px solid var(--line);
@@ -554,6 +574,10 @@ WHERE d.region='EAST'
 
       <h3>2.3 规范代数树：先保留相关性</h3>
       <p><code>R_D/R_E/R_X</code> 是三张表的 scan operator，<code>S_D/S_E/S_X</code> 是各自上方的 selection operator，<code>G_E</code> 与 <code>G_X</code> 是两层 group-by operator；<code>J_D</code> 与 <code>J_E</code> 是两层 dependent join。每个名字只指一个真实算子。这里先忠实表示 SQL 语义，还没有做 unnesting。</p>
+      <figure class="plan-figure">
+        <img src="assets/holistic-two-level-correlated-algebra-tree.png" alt="department、employee 与 expense 构成的两层相关聚合规范代数树；红、绿、蓝分别标出部门、员工和费用层的字段引用。">
+        <figcaption>图 2：运行例在 unnesting 前的规范代数树。颜色标出相关字段来自哪一层绑定。</figcaption>
+      </figure>
       <pre><code>π[d.dept_id]
 └─ σ[qualified_employee_count &gt;= 3]
    └─ J_D  dependent join
@@ -622,11 +646,19 @@ J_D
        └─ S_X
           └─ R_X
 
-IU source → reference 链接（数据流）
-R_D 定义 d.fiscal_year ─────────────────→ S_X 中的引用
-R_E 定义 e.emp_id       ────────────────→ S_X 中的引用
-R_X 定义 x.amount       ────────────────→ G_X 中的引用</code></pre>
-      <p>parent/child 边说“哪个算子以哪个子计划为输入”；source→reference 链接说“某个表达式读到的 IU 在哪里定义”。相关引用恰恰会让后一种链接跨越 sibling branch，因此不能只沿计划 child 指针猜列来源。</p>
+IU source → consumer operator 链接（数据流）
+R_D.d.region                    ─────────→ S_D
+R_D.d.dept_id                   ─────────→ S_E
+R_D.d.dept_id                   ─────────→ π[d.dept_id]
+R_D.d.fiscal_year               ─────────→ S_X
+R_E.e.dept_id                   ─────────→ S_E
+R_E.e.emp_id                    ─────────→ S_X
+R_X.x.emp_id                    ─────────→ S_X
+R_X.x.fiscal_year               ─────────→ S_X
+R_X.x.amount                    ─────────→ G_X
+G_X.annual_spend                ─────────→ J_E
+G_E.qualified_employee_count    ─────────→ J_D</code></pre>
+      <p>parent/child 边说“哪个算子以哪个子计划为输入”；source→consumer operator 链接说“哪个算子中的表达式读取了由何处定义的 IU”。相关引用恰恰会让后一种链接跨越 sibling branch，因此不能只沿计划 child 指针猜列来源。</p>
 
       <div class="note">
         <p class="callout-title">动态树只当黑盒使用</p>
@@ -650,17 +682,27 @@ R_X 定义 x.amount       ────────────────→ G_
         </div>
       </div>
 
+      <figure class="plan-figure">
+        <img src="assets/indexed-algebra-lca-j-equals-access.png" alt="本地 IU 数据流示例：R_X 定义 x.amount，G_X 访问 x.amount，二者的最低公共祖先就是 G_X，因此 j 等于 o_access。">
+        <figcaption>图 3：<code>j = o_access</code>。source 位于 consumer 的输入子树中，这是普通的本地数据流。</figcaption>
+      </figure>
+
       <h3>4.1 逐步看一个跨分支引用</h3>
-      <p>以 <code>S_E</code> 中的 <code>d.dept_id</code> 为例：</p>
+      <p>以 <code>S_X</code> 中的 <code>d.fiscal_year</code> 为例：</p>
       <ol>
-        <li><code>o_access = S_E</code>，因为员工侧谓词在这里读取 <code>d.dept_id</code>。</li>
+        <li><code>o_access = S_X</code>，因为费用侧年度谓词在这里读取 <code>d.fiscal_year</code>。</li>
         <li><code>o_source = R_D</code>，即部门侧产生该 IU 的位置。</li>
-        <li>从 <code>S_E</code> 向根走，会经过员工计数子树再到 <code>J_D</code>；从 <code>R_D</code> 向根走，则先经过它的 parent <code>S_D</code>，再到 <code>J_D</code>。</li>
-        <li>两条路径第一次相遇于 <code>J_D</code>，所以 <code>LCA(S_E,R_D)=J_D</code>。</li>
-        <li>因为 <code>J_D != S_E</code>，把 <code>S_E</code> 加入 <code>accessing(J_D)</code>。</li>
+        <li>从 <code>S_X</code> 向根走，会经过 <code>G_X</code>、<code>J_E</code> 与 <code>G_E</code> 再到 <code>J_D</code>；从 <code>R_D</code> 向根走，则先经过它的 parent <code>S_D</code>，再到 <code>J_D</code>。</li>
+        <li>两条路径第一次相遇于 <code>J_D</code>，所以 <code>LCA(S_X,R_D)=J_D</code>。</li>
+        <li>因为 <code>J_D != S_X</code>，把 <code>S_X</code> 加入 <code>accessing(J_D)</code>。</li>
       </ol>
 
-      <pre><code>访问路径：S_E ─────→ ... ──→ J_D ──→ root
+      <figure class="plan-figure">
+        <img src="assets/indexed-algebra-lca-j-not-equals-access.png" alt="跨分支 IU 数据流示例：R_D 定义 d.fiscal_year，S_X 跨分支访问它，二者的最低公共祖先是 J_D，因此 j 不等于 o_access。">
+        <figcaption>图 4：<code>j != o_access</code>。source 与 consumer 位于不同分支，最低公共祖先 <code>J_D</code> 负责提供部门绑定。</figcaption>
+      </figure>
+
+      <pre><code>访问路径：S_X ─────→ ... ──→ J_D ──→ root
 来源路径：R_D ──→ S_D ─────→ J_D ──→ root
                               ↑
                        第一个公共祖先</code></pre>

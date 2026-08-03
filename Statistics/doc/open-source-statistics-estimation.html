@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>开源数据库 Statistics / Estimates / Sampling：Doris 源码精讲与横向比较</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f5f8fa;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-dark: #0f5167;
+      --orange: #8a5a12;
+      --green: #3f6b4b;
+      --purple: #6941c6;
+      --red: #a23b32;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --note-bg: #f2f7fb;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --bad-bg: #fff0ed;
+      --purple-bg: #f5f1ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+      line-height: 1.72;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    a:focus-visible,
+    summary:focus-visible {
+      outline: 3px solid #72b7cf;
+      outline-offset: 3px;
+    }
+
+    .wrap {
+      width: min(1160px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero {
+      padding: 48px 0 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 38px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4.5vw, 50px);
+      line-height: 1.1;
+      letter-spacing: -.025em;
+    }
+
+    .hero .lead {
+      max-width: 800px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      border: 1px solid var(--line);
+      background: #f6fbfd;
+      padding: 17px;
+      border-radius: 9px;
+      font-size: 14px;
+    }
+
+    .source-box strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .source-box div + div {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid #dde9ee;
+    }
+
+    nav {
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: rgba(255, 255, 255, .97);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 9px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      color: var(--accent);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: #ffffff;
+    }
+
+    nav a.companion {
+      border-color: #b9a8e8;
+      color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    main {
+      padding: 34px 0 62px;
+    }
+
+    section {
+      scroll-margin-top: 82px;
+      margin: 0 0 38px;
+      padding: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 28px;
+      line-height: 1.24;
+      letter-spacing: -.012em;
+    }
+
+    h3 {
+      margin: 29px 0 10px;
+      font-size: 21px;
+      line-height: 1.32;
+    }
+
+    h4 {
+      margin: 21px 0 8px;
+      color: var(--accent);
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code,
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      background: #111827;
+      color: #e7edf5;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    pre code {
+      color: inherit;
+      background: transparent;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    .grid-2,
+    .grid-3,
+    .grid-4 {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    .card h3,
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .card .lane-number {
+      display: inline-grid;
+      width: 31px;
+      height: 31px;
+      margin-bottom: 9px;
+      border-radius: 50%;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      font-weight: 800;
+    }
+
+    .note,
+    .warning,
+    .good,
+    .bad,
+    .purple-note {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .note {
+      background: var(--note-bg);
+      border-color: #c8dce7;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border-color: #eed58d;
+    }
+
+    .good {
+      background: var(--good-bg);
+      border-color: #b8dfc4;
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      border-color: #efb3a8;
+    }
+
+    .purple-note {
+      background: var(--purple-bg);
+      border-color: #cabcf0;
+    }
+
+    .callout-title {
+      margin: 0 0 6px;
+      font-weight: 800;
+    }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 17px;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+      overflow-x: auto;
+    }
+
+    .formula.purple {
+      border-left-color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    .formula .label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .equation {
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 16px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    caption {
+      padding: 0 0 8px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3f5;
+    }
+
+    th[scope="row"] {
+      background: #fbfcfd;
+      font-weight: 700;
+    }
+
+    td.number,
+    th.number {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .system-table {
+      min-width: 1050px;
+    }
+
+    .audit-table {
+      min-width: 1120px;
+      font-size: 13px;
+    }
+
+    .audit-table td:first-child,
+    .audit-table td:nth-child(2) {
+      white-space: nowrap;
+    }
+
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .diagram-scroll {
+      padding: 14px;
+      overflow-x: auto;
+      background: #fbfcfd;
+    }
+
+    .diagram-scroll:focus-visible {
+      outline: 3px solid #72b7cf;
+      outline-offset: -4px;
+    }
+
+    .diagram {
+      display: block;
+      width: 100%;
+      min-width: 820px;
+      height: auto;
+    }
+
+    .diagram text {
+      fill: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+    }
+
+    .diagram .muted {
+      fill: var(--muted);
+    }
+
+    .diagram .inverse {
+      fill: #ffffff;
+    }
+
+    .diagram .danger {
+      fill: var(--red);
+    }
+
+    .diagram .accent-text {
+      fill: var(--accent);
+    }
+
+    .diagram .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    figcaption {
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .source-ref {
+      display: inline-block;
+      white-space: nowrap;
+      margin-left: .25em;
+      padding: 1px 7px;
+      border: 1px solid #bfcdd4;
+      border-radius: 999px;
+      color: #315b69;
+      background: #f6fbfd;
+      font-size: 12px;
+      vertical-align: .08em;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 4px;
+    }
+
+    .pill,
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid #c8d8df;
+      background: #f7fbfc;
+      color: #245160;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .status.fact {
+      color: #245f37;
+      border-color: #a9d1b5;
+      background: var(--good-bg);
+    }
+
+    .status.inference {
+      color: #71490c;
+      border-color: #e3c670;
+      background: var(--warn-bg);
+    }
+
+    .status.unknown {
+      color: #7c3029;
+      border-color: #e1aaa4;
+      background: var(--bad-bg);
+    }
+
+    .steps {
+      counter-reset: lesson-step;
+    }
+
+    .step {
+      counter-increment: lesson-step;
+      position: relative;
+      padding-left: 48px;
+      margin: 18px 0;
+    }
+
+    .step::before {
+      content: counter(lesson-step);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 31px;
+      height: 31px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .snapshot {
+      border-left: 4px solid var(--purple);
+    }
+
+    .snapshot strong {
+      color: var(--purple);
+    }
+
+    .compare-tag {
+      display: inline-block;
+      min-width: 95px;
+      margin-right: 7px;
+      color: var(--accent-dark);
+      font-weight: 800;
+    }
+
+    details {
+      margin: 14px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 11px 14px;
+      font-weight: 800;
+    }
+
+    details > div {
+      padding: 0 14px 14px;
+    }
+
+    footer {
+      padding: 30px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+      font-size: 14px;
+    }
+
+    @media (max-width: 940px) {
+      .hero,
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 23px 18px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        width: min(100% - 24px, 1160px);
+      }
+
+      .hero {
+        padding-top: 30px;
+      }
+
+      table {
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Open-source optimizer source audit</p>
+        <h1>Statistics、GROUP BY Estimates 与 Sampling：Doris 源码精讲</h1>
+        <p class="lead">
+          同一个 “sample” 可以指统计收集时少读数据，也可以指用户查询只返回一部分数据；
+          同一个 “NDV” 可以是落盘摘要，也可以是优化器传播后的估计值。
+          本文用四条互不替代的路径拆解 Doris、PostgreSQL、DuckDB 与 ClickHouse，
+          再回答它们和 <em>Every Row Counts</em>、block-level sampling 论文究竟相似到哪一层。
+        </p>
+      </div>
+      <aside class="source-box">
+        <strong>源码调查快照 · 2026-08-03</strong>
+        <div><strong>Doris（精讲）</strong><code>68f54696ee86</code> · official master</div>
+        <div><strong>PostgreSQL</strong><code>36f7330b8b22</code> · 20devel</div>
+        <div><strong>DuckDB</strong><code>3958a013eda8</code> · main</div>
+        <div><strong>ClickHouse</strong><code>7039251dbe2d</code> · 26.8.1.1-testing</div>
+      </aside>
+    </div>
+    <nav aria-label="页内目录">
+      <div class="wrap">
+        <a href="#scope">四条路径</a>
+        <a href="#matrix">横向总表</a>
+        <a href="#doris-overview">Doris 全链路</a>
+        <a href="#doris-collection">Doris 收集</a>
+        <a href="#doris-storage">Doris 存储</a>
+        <a href="#doris-estimator">Doris GROUP BY</a>
+        <a href="#doris-query-sample">Doris TABLESAMPLE</a>
+        <a href="#postgres">PostgreSQL</a>
+        <a href="#duckdb">DuckDB</a>
+        <a href="#clickhouse">ClickHouse</a>
+        <a href="#papers">论文边界</a>
+        <a href="#roadmap">可借鉴路线</a>
+        <a href="#audit">Source audit</a>
+        <a href="group-by-cardinality-estimation-tutorial.html" class="companion">返回主教程</a>
+        <a href="block-level-sampling-sigmod2004-notes.html" class="companion">Block Sampling 专题</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="scope">
+      <h2>0. 先画边界：四条路径不能靠同名术语串起来</h2>
+      <p>
+        阅读生产系统时，最常见的偏移不是某个公式抄错，而是把一个层次的实现当成另一个层次的证据。
+        下面四条路径可以交换数据，但入口、状态和正确性问题都不同。
+      </p>
+
+      <div class="grid-4">
+        <div class="card">
+          <span class="lane-number">1</span>
+          <h4>Statistics collection</h4>
+          <p><code>ANALYZE</code> 或后台任务怎样选 table、tablet、block、row，怎样从样本外推 NDV/null count。</p>
+        </div>
+        <div class="card">
+          <span class="lane-number">2</span>
+          <h4>Statistics storage</h4>
+          <p>持久化的是 numeric NDV、HLL state、MCV、histogram，还是只保存在内存中的 zonemap。</p>
+        </div>
+        <div class="card">
+          <span class="lane-number">3</span>
+          <h4>Optimizer estimate</h4>
+          <p>逻辑 <code>Aggregate</code> 如何把 child rows 与 grouping-column statistics 变成 output row count。</p>
+        </div>
+        <div class="card">
+          <span class="lane-number">4</span>
+          <h4>Query sampling</h4>
+          <p>用户写下 <code>TABLESAMPLE</code> / <code>SAMPLE</code> 后，执行器实际跳过何种存储单位。</p>
+        </div>
+      </div>
+
+      <figure>
+        <div class="diagram-scroll" role="region" tabindex="0" aria-label="可横向滚动：数据库统计与采样的四条独立路径图">
+          <svg class="diagram" viewBox="0 0 1080 560" role="img"
+               aria-labelledby="four-lanes-title four-lanes-desc">
+            <title id="four-lanes-title">数据库统计与采样的四条独立路径</title>
+            <desc id="four-lanes-desc">
+              图中从上到下分别是统计收集、统计存储、优化器估算和查询级采样。
+              统计收集写入统计存储，优化器读取统计存储；查询级采样从用户 SQL 直接进入扫描，
+              不自动写入统计存储，也不等于统计收集算法。
+            </desc>
+            <defs>
+              <marker id="arrow-lanes" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+                <path d="M0,0 L9,3.5 L0,7 Z" fill="#426b78"/>
+              </marker>
+              <pattern id="stripe-lanes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="8" height="8" fill="#fff7df"/>
+                <rect width="3" height="8" fill="#f3dfa7"/>
+              </pattern>
+            </defs>
+
+            <rect x="18" y="22" width="1044" height="110" rx="12" fill="#f2f7fb" stroke="#9fc3d2"/>
+            <rect x="18" y="154" width="1044" height="92" rx="12" fill="#eef8f2" stroke="#9cc9aa"/>
+            <rect x="18" y="268" width="1044" height="110" rx="12" fill="#f5f1ff" stroke="#b9a8e8"/>
+            <rect x="18" y="400" width="1044" height="128" rx="12" fill="url(#stripe-lanes)" stroke="#d1ac55"/>
+
+            <circle cx="68" cy="76" r="24" fill="#176b87"/>
+            <text x="68" y="83" text-anchor="middle" font-size="20" class="inverse">1</text>
+            <text x="104" y="64" font-size="18" font-weight="700">Statistics collection</text>
+            <text x="104" y="89" font-size="13" class="muted">ANALYZE / auto collector</text>
+            <rect x="310" y="48" width="166" height="58" rx="8" fill="#fff" stroke="#9fc3d2"/>
+            <text x="393" y="72" text-anchor="middle" font-size="14" font-weight="700">选择物理数据</text>
+            <text x="393" y="92" text-anchor="middle" font-size="12" class="muted">full / row / block / tablet</text>
+            <rect x="570" y="48" width="188" height="58" rx="8" fill="#fff" stroke="#9fc3d2"/>
+            <text x="664" y="72" text-anchor="middle" font-size="14" font-weight="700">统计收集估计器</text>
+            <text x="664" y="92" text-anchor="middle" font-size="12" class="muted">DUJ1 / HLL / histogram</text>
+            <line x1="476" y1="77" x2="558" y2="77" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-lanes)"/>
+
+            <circle cx="68" cy="200" r="24" fill="#3f6b4b"/>
+            <text x="68" y="207" text-anchor="middle" font-size="20" class="inverse">2</text>
+            <text x="104" y="192" font-size="18" font-weight="700">Statistics storage</text>
+            <text x="104" y="216" font-size="13" class="muted">catalog / internal table / per-part file</text>
+            <rect x="470" y="173" width="360" height="55" rx="8" fill="#fff" stroke="#9cc9aa"/>
+            <text x="650" y="196" text-anchor="middle" font-size="14" font-weight="700">NDV · nulls · min/max · MCV · histogram · sketch state</text>
+            <text x="650" y="216" text-anchor="middle" font-size="12" class="muted">系统只保存其中一部分</text>
+            <line x1="664" y1="106" x2="664" y2="162" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-lanes)"/>
+
+            <circle cx="68" cy="322" r="24" fill="#6941c6"/>
+            <text x="68" y="329" text-anchor="middle" font-size="20" class="inverse">3</text>
+            <text x="104" y="310" font-size="18" font-weight="700">Optimizer estimate</text>
+            <text x="104" y="335" font-size="13" class="muted">logical Aggregate / GROUP BY</text>
+            <rect x="385" y="294" width="174" height="58" rx="8" fill="#fff" stroke="#b9a8e8"/>
+            <text x="472" y="319" text-anchor="middle" font-size="14" font-weight="700">读取列统计</text>
+            <text x="472" y="339" text-anchor="middle" font-size="12" class="muted">可能已被 filter/join 改写</text>
+            <rect x="654" y="294" width="218" height="58" rx="8" fill="#fff" stroke="#b9a8e8"/>
+            <text x="763" y="319" text-anchor="middle" font-size="14" font-weight="700">估算 group 数量</text>
+            <text x="763" y="339" text-anchor="middle" font-size="12" class="muted">输出 rows 给 cost / properties</text>
+            <line x1="559" y1="323" x2="642" y2="323" stroke="#6941c6" stroke-width="2" marker-end="url(#arrow-lanes)"/>
+            <path d="M650 228 L650 257 L472 257 L472 282" fill="none" stroke="#3f6b4b" stroke-width="2" marker-end="url(#arrow-lanes)"/>
+
+            <circle cx="68" cy="463" r="24" fill="#8a5a12"/>
+            <text x="68" y="470" text-anchor="middle" font-size="20" class="inverse">4</text>
+            <text x="104" y="451" font-size="18" font-weight="700">Query-facing sampling</text>
+            <text x="104" y="476" font-size="13" class="muted">SELECT … TABLESAMPLE / SAMPLE</text>
+            <rect x="385" y="430" width="174" height="66" rx="8" fill="#fff" stroke="#d1ac55"/>
+            <text x="472" y="457" text-anchor="middle" font-size="14" font-weight="700">解析用户语法</text>
+            <text x="472" y="478" text-anchor="middle" font-size="12" class="muted">percent / rows / seed</text>
+            <rect x="654" y="430" width="218" height="66" rx="8" fill="#fff" stroke="#d1ac55"/>
+            <text x="763" y="457" text-anchor="middle" font-size="14" font-weight="700">扫描时选择数据单位</text>
+            <text x="763" y="478" text-anchor="middle" font-size="12" class="muted">tuple / chunk / block / tablet</text>
+            <line x1="559" y1="463" x2="642" y2="463" stroke="#8a5a12" stroke-width="2" marker-end="url(#arrow-lanes)"/>
+
+            <path d="M925 411 L925 363" fill="none" stroke="#a23b32" stroke-width="2" stroke-dasharray="7 5"/>
+            <text x="925" y="432" text-anchor="middle" font-size="12" class="danger">不自动写 stats</text>
+            <text x="925" y="450" text-anchor="middle" font-size="12" class="danger">不自动变成 estimator</text>
+            <text x="540" y="546" text-anchor="middle" font-size="13" class="muted">同名 API 或同一种 sketch 只能说明复用了部件，不能证明四条路径相同。</text>
+          </svg>
+        </div>
+        <figcaption>
+          图 1：四条路径的合法连接。Statistics collection 可以写 storage，optimizer 可以读 storage；
+          query sampling 通常直接改变扫描范围，不能因为也叫 sample 就并入 ANALYZE。
+        </figcaption>
+      </figure>
+
+      <div class="warning">
+        <p class="callout-title">本文刻意不做的等同</p>
+        <p>
+          不把用户可调用的 <code>approx_count_distinct</code>、<code>uniq()</code> 当 optimizer statistics；
+          不把 “使用 HLL” 当成实现了 <em>Every Row Counts</em>；
+          不把 “选择 tablet/block” 当成已经实现 SIGMOD 2004 的 2PHASE 或 COLLAPSE。
+        </p>
+      </div>
+    </section>
+
+    <section id="matrix">
+      <h2>1. 四个系统的一页比较</h2>
+      <p>
+        表中 “未发现” 只约束本次固定 commit 的官方源码，不是对历史版本、扩展或未来实现的永久断言。
+        “join-order only” 则表示证据只落在 join reorder 的 relation-statistics 路径，不能外推为全优化器统一公式。
+      </p>
+      <div class="table-wrap">
+        <table class="system-table">
+          <caption>四个固定源码快照在 collection、storage、GROUP BY estimate 与 query sampling 四层的比较</caption>
+          <thead>
+            <tr>
+              <th scope="col">系统 / 快照</th>
+              <th scope="col">① Statistics collection</th>
+              <th scope="col">② Storage synopsis</th>
+              <th scope="col">③ GROUP BY estimate</th>
+              <th scope="col">④ Query sampling</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><strong>Doris</strong><br><code>68f54696ee86</code></th>
+              <td>
+                OLAP sampled analyze 先对目标 table/index 做无采样 min/max query，再按名称依次访问 partition、选择整 tablet；
+                普通列够量可提前停止，必要时再加 row <code>LIMIT</code>。
+                NDV 在 linear 与 DUJ1 间选择。默认 auto sample target 为 2<sup>22</sup> rows。
+              </td>
+              <td>
+                全局列统计保存 count、numeric NDV、null count、min/max、data size、hot values；
+                partition NDV 保存 HLL；histogram 单独存 sample rate 与 buckets。
+              </td>
+              <td>
+                通用 Nereids 路径。任一 key unknown → child/3；否则 NDV 降序后，
+                后续列乘 <code>NDVᵢ × 0.75^(i+1)</code>，最后 cap child rows。
+              </td>
+              <td>
+                OLAP <code>TABLESAMPLE</code> 按 partition/tablet 选择整 tablet；percent/rows 只是目标行数，
+                <code>REPEATABLE</code> seed 决定 seek。
+              </td>
+            </tr>
+            <tr>
+              <th scope="row"><strong>PostgreSQL</strong><br><code>36f7330b8b22</code></th>
+              <td>
+                <code>ANALYZE</code> 先均匀无放回选 block，再在已读 block 行上做 Vitter reservoir；
+                标量统计目标通常为 <code>300 × statistics_target</code>。
+              </td>
+              <td>NULL fraction、width、NDV、MCV+frequency、去除 MCV 后的等频 histogram、correlation；可选多列 extended NDV。</td>
+              <td>通用 <code>estimate_num_groups</code>；优先消费多列 NDV，剩余单列按 relation 组合并做 clamp / filtered-domain 调整。</td>
+              <td><code>BERNOULLI</code> 逐 tuple；<code>SYSTEM</code> 逐 block；支持 <code>REPEATABLE</code>。</td>
+            </tr>
+            <tr>
+              <th scope="row"><strong>DuckDB</strong><br><code>3958a013eda8</code></th>
+              <td>
+                append 增量 NDV 每 vector 取固定前缀，上限为标准 vector 的 10%、整数 30%；短 vector 可能全部纳入；
+                显式 <code>ANALYZE</code> 则全扫所选列并把所有值送入 HLL。
+              </td>
+              <td>类型相关 BaseStatistics（NULL 可能性、numeric/string min/max、string 长度等）+ HLL/sample count/total count；未发现 MCV/histogram。</td>
+              <td><span class="status unknown">join-order only</span> NDV 乘积 × <code>0.95^(k-1)</code>，再做 occupancy；无 usable key stats 回退 child/2。</td>
+              <td>
+                <code>SYSTEM</code>、<code>BERNOULLI</code>、<code>RESERVOIR</code>；SYSTEM percentage 下推时按 storage vector、
+                fallback 时按 DataChunk 全取/全弃；SYSTEM rows 在单位内做 systematic row selection 并加 LIMIT。
+              </td>
+            </tr>
+            <tr>
+              <th scope="row"><strong>ClickHouse</strong><br><code>7039251dbe2d</code></th>
+              <td>
+                MergeTree per-part builder 接收完整 column；部分 sketch 利用 sparse/low-cardinality 物理表示，但未发现独立 stats sampler；
+                当前默认 merge 时构建，insert 时不构建。
+              </td>
+              <td><code>basic</code>、<code>uniq</code>、<code>uniq_v2</code>、TDigest、Count-Min；这些是 sketch，不是 row sample。</td>
+              <td><span class="status unknown">join-order only</span> 假设 keys 独立并相乘 NDV，cap child；任一 key 缺失则回退 child rows。</td>
+              <td>MergeTree sampling-key 范围裁剪；确定性 <code>SAMPLE k/n/OFFSET</code>，聚合不自动校正。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="doris-overview">
+      <h2>2. Doris 主线：从 tablet sample 到 GROUP BY row count</h2>
+
+      <div class="snapshot note">
+        <p class="callout-title">固定版本，而不是“Doris 一直如此”</p>
+        <p>
+          本节只陈述 Apache Doris official master commit
+          <a href="https://github.com/apache/doris/commit/68f54696ee86543277917d54ca1179290380580e"><code>68f54696ee86543277917d54ca1179290380580e</code></a>
+          在 2026-08-03 的行为。统计代码演进较快，类名相同也应重新核对具体 commit。
+        </p>
+      </div>
+
+      <figure>
+        <div class="diagram-scroll" role="region" tabindex="0" aria-label="可横向滚动：Doris sampled analyze 与 GROUP BY 估算全链路图">
+          <svg class="diagram" viewBox="0 0 1120 650" role="img"
+               aria-labelledby="doris-pipeline-title doris-pipeline-desc">
+            <title id="doris-pipeline-title">Doris OLAP sampled analyze 与 GROUP BY 估算全链路</title>
+            <desc id="doris-pipeline-desc">
+              自动或显式 ANALYZE 为每列创建任务。OlapAnalysisTask 的 sample 分成两条支路：
+              第一条对该 task 指定的 table/index scope 做无采样 MIN/MAX query；第二条按名称依次访问 partition
+              并选择 tablet，普通列达到目标行数后可提前停止，必要时再增加 LIMIT，
+              再选择 linear 或 DUJ1 估计 NDV、null count 和 data size。结果写入内部统计表并进入缓存。
+              Nereids StatsCalculator 随后读取列统计，估算 GROUP BY 输出行数。
+              用户 TABLESAMPLE 走另一条从 SQL 到 OlapScanNode 的路径，不写统计表。
+            </desc>
+            <defs>
+              <marker id="arrow-doris" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+                <path d="M0,0 L9,3.5 L0,7 Z" fill="#426b78"/>
+              </marker>
+            </defs>
+
+            <text x="30" y="34" font-size="14" font-weight="700" class="accent-text">A · Statistics collection</text>
+            <rect x="30" y="52" width="190" height="70" rx="9" fill="#f2f7fb" stroke="#9fc3d2"/>
+            <text x="125" y="79" text-anchor="middle" font-size="15" font-weight="700">AUTO / ANALYZE</text>
+            <text x="125" y="101" text-anchor="middle" font-size="12" class="muted">每个 column 一个 task</text>
+            <rect x="286" y="52" width="195" height="70" rx="9" fill="#f2f7fb" stroke="#9fc3d2"/>
+            <text x="383" y="79" text-anchor="middle" font-size="15" font-weight="700">OlapAnalysisTask</text>
+            <text x="383" y="101" text-anchor="middle" font-size="12" class="muted">doSample()</text>
+            <line x1="220" y1="87" x2="274" y2="87" stroke="#426b78" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="545" y="35" width="238" height="92" rx="9" fill="#eef8f2" stroke="#9cc9aa"/>
+            <text x="664" y="62" text-anchor="middle" font-size="15" font-weight="700">支路 1：full MIN / MAX</text>
+            <text x="664" y="84" text-anchor="middle" font-size="12" class="mono">SELECT MIN(col), MAX(col)</text>
+            <text x="664" y="105" text-anchor="middle" font-size="12" class="muted">不带 TABLET hint / LIMIT</text>
+            <path d="M481 74 L533 74" fill="none" stroke="#3f6b4b" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="545" y="162" width="238" height="112" rx="9" fill="#fff7df" stroke="#d1ac55"/>
+            <text x="664" y="189" text-anchor="middle" font-size="15" font-weight="700">支路 2：tablet cluster sample</text>
+            <text x="664" y="212" text-anchor="middle" font-size="12" class="muted">partition 按名访问；普通列够量即停</text>
+            <text x="664" y="233" text-anchor="middle" font-size="12" class="muted">已访问分区内 seek 选整 tablet</text>
+            <text x="664" y="254" text-anchor="middle" font-size="12" class="muted">普通列必要时再 LIMIT target rows</text>
+            <path d="M481 99 L510 99 L510 218 L533 218" fill="none" stroke="#8a5a12" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="847" y="162" width="225" height="112" rx="9" fill="#fff7df" stroke="#d1ac55"/>
+            <text x="959" y="189" text-anchor="middle" font-size="15" font-weight="700">NDV estimator</text>
+            <text x="959" y="213" text-anchor="middle" font-size="13">linear 或 DUJ1</text>
+            <text x="959" y="235" text-anchor="middle" font-size="12" class="mono">n·d / (n-f₁+f₁·n/N)</text>
+            <text x="959" y="256" text-anchor="middle" font-size="12" class="muted">同算 null_count / data_size / hot values</text>
+            <line x1="783" y1="218" x2="835" y2="218" stroke="#8a5a12" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="500" y="323" width="310" height="93" rx="9" fill="#eef8f2" stroke="#9cc9aa"/>
+            <text x="655" y="351" text-anchor="middle" font-size="15" font-weight="700">B · Statistics storage / cache</text>
+            <text x="655" y="375" text-anchor="middle" font-size="13" class="mono">__internal_schema.column_statistics</text>
+            <text x="655" y="397" text-anchor="middle" font-size="12" class="muted">count · ndv · nulls · min/max · bytes · hot values</text>
+            <path d="M664 127 L664 311" fill="none" stroke="#3f6b4b" stroke-width="2" marker-end="url(#arrow-doris)"/>
+            <path d="M959 274 L959 299 L780 299 L780 311" fill="none" stroke="#8a5a12" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="500" y="464" width="310" height="105" rx="9" fill="#f5f1ff" stroke="#b9a8e8"/>
+            <text x="655" y="491" text-anchor="middle" font-size="15" font-weight="700">C · Nereids optimizer estimate</text>
+            <text x="655" y="515" text-anchor="middle" font-size="13" class="mono">StatsCalculator.estimateGroupByRowCount</text>
+            <text x="655" y="538" text-anchor="middle" font-size="12" class="muted">unknown → N/3；known → sorted NDV × decay</text>
+            <text x="655" y="558" text-anchor="middle" font-size="12" class="muted">cap 到 child row count</text>
+            <line x1="655" y1="416" x2="655" y2="452" stroke="#6941c6" stroke-width="2" marker-end="url(#arrow-doris)"/>
+
+            <rect x="30" y="464" width="314" height="105" rx="9" fill="#fff7df" stroke="#d1ac55"/>
+            <text x="187" y="491" text-anchor="middle" font-size="15" font-weight="700">D · 用户查询 TABLESAMPLE</text>
+            <text x="187" y="515" text-anchor="middle" font-size="12" class="mono">SQL → LogicalOlapScan → OlapScanNode</text>
+            <text x="187" y="538" text-anchor="middle" font-size="12" class="muted">按目标 rows/percent 选择整 tablet</text>
+            <text x="187" y="558" text-anchor="middle" font-size="12" class="danger">不写 column_statistics</text>
+
+            <line x1="344" y1="516" x2="460" y2="516" stroke="#a23b32" stroke-width="2" stroke-dasharray="8 6"/>
+            <text x="402" y="502" text-anchor="middle" font-size="11" class="danger">禁止直连</text>
+
+            <rect x="847" y="35" width="225" height="92" rx="9" fill="#fff0ed" stroke="#e1aaa4" stroke-dasharray="7 5"/>
+            <text x="959" y="60" text-anchor="middle" font-size="14" font-weight="700">不要误读</text>
+            <text x="959" y="83" text-anchor="middle" font-size="12" class="mono">getMin/MaxFunction() → NULL</text>
+            <text x="959" y="105" text-anchor="middle" font-size="12" class="muted">是通用 sample 模板保护，非 OLAP 最终值</text>
+
+            <text x="560" y="625" text-anchor="middle" font-size="13" class="muted">同一个 TableSample 数据结构可以被统计任务和用户查询使用；真正的语义由调用路径决定。</text>
+          </svg>
+        </div>
+        <figcaption>
+          图 2：Doris 的完整工程链。最重要的源码阅读顺序是先看 <code>OlapAnalysisTask.doSample()</code> 的显式
+          MIN/MAX 支路，再看 tablet sample 与 DUJ1；不能从基类模板的 <code>NULL</code> 单独推出 OLAP sampled stats 没有 min/max。
+        </figcaption>
+      </figure>
+
+      <div class="good">
+        <p class="callout-title">一句话总览</p>
+        <p>
+          Doris 已经形成 “tablet sample → 单列统计外推 → 内部表/缓存 → GROUP BY heuristic” 的完整生产链，
+          但这条链没有维护任意多列 sample frequency vector，也没有用单列 sketch bounds 做 SCBC correction；
+          因而它不是 CIDR 2019 方法的一个命名变体。
+        </p>
+      </div>
+    </section>
+
+    <section id="doris-collection">
+      <h2>3. Doris Statistics collection：样本单位是 tablet，估计器是 linear / DUJ1</h2>
+
+      <h3>3.1 自动采样目标是 2<sup>22</sup> rows，但不是先从全表均匀抽 2<sup>22</sup> 行</h3>
+      <p>
+        自动任务在选择 SAMPLE 方法时把 <code>StatisticsUtil.getHugeTableSampleRows()</code> 写入 job；
+        默认常量与 global session variable 都是 <code>4,194,304 = 2²²</code>。
+        这个值是目标行数，实际物理选择由 tablet 完成。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/StatisticsAutoCollector.java#L245-L279">StatisticsAutoCollector L245–279</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/StatisticConstants.java#L97-L105">StatisticConstants L97–105</a>
+      </p>
+      <p>
+        因为实现先选 cluster，再把 cluster 中的 rows 交给 SQL（或在其后截断），它没有实现“从全表 rows
+        独立等概率抽取”的 row-uniform sampler。特别是 tablet 大小不等、partition 按名称顺序访问、普通列
+        达到累计目标后的 early stop，以及超大 tablet 跳过/加回，都会影响行的 inclusion path。
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <strong>按名称依次访问 partition；普通列并不保证覆盖全部 partition。</strong>
+          <p>
+            <code>getSampleTablets()</code> 用 partition 数量得到平均目标，再用每 tablet 平均行数估算当前已访问
+            partition 要选几个 tablet。partition 按名称排序；普通非 partition column 一旦累计
+            <code>selectedRows ≥ targetSampleRows</code>，就跳出当前及外层循环，后续 partition 不参与。
+            partition column 则不走这个 early stop，以争取每个 partition 至少选择一个 tablet。
+          </p>
+        </div>
+        <div class="step">
+          <strong>每个已访问 partition 从一个 seek 开始循环选 tablet。</strong>
+          <p>
+            显式 seed 复用 <code>seek</code>；否则使用 <code>SecureRandom</code>。加入的是 tablet id，
+            不是 tablet 内独立 coin flip 的 row id。
+          </p>
+        </div>
+        <div class="step">
+          <strong>tablet 是 cluster，必要时再加 LIMIT。</strong>
+          <p>
+            selected rows 不足时可能退化为 full scan；单个超大 tablet 会先跳过、必要时再加回。
+            普通非 key、非 partition column 可加 <code>LIMIT</code> 控制最终扫描行数；
+            普通 key column 为避免排序前缀破坏 NDV，通常不加 limit。
+          </p>
+        </div>
+      </div>
+      <p>
+        这些选择规则来自
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L162-L251">OlapAnalysisTask L162–251</a>
+        与
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L259-L323">L259–323</a>。
+      </p>
+
+      <h3>3.2 OLAP sampled analyze 的 MIN/MAX 是一次独立、无采样 query</h3>
+      <p>
+        <code>doSample()</code> 第一件事是调用 <code>collectMinMax()</code>。其模板为
+        <code>SELECT MIN(col), MAX(col) FROM table</code>，没有 <code>TABLET(...)</code> hint，也没有 sample <code>LIMIT</code>；
+        返回值随后作为常量填进 sampled analyze SQL。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L64-L67">BASIC_STATS_TEMPLATE L64–67</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L108-L159">doSample / collectMinMax L108–159</a>
+      </p>
+      <p class="mini">
+        本页为简洁也称它 “full MIN/MAX”：准确含义是完整扫描该 analysis task 指定的 table/index scope，
+        并非忽略 rollup/index 选择而强制扫描 base index。
+      </p>
+
+      <div class="bad">
+        <p class="callout-title">错误读法：sample 分支的 getMinFunction() 返回 NULL，所以 OLAP sample 没有 min/max</p>
+        <p>
+          <code>BaseAnalysisTask.getMinFunction()/getMaxFunction()</code> 的确在 <code>tableSample != null</code> 时返回
+          <code>NULL</code>，目的是防止通用/其他 sampled 模板把不准确极值送给优化器。
+          但 <code>OlapAnalysisTask</code> 没有用这个 sample 极值结果：它先跑上面的 full MIN/MAX query，再把结果注入模板。
+          <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/BaseAnalysisTask.java#L419-L445">BaseAnalysisTask L419–445</a>
+        </p>
+      </div>
+
+      <h3>3.3 DUJ1 在样本 frequency counts 上外推单列 NDV</h3>
+      <p>
+        DUJ1 模板先按列值（字符串先取前缀 hash）分组，得到每个 observed value 的 sample frequency。
+        令 <code>n = SUM(t1.count)</code> 为 sample rows，<code>d = COUNT(t1.col_value)</code> 为非 NULL sample NDV，
+        <code>f₁</code> 为样本中只出现一次且非 NULL 的 value 数，<code>N</code> 为 FE/BE 提供的目标 table/index
+        row count（<code>tableRowCount</code>），源码生成：
+      </p>
+      <div class="formula">
+        <span class="label">Doris BaseAnalysisTask.getNdvFunction()</span>
+        <span class="equation">D̂<sub>DUJ1</sub> = n · d / (n − f₁ + f₁ · n / N)</span>
+      </div>
+      <p>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/BaseAnalysisTask.java#L428-L437">BaseAnalysisTask L428–437</a>
+        这与 PostgreSQL 标量 NDV estimator 的思想有亲缘关系，但 Doris 输入是 tablet cluster sample 后的频数；
+        源码没有先按 tablet 执行 SIGMOD 2004 COLLAPSE，也没有记录每个 tablet 的 inclusion probability。
+      </p>
+      <p class="mini">
+        DUJ1 sampled branch 的 <code>N</code> 不是同一任务额外执行的精确 <code>COUNT(*)</code>：
+        <code>getSampleParams()</code> 先放入 FE/BE reported table/index row count。只有数据量不超过 sample target、
+        因而转成 full scan 时，row count 才改用 <code>COUNT(1)</code>，而该分支同时改用 linear template。
+      </p>
+
+      <h3>3.4 什么时候不用 DUJ1</h3>
+      <p>
+        当前实现会在 full scan、partition-column sample 过大、single unique key、以及被分析列正好是唯一 distribution column
+        等条件下选择 linear template；否则使用 DUJ1。linear 路径通常把 sample <code>NDV(col)</code> 乘 scale factor，
+        single unique key 可直接使用 table row count。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L309-L323">选择 estimator L309–323</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L532-L549">useLinearAnalyzeTemplate L532–549</a>
+      </p>
+
+      <div class="warning">
+        <p class="callout-title"><span class="status inference">静态风险推断</span> cluster sample 与 DUJ1 假设之间需要实验</p>
+        <p>
+          tablet 内常出现分区、排序或导入批次相关性。未触发 LIMIT 时，选中 tablet 的整簇 rows 直接形成 frequency counts；
+          触发 LIMIT 时，样本变成选中 tablets 范围内受 scan order 影响的截断 rows。再加上普通列可能只覆盖按名称排序的
+          partition 前缀，这些结构都可能改变 <code>f₁</code> 与 sample NDV 的分布。
+          源码足以证明“tablet cluster selection + optional LIMIT + DUJ1”这条组合，
+          但不足以证明它在现实数据上产生可观测偏差，更不能据此称为确认 bug。需要按 tablet size、key clustering、
+          partition skew 分层构造数据并对 ratio error 做实验。
+        </p>
+      </div>
+    </section>
+
+    <section id="doris-storage">
+      <h2>4. Doris Statistics storage：全局 numeric NDV、partition HLL 与单独 histogram</h2>
+      <p>
+        “Doris 使用 HLL”必须继续追问：保存的是哪个层级的 HLL？当前内部 schema 对全局列统计与 partition 统计采用不同表示。
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Doris 三类持久化统计对象及其表示和读取边界</caption>
+          <thead>
+            <tr><th scope="col">存储对象</th><th scope="col">关键字段</th><th scope="col">表示</th><th scope="col">优化时读取方式</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><code>column_statistics</code></th>
+              <td>count、ndv、null_count、min、max、data_size、update_time、hot_value</td>
+              <td>全局 <code>ndv</code> 是 BIGINT 点估计；min/max 是字符串编码；hot values 是可空字符串。</td>
+              <td>反序列化为 <code>ColumnStatistic</code>，并随 filter/join 等算子继续传播。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>partition_statistics</code></th>
+              <td>partition identity、count、ndv、null_count、min/max、data_size</td>
+              <td><code>ndv</code> 是 HLL 类型，可在合并 partition statistics 时 union/cardinality。</td>
+              <td>用于 partition 层统计与合并，不等同于 GROUP BY 任意组合 sketch。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>histogram_statistics</code></th>
+              <td>sample_rate、buckets、update_time</td>
+              <td>单列 histogram 独立保存；不是 column_statistics 每次自动附带的字段。</td>
+              <td>可由 statistics repository/cache 载入；本次未找到固定 commit 的 Nereids estimator 实际消费 buckets 的证据，GROUP BY 公式也没有读取。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Schema 证据：
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/catalog/InternalSchema.java#L40-L76">column_statistics L40–76</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/catalog/InternalSchema.java#L78-L111">partition_statistics L78–111</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/catalog/InternalSchema.java#L113-L135">histogram_statistics L113–135</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/BaseAnalysisTask.java#L219-L252">partition HLL build/merge L219–252</a>。
+      </p>
+
+      <div class="note">
+        <p class="callout-title">HLL state 与 numeric NDV 不是同一信息量</p>
+        <p>
+          numeric NDV 可以参与乘法或 clamp，但不能像 HLL register state 那样 union；
+          单列 HLL 即使可 union，也不能凭空恢复任意列组合 <code>(A,B)</code> 的 joint NDV。
+          因而 “partition stats 有 HLL” 不能推出 “optimizer 已具备 CIDR 的 single-column sketch + row-sample hybrid”。
+        </p>
+      </div>
+    </section>
+
+    <section id="doris-estimator">
+      <h2>5. Doris GROUP BY estimator：先排序，再固定衰减；unknown 立即回退</h2>
+
+      <p>
+        Nereids 的 <code>StatsCalculator.estimateGroupByRowCount()</code> 是通用 Aggregate row-count 路径，
+        也被 distribution / shuffle-property 相关代码复用。它读取 child statistics 中每个 grouping expression 的
+        <code>ColumnStatistic</code>；直接找不到时，再由 <code>ExpressionEstimation</code> 估表达式统计。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/nereids/stats/StatsCalculator.java#L1401-L1463">StatsCalculator L1401–1463</a>
+      </p>
+
+      <h3>5.1 三个分支</h3>
+      <div class="grid-3">
+        <div class="card">
+          <h4>没有 GROUP key</h4>
+          <p>直接返回 <code>1</code>，对应普通全局 aggregate。</p>
+        </div>
+        <div class="card">
+          <h4>任一 key unknown</h4>
+          <p>不再使用其他已知 NDV，立即取 <code>childRows × 1/3</code>，再执行 max/min clamp。</p>
+        </div>
+        <div class="card">
+          <h4>全部 key known</h4>
+          <p>NDV 降序；第一列不衰减，后续列按位置用 <code>0.75</code> 的递增幂次折扣。</p>
+        </div>
+      </div>
+      <p>
+        常量在源码中明确为 <code>DEFAULT_AGGREGATE_RATIO = 1/3</code> 与
+        <code>AGGREGATE_COLUMN_CORRELATION_COEFFICIENT = 0.75</code>。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/nereids/stats/StatsCalculator.java#L173-L181">StatsCalculator L173–181</a>
+      </p>
+
+      <h3>5.2 把源码写成准确公式</h3>
+      <p>
+        令 child row count 为 <code>N</code>，排序后的 grouping NDV 为
+        <code>d₀ ≥ d₁ ≥ … ≥ dₖ₋₁</code>。known 分支等价于：
+      </p>
+      <div class="formula purple">
+        <span class="label">Doris known-statistics branch；i 从 1 开始</span>
+        <span class="equation">G₀ = d₀</span><br>
+        <span class="equation">G = d₀ · ∏ max(1, dᵢ · 0.75^(i+1)), &nbsp; i = 1 … k−1</span><br>
+        <span class="equation">result = min(N, max(1, G))</span>
+      </div>
+      <p class="mini">
+        实现会在乘积超过 <code>N</code> 时提前停止并设为 <code>N</code>。当 <code>N=0</code> 时最后一次
+        <code>min(result,N)</code> 会得到 0，因此“区间 [1,N]”只适用于正 child cardinality。
+      </p>
+
+      <h3>5.3 手算一次：为什么先排序会改变每列承担的衰减</h3>
+      <p>
+        假设 <code>N=1,000,000</code>，原 SQL 的三个 key NDV 分别为 <code>[10, 1000, 100]</code>。
+        源码先排序为 <code>[1000, 100, 10]</code>：
+      </p>
+      <pre><code>first key:                         1000
+second factor: max(1, 100 × 0.75²) = 56.25
+third factor:  max(1,  10 × 0.75³) = 4.21875
+
+estimated groups = 1000 × 56.25 × 4.21875
+                 = 237,304.6875
+final cap        = min(1,000,000, 237,304.6875)</code></pre>
+      <p>
+        排序使最大 NDV 获得不衰减的位置，更小 NDV 承担更强折扣；这是一条工程 correlation heuristic，
+        不是从 child sample 的联合频数推导出的相关性估计。<code>max(1, …)</code> 还保证新增 key 不会把 group 数乘小。
+      </p>
+
+      <h3>5.4 与其他系统公式放在一起</h3>
+      <div class="table-wrap">
+        <table>
+          <caption>四个系统在已核验 GROUP BY 路径中的多列组合与 fallback</caption>
+          <thead>
+            <tr><th scope="col">系统</th><th scope="col">多 key 组合</th><th scope="col">相关性处理</th><th scope="col">missing stats</th><th scope="col">证据范围</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>排序后逐列乘法</td>
+              <td>位置相关的 <code>0.75^(i+1)</code> 固定衰减</td>
+              <td>任一 unknown → <code>N/3</code></td>
+              <td><span class="status fact">通用 Aggregate</span></td>
+            </tr>
+            <tr>
+              <th scope="row">PostgreSQL</th>
+              <td>extended multicolumn NDV 优先，再组合剩余单列</td>
+              <td>同 relation clamp、过滤后 domain occupancy</td>
+              <td>表达式/变量有多层 fallback</td>
+              <td><span class="status fact">通用 planner</span></td>
+            </tr>
+            <tr>
+              <th scope="row">DuckDB</th>
+              <td>单列 NDV product</td>
+              <td><code>0.95^(k-1)</code> + occupancy</td>
+              <td>无 usable grouping NDV → <code>N/2</code></td>
+              <td><span class="status unknown">join-order only</span></td>
+            </tr>
+            <tr>
+              <th scope="row">ClickHouse</th>
+              <td>单列 NDV product</td>
+              <td>仅 cap input；源码注释明确先假设独立</td>
+              <td>任一缺失 → <code>N</code></td>
+              <td><span class="status unknown">join-order only</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="doris-query-sample">
+      <h2>6. Doris Query-facing TABLESAMPLE：也是 tablet，但不是 ANALYZE</h2>
+      <p>
+        Nereids parser 把百分比或行数及可选 seed 保存为 <code>TableSample</code>，translator 把它交给
+        <code>OlapScanNode</code>。OLAP scan 先把 percent/rows 换算为目标行数，然后按 partition 计算目标，
+        从 seek 位置循环选择 tablet，累计 tablet row count 直到达到目标。选中的仍是整 tablet。
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/nereids/parser/LogicalPlanBuilder.java#L5515-L5527">LogicalPlanBuilder L5515–5527</a>
+        <a class="source-ref" href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/planner/OlapScanNode.java#L861-L943">OlapScanNode L861–943</a>
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>与 stats collection 相似</h4>
+          <ul>
+            <li>都可接受 rows / percent / seed。</li>
+            <li>OLAP 路径都在 tablet 粒度做主要选择。</li>
+            <li>目标行数都可能因整 tablet 粒度而 overshoot。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>与 stats collection 不同</h4>
+          <ul>
+            <li>入口是用户 SELECT，不是 analyze job。</li>
+            <li>结果直接进入查询算子，不写内部统计表。</li>
+            <li>没有自动执行 DUJ1、scale factor 或 full MIN/MAX 支路。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note">
+        <p class="callout-title">复用 TableSample 数据结构，不等于复用统计语义</p>
+        <p>
+          代码中相同类型可以承担“描述 sample 大小和 seed”的机械职责；
+          真正决定统计正确性的是后续调用了 <code>OlapAnalysisTask</code> 还是普通 <code>OlapScanNode</code>。
+        </p>
+      </div>
+    </section>
+
+    <section id="postgres">
+      <h2>7. PostgreSQL：两阶段 ANALYZE sample + richer synopsis + 通用 group estimator</h2>
+
+      <h3>7.1 Statistics collection</h3>
+      <p>
+        standard ANALYZE 先用 Knuth Algorithm S 从 relation blocks 中无放回选至多 <code>targrows</code> 个 block，
+        再扫描选中 blocks，在 rows 上运行 Vitter reservoir，最终保留 <code>targrows</code> 行。
+        源码注释明确：每一行具有相同被选择机会，但并非每一种可能的行集合都等概率。
+        普通 scalar statistics 的最低样本请求为 <code>300 × attstattarget</code>，table-level target 取各列与扩展统计需求的最大值。
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/commands/analyze.c#L1229-L1360">analyze.c L1229–1360</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/commands/analyze.c#L1999-L2013">sample target L1999–2013</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/utils/misc/sampling.c#L23-L55">sampling.c L23–55</a>
+      </p>
+      <p>
+        这不是简单地“选中 block 后把全部 rows 当最终 sample”。因此它可作为 Doris tablet sample 改进方向的一个设计参照，
+        但 block 与 tablet 的尺度、大小分布和读取成本不同，不能直接复制参数或概率结论。
+      </p>
+
+      <h3>7.2 Storage synopsis</h3>
+      <p>
+        <code>pg_statistic</code> 保存 null fraction、average width 与 NDV；NDV 可是绝对值，也可用负数表示相对 relation rows 的比例。
+        scalar slot 还可保存 MCV+frequency、排除 MCV 后的近似等频 histogram、物理/逻辑顺序 correlation。
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/include/catalog/pg_statistic.h#L39-L71">pg_statistic.h L39–71</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/include/catalog/pg_statistic.h#L183-L225">L183–225</a>
+      </p>
+
+      <h3>7.3 GROUP BY estimate</h3>
+      <p>
+        planner 的普通 grouping 分支调用 <code>estimate_num_groups()</code>。它先尝试选择覆盖多个 grouping vars 的 extended
+        <code>ndistinct</code> statistics；剩余 vars 再用单列 NDV，按 relation 组合、限制到 relation rows 的一部分，
+        并根据过滤后的 rows 做 domain occupancy 调整。跨 relation 再相乘，最终 cap input rows。
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/optimizer/plan/planner.c#L3929-L4031">planner.c L3929–4031</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/utils/adt/selfuncs.c#L3733-L3802">selfuncs.c L3733–3802</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/utils/adt/selfuncs.c#L3994-L4139">L3994–4139</a>
+      </p>
+
+      <h3>7.4 Query sampling</h3>
+      <p>
+        <code>TABLESAMPLE BERNOULLI</code> 扫描所有 pages，对每个 tuple offset 做独立 hash/coin flip；
+        <code>SYSTEM</code> 对 block 做 hash，选中 block 后返回其中全部 tuple。
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/access/tablesample/bernoulli.c#L117-L228">bernoulli.c L117–228</a>
+        <a class="source-ref" href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/access/tablesample/system.c#L119-L255">system.c L119–255</a>
+      </p>
+    </section>
+
+    <section id="duckdb">
+      <h2>8. DuckDB：增量 NDV sample 与显式 ANALYZE full scan 是两条路</h2>
+
+      <h3>8.1 Statistics collection / storage</h3>
+      <p>
+        table append 时，<code>ColumnStatistics.UpdateDistinctStatistics()</code> 调用 <code>DistinctStatistics.UpdateSample()</code>。
+        它按类型把每个 vector 要处理的 count 设为
+        <code>min(original_count, STANDARD_VECTOR_SIZE × rate)</code>，一般 rate 为 0.1、整数为 0.3，且至少取 1。
+        因而满 vector 约取 10%/30%，短或尾 vector 可能 100% 纳入。随后直接把该 count 交给 hash/update；
+        源码没有随机索引选择，因此更准确的描述是
+        <strong>vector-prefix subsampling</strong>，不是 uniform reservoir。
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/include/duckdb/storage/statistics/distinct_statistics.hpp#L19-L54">distinct_statistics.hpp L19–54</a>
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/statistics/distinct_statistics.cpp#L25-L47">distinct_statistics.cpp L25–47</a>
+      </p>
+      <p>
+        HLL 的 sample distinct <code>u</code> 与 sample count <code>s</code>、total count <code>n</code> 再进入源码标为
+        Good–Turing 的外推。显式 <code>ANALYZE</code> 则扫描全部所选列，每个 chunk 调用非采样 <code>Update</code>，
+        最终替换 column distinct stats。
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/statistics/distinct_statistics.cpp#L53-L67">GetCount L53–67</a>
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/execution/operator/helper/physical_vacuum.cpp#L18-L104">PhysicalVacuum L18–104</a>
+      </p>
+      <div class="warning">
+        <p class="callout-title">不要写成 “DuckDB ANALYZE 抽 10%”</p>
+        <p>
+          10%/30% 只是满 vector 时增量 append 维护 NDV 的近似比例；短 vector 可能全取。
+          当前显式 ANALYZE 则是 full column scan。
+        </p>
+      </div>
+      <p class="mini">
+        当前 <code>RowGroupCollection.GetSample()</code> 直接返回 <code>nullptr</code>；因此源码中残留的 table
+        <code>BlockingSample</code> 接口也不能列作正在服务 optimizer 的 reservoir synopsis。
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/table/row_group_collection.cpp#L2532-L2538">row_group_collection.cpp L2532–2538</a>
+      </p>
+
+      <h3>8.2 GROUP BY estimate <span class="status unknown">join-order-only evidence</span></h3>
+      <p>
+        在 <code>RelationStatisticsHelper.ExtractAggregationStats()</code> 中，只处理可映射为 child column 的 grouping expressions，
+        选 key 数最多的 grouping set。令单列 NDV product 为 <code>D</code>，key 数为 <code>k</code>，child rows 为 <code>N</code>：
+      </p>
+      <div class="formula">
+        <span class="equation">D′ = D · 0.95^(k−1)</span><br>
+        <span class="equation">groups = min(N, D′ · (1 − exp(−N / D′)))</span>
+      </div>
+      <p>
+        无可用 key stats 时回退 <code>N/2</code>；ungrouped aggregate 为 1。
+        该类位于 join-order statistics helper，本次没有找到足够证据把它描述为所有 standalone aggregate plan 的统一 estimator。
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/optimizer/join_order/relation_statistics_helper.cpp#L486-L563">relation_statistics_helper.cpp L486–563</a>
+      </p>
+
+      <h3>8.3 Query sampling</h3>
+      <p>
+        DuckDB 接受 <code>TABLESAMPLE</code> 与 <code>USING SAMPLE</code>，方法包括 SYSTEM、BERNOULLI、RESERVOIR。
+        固定 rows 未指定 method 时默认 RESERVOIR，percentage 默认 SYSTEM。
+        <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/parser/peg/transformer/transform_select.cpp#L1859-L1886">transform_select.cpp L1859–1886</a>
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h4>SYSTEM 可下推的 table-scan 主路径</h4>
+          <p>
+            当 <code>LogicalSample</code> 直接位于无 filter 的 <code>LogicalGet</code> 上、且 table function 支持 sampling pushdown，
+            optimizer 会把 SYSTEM options 移进 <code>LogicalGet</code>。<code>RowGroup.PrepareScan()</code> 在读取列数据前按
+            storage vector 决定整 vector 跳过/保留；row-count SYSTEM 则在 vector 内生成 systematic selection。
+          </p>
+          <p>
+            <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/optimizer/sampling_pushdown.cpp#L9-L55">sampling_pushdown.cpp L9–55</a>
+            <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/table/row_group.cpp#L823-L865">row_group.cpp L823–865</a>
+          </p>
+        </div>
+        <div class="card">
+          <h4>不能下推时的 operator fallback</h4>
+          <p>
+            <code>PhysicalStreamingSample</code> 的 SYSTEM percentage 对上游每个 <code>DataChunk</code> 掷一次骰子并全取/全弃；
+            SYSTEM rows 则在 chunk 内按全局计数与随机 phase 做 systematic row selection，并由 LIMIT 封顶。
+            BERNOULLI 每 tuple 掷一次；RESERVOIR 由 blocking reservoir operator 维护。
+          </p>
+          <p>
+            <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/execution/operator/helper/physical_streaming_sample.cpp#L50-L106">physical_streaming_sample.cpp L50–106</a>
+            <a class="source-ref" href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/execution/physical_plan/plan_sample.cpp#L33-L89">plan_sample.cpp L33–89</a>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="clickhouse">
+      <h2>9. ClickHouse：全列 sketch builder 与 sampling-key query pruning</h2>
+
+      <h3>9.1 Statistics collection / storage</h3>
+      <p>
+        当前 MergeTree setting 默认自动统计类型为 <code>basic, uniq_v2</code>；
+        <code>materialize_statistics_on_merge=true</code>，而 query setting
+        <code>materialize_statistics_on_insert=false</code>。也可用显式 <code>MATERIALIZE STATISTICS</code> mutation 重建。
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/MergeTree/MergeTreeSettings.cpp#L641-L643">merge setting L641–643</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/MergeTree/MergeTreeSettings.cpp#L1970-L1974">auto types L1970–1974</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Core/Settings.cpp#L1968-L1970">insert setting L1968–1970</a>
+      </p>
+      <p>
+        <code>ColumnStatistics.build(column)</code> 把完整 column 交给每个 statistics builder；TDigest 与 Count-Min 显式逐逻辑 row。
+        对普通 column，<code>uniq_v2</code> 把整个 raw column batch 交给 <code>uniqCombined64(12)</code>；
+        对 <code>ColumnSparse</code> 与 <code>ColumnLowCardinality</code>，它会利用物理表示，分别读取 values column 或 dictionary nested column。
+        因此本 commit 的源码证据是<strong>完整输入的 sketch aggregation（可利用编码），没有独立 row/block sampling layer</strong>。
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/Statistics/Statistics.cpp#L160-L165">Statistics.cpp L160–165</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/Statistics/StatisticsUniqV2.cpp#L18-L58">StatisticsUniqV2 L18–58</a>
+      </p>
+      <p class="mini">
+        <code>StatisticsUniqV2</code> 复用 aggregate-function implementation，但其 state 由 statistics subsystem
+        按 part 构建和持久化；这与用户 SELECT 中临时执行 <code>uniqCombined64()</code> 是两个生命周期。
+      </p>
+      <p>
+        可用 synopsis 包括：<code>basic</code> 的 default/null 类计数、numeric min/max、string total bytes；
+        <code>uniq</code> BJKST、<code>uniq_v2</code> HLL 变体、TDigest 与 Count-Min Sketch。
+        TDigest 是 quantile sketch，Count-Min 是 frequency sketch；称它们为“直方图”会掩盖状态与误差模型差异。
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/engines/table-engines/mergetree-family/mergetree.md#L1289-L1343">官方类型说明 L1289–1343</a>
+      </p>
+
+      <div class="warning">
+        <p class="callout-title">官方文档与当前默认设置存在张力</p>
+        <p>
+          同一文档仍写 statistics “updated when every insert comes”，但当前源码默认 insert materialization 关闭、merge 开启。
+          本页因此固定 commit 并以设置源码说明默认生命周期；文档句子不作为默认行为的唯一证据。
+        </p>
+      </div>
+
+      <h3>9.2 GROUP BY estimate <span class="status unknown">join-order-only evidence</span></h3>
+      <p>
+        <code>optimizeJoin.cpp</code> 的 aggregation relation estimate 对每个 grouping key 读取 NDV，假设独立并相乘，
+        再 cap input rows。只要任一 key 缺 column stats，product 被清空，最终回退 input rows，并把来源标为
+        <code>NoStatistics</code>。这是 join reorder 递归估算路径；本次没有证据把它外推为全局统一 Aggregate estimator。
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Processors/QueryPlan/Optimizations/optimizeJoin.cpp#L308-L352">optimizeJoin.cpp L308–352</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Processors/QueryPlan/Optimizations/optimizeJoin.cpp#L474-L479">递归入口 L474–479</a>
+      </p>
+
+      <h3>9.3 Query sampling</h3>
+      <p>
+        MergeTree <code>SAMPLE k</code>、<code>SAMPLE n</code> 与 <code>SAMPLE k OFFSET m</code> 要求建表时指定 sampling expression，
+        而且该 expression 必须包含在 primary key 中、结果类型必须是 unsigned integer。
+        执行时确定性地把 sampling key 映射到取值区间，以减少磁盘读取。最小读取单位仍是 granule；aggregate 不会自动按
+        sample factor 校正，需手工使用倍数或 <code>_sample_factor</code>。
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/engines/table-engines/mergetree-family/mergetree.md#L92-L99">MergeTree sampling key L92–99</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/sql-reference/statements/select/sample.md#L19-L35">SAMPLE docs L19–35</a>
+        <a class="source-ref" href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/sql-reference/statements/select/sample.md#L55-L67">L55–67</a>
+      </p>
+    </section>
+
+    <section id="papers">
+      <h2>10. 论文方法与生产实现：相似部件不等于算法落地</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>论文方法所需状态、生产系统相似部件与尚缺证据</caption>
+          <thead>
+            <tr><th scope="col">材料 / 方法</th><th scope="col">必要状态或假设</th><th scope="col">生产系统中找到的相似部件</th><th scope="col">仍缺少的证据</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><em>Every Row Counts</em><br>Counting HLL + row sample + SCBC</th>
+              <td>
+                全数据单列 sketch；保留列组合关系的 row sample；sample frequency vector；
+                singleton bounds 与 sketch-corrected bounds。
+              </td>
+              <td>Doris 有单列 NDV 与 tablet sample；DuckDB/ClickHouse 有 HLL 类 state；PostgreSQL 有 sample 与多列 NDV。</td>
+              <td>未在四个固定 commit 中找到完整 SCBC pipeline。单列 HLL、DUJ1 或 NDV 乘法都不足以证明实现。</td>
+            </tr>
+            <tr>
+              <th scope="row">SIGMOD 2004 2PHASE</th>
+              <td>论文定义的 block-level histogram estimation 两阶段过程及其抽样模型。</td>
+              <td>PostgreSQL ANALYZE 也有“先 block、后 row reservoir”的两阶段外形。</td>
+              <td>名称/外形相似不是同算法证明；本次不把 PostgreSQL 实现标为论文 2PHASE。</td>
+            </tr>
+            <tr>
+              <th scope="row">SIGMOD 2004 COLLAPSE</th>
+              <td>针对 block-level sample 的单列 NDV correction，依赖论文中的 block 与抽样概率模型。</td>
+              <td>Doris tablet 可以抽象成一种 cluster；DUJ1 也使用 sample frequency。</td>
+              <td>tablet 大小不等、partition-aware selection、跳过/加回大 tablet、tablet 尺度极粗；不能直接套原估计式。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="purple-note">
+        <p class="callout-title">发现与推断的分界</p>
+        <p>
+          <span class="status fact">源码发现</span>
+          Doris 选择整 tablet，普通列可能再 LIMIT；DUJ1 输入包含 sample singleton count；没有 per-tablet COLLAPSE state。
+        </p>
+        <p>
+          <span class="status inference">研究推断</span>
+          tablet 内相关性可能使 DUJ1 的 <code>f₁</code> 偏离 row-uniform sample；PostgreSQL 式二阶段 row reservoir
+          或重新推导的 cluster estimator 可能改善它。
+        </p>
+        <p>
+          <span class="status unknown">尚未证明</span>
+          当前误差是否显著、哪个 workload 最差、改用 reservoir/COLLAPSE 后收益是否覆盖 I/O 与 CPU 成本。
+        </p>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <h2>11. Doris 可借鉴路线：按工作负载范围逐级增加信息</h2>
+      <p>
+        下面不是“现成修复清单”，而是从最小改动到研究型方案的设计空间。每一步都增加维护、存储或读取成本，
+        应先以 current heuristic 为 baseline 测 ratio error、P99 与 analyze overhead。
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <strong>先隔离 tablet clustering 的影响：选 tablet 后再做 row reservoir。</strong>
+          <p>
+            可参考 PostgreSQL “block selection → row reservoir” 的结构：把当前“未 LIMIT 时整簇纳入、LIMIT 时按 scan order
+            截断”改成在读出的 rows 中维护随机、固定容量 reservoir。它有机会部分降低大 tablet、块内重复或 scan order
+            对 sample composition 的支配。
+          </p>
+          <p class="mini">
+            Trade-off：仍需读取被选 tablet 才能看见 rows；reservoir 增加 hash/随机化与内存开销；tablet inclusion probability
+            和 LIMIT/scan order 仍需进入估计推导，不能声称自动得到 row-uniform sample。
+          </p>
+        </div>
+        <div class="step">
+          <strong>对稳定热点组合，维护 extended multicolumn NDV。</strong>
+          <p>
+            PostgreSQL 展示了一条务实路线：不是为所有组合存 synopsis，而是由用户/工作负载选择常见列组；GROUP BY estimator
+            优先消费 joint NDV，再对未覆盖 columns 用单列 heuristic。
+          </p>
+          <p class="mini">
+            Trade-off：组合数量爆炸，需要 workload selection、刷新策略与 stale detection；joint NDV 解决指定组合，
+            不解决 ad-hoc 任意表达式。
+          </p>
+        </div>
+        <div class="step">
+          <strong>只有目标确实是任意组合时，再研究 CIDR hybrid。</strong>
+          <p>
+            维护可更新单列 sketches，同时保留近似 row-uniform 的跨列 sample；查询时计算 frequency vector，
+            用 single-column bounds 修正 sample estimator。它直接针对 “预先不知道 GROUP BY 哪些列” 的问题。
+          </p>
+          <p class="mini">
+            Trade-off：需要 sample lifecycle、删除/更新语义、快速 frequency-vector engine、内存与延迟预算；
+            论文实验不能替代 Doris 数据模型和分布式执行上的重新评估。
+          </p>
+        </div>
+        <div class="step">
+          <strong>若把 tablet 当 block 使用 COLLAPSE，先重建统计模型。</strong>
+          <p>
+            Doris tablet 通常大小不等；selection 按 partition 和目标 rows 决定，可能跳过超大 tablet、再加回，且 tablet
+            远大于论文中的物理 block。应先定义每行/每 tablet inclusion probability，再推导 estimator 并做 simulation。
+          </p>
+          <p class="mini">
+            Trade-off：这不是把公式中的 “block” 替换成 “tablet”。若等块、等概率与 cluster-scale 假设不成立，
+            原文 bias/variance 结论不能直接继承。
+          </p>
+        </div>
+      </div>
+
+      <div class="good">
+        <p class="callout-title">推荐实验矩阵</p>
+        <p>
+          同时改变 tablet size CV、同值跨 tablet 扩散度、partition name/order 与 skew、key sorting、NDV 与 singleton ratio；
+          对比 current tablet+DUJ1、tablet+reservoir+DUJ1、linear、重新推导的 cluster estimator，
+          分别报告 mean/P95/P99 ratio error、扫描 bytes、collector CPU 和统计更新时间。
+        </p>
+      </div>
+    </section>
+
+    <section id="audit">
+      <h2>12. Source audit：关键结论能证明到哪里</h2>
+      <p>
+        所有外部链接均固定到调查当天的官方 repository commit。表中 “边界” 是为了防止后续编辑把局部实现写成全局事实。
+      </p>
+
+      <div class="table-wrap">
+        <table class="audit-table">
+          <caption>关键源码结论、固定 commit 证据及其适用边界</caption>
+          <thead>
+            <tr><th scope="col">系统</th><th scope="col">层</th><th scope="col">核验结论</th><th scope="col">官方源码</th><th scope="col">证据边界</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Doris<br><code>68f54696</code></th>
+              <td>collection</td>
+              <td>OLAP sample 先对 task 指定的 table/index scope 执行独立、无采样 MIN/MAX。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L64-L67">template</a> · <a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L108-L159">call path</a></td>
+              <td><span class="status fact">confirmed</span> 仅 internal OLAP task；external tasks 需另查。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>collection</td>
+              <td>按名称依次访问 partition 并选择 tablet；普通列够量可提前停，也可能 full scan、跳过/加回大 tablet。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L162-L251">OlapAnalysisTask L162–251</a></td>
+              <td><span class="status fact">confirmed</span> “对 DUJ1 有偏”仍是待实验推断。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>collection</td>
+              <td>普通列可 LIMIT；key/partition column 有不同保护。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L295-L323">params</a> · <a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L502-L515">needLimit</a></td>
+              <td><span class="status fact">confirmed</span> LIMIT 后具体 row order 还取决于执行计划。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>collection</td>
+              <td>DUJ1 公式使用 sample n、d、f₁ 和 total N。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/BaseAnalysisTask.java#L158-L182">DUJ1 CTE</a> · <a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/BaseAnalysisTask.java#L428-L437">formula</a> · <a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/statistics/OlapAnalysisTask.java#L259-L323">N / full branch</a></td>
+              <td><span class="status fact">confirmed</span> n 的 SUM 未排除 NULL group；N 来自 reported rowCount；未发现 per-tablet COLLAPSE。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>storage</td>
+              <td>全局列 numeric NDV；partition NDV 为 HLL；histogram 分表。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/catalog/InternalSchema.java#L40-L135">InternalSchema L40–135</a></td>
+              <td><span class="status fact">confirmed</span> schema 不能证明每类任务都填充所有字段。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>GROUP BY</td>
+              <td>unknown=N/3；known NDV 降序、0.75 位置衰减、cap child。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/nereids/stats/StatsCalculator.java#L1401-L1437">StatsCalculator L1401–1437</a></td>
+              <td><span class="status fact">confirmed</span> 通用 Aggregate estimator；不是 SCBC。</td>
+            </tr>
+            <tr>
+              <th scope="row">Doris</th>
+              <td>query sample</td>
+              <td>OLAP TABLESAMPLE 选择整 tablet。</td>
+              <td><a href="https://github.com/apache/doris/blob/68f54696ee86543277917d54ca1179290380580e/fe/fe-core/src/main/java/org/apache/doris/planner/OlapScanNode.java#L861-L943">OlapScanNode L861–943</a></td>
+              <td><span class="status fact">confirmed</span> external connectors 有各自 capability/path，不在此结论内。</td>
+            </tr>
+            <tr>
+              <th scope="row">PostgreSQL<br><code>36f7330b</code></th>
+              <td>collection</td>
+              <td>uniform block selection + Vitter row reservoir。</td>
+              <td><a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/commands/analyze.c#L1229-L1360">analyze.c</a> · <a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/utils/misc/sampling.c#L23-L55">sampling.c</a></td>
+              <td><span class="status fact">confirmed</span> 不标为 SIGMOD 2004 2PHASE 实现。</td>
+            </tr>
+            <tr>
+              <th scope="row">PostgreSQL</th>
+              <td>storage</td>
+              <td>NDV、MCV、compressed equi-depth histogram、correlation。</td>
+              <td><a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/include/catalog/pg_statistic.h#L39-L71">base fields</a> · <a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/include/catalog/pg_statistic.h#L183-L225">slots</a></td>
+              <td><span class="status fact">confirmed</span> 每列实际有哪些 slot 取决于类型与 sample。</td>
+            </tr>
+            <tr>
+              <th scope="row">PostgreSQL</th>
+              <td>GROUP BY</td>
+              <td>通用 estimate_num_groups，消费 extended NDV 后处理剩余单列。</td>
+              <td><a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/utils/adt/selfuncs.c#L3994-L4139">selfuncs.c</a></td>
+              <td><span class="status fact">confirmed</span> extended stats 必须显式存在且匹配 expressions。</td>
+            </tr>
+            <tr>
+              <th scope="row">PostgreSQL</th>
+              <td>query sample</td>
+              <td>BERNOULLI 逐 tuple；SYSTEM 逐 block 并返回选中 block 内 tuples。</td>
+              <td><a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/access/tablesample/bernoulli.c#L117-L228">bernoulli.c</a> · <a href="https://github.com/postgres/postgres/blob/36f7330b8b2238c2093d7eac521f996b33e66121/src/backend/access/tablesample/system.c#L119-L255">system.c</a></td>
+              <td><span class="status fact">confirmed</span> 与 ANALYZE 的 block+reservoir sample 是不同代码路径。</td>
+            </tr>
+            <tr>
+              <th scope="row">DuckDB<br><code>3958a013</code></th>
+              <td>collection</td>
+              <td>append NDV 取 <code>min(original_count, rate×STANDARD_VECTOR_SIZE)</code> 的前缀；ANALYZE full scan。</td>
+              <td><a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/statistics/distinct_statistics.cpp#L25-L47">incremental</a> · <a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/execution/operator/helper/physical_vacuum.cpp#L60-L104">ANALYZE</a></td>
+              <td><span class="status fact">confirmed</span> 满 vector 约 10%/30%，短 vector 可全取；不是 random uniform sample。</td>
+            </tr>
+            <tr>
+              <th scope="row">DuckDB</th>
+              <td>storage</td>
+              <td>BaseStatistics + serialized HLL/sample_count/total_count；当前 table BlockingSample getter 返回 nullptr。</td>
+              <td><a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/include/duckdb/storage/statistics/column_statistics.hpp#L17-L43">ColumnStatistics</a> · <a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/table/row_group_collection.cpp#L2532-L2538">GetSample</a></td>
+              <td><span class="status fact">confirmed</span> 当前 in-tree storage 未发现 PostgreSQL 式 MCV/histogram。</td>
+            </tr>
+            <tr>
+              <th scope="row">DuckDB</th>
+              <td>GROUP BY</td>
+              <td>0.95 correction + occupancy，missing → N/2。</td>
+              <td><a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/optimizer/join_order/relation_statistics_helper.cpp#L486-L563">RelationStatisticsHelper</a></td>
+              <td><span class="status unknown">join-order only</span> 未证明是所有 aggregate 的统一 estimator。</td>
+            </tr>
+            <tr>
+              <th scope="row">DuckDB</th>
+              <td>query sample</td>
+              <td>SYSTEM percentage：pushdown=storage-vector、fallback=DataChunk 全取/全弃；SYSTEM rows：systematic rows + LIMIT；另有 tuple BERNOULLI 与 RESERVOIR。</td>
+              <td><a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/optimizer/sampling_pushdown.cpp#L9-L55">pushdown</a> · <a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/storage/table/row_group.cpp#L823-L865">storage scan</a> · <a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/execution/operator/helper/physical_streaming_sample.cpp#L50-L106">fallback</a> · <a href="https://github.com/duckdb/duckdb/blob/3958a013eda8d0d2071e975054189af181660da9/src/parser/peg/transformer/transform_select.cpp#L1859-L1886">defaults</a></td>
+              <td><span class="status fact">confirmed</span> 是否下推取决于 plan shape、filter 与 table-function capability。</td>
+            </tr>
+            <tr>
+              <th scope="row">ClickHouse<br><code>7039251d</code></th>
+              <td>collection</td>
+              <td>per-part builders 接收完整 column（可利用 sparse/LC 编码）；默认 merge materialization。</td>
+              <td><a href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/Statistics/Statistics.cpp#L160-L165">Statistics.cpp</a> · <a href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Storages/MergeTree/MergeTreeSettings.cpp#L641-L643">settings</a></td>
+              <td><span class="status fact">confirmed</span> “未发现抽样”仅限当前内建统计代码。</td>
+            </tr>
+            <tr>
+              <th scope="row">ClickHouse</th>
+              <td>GROUP BY</td>
+              <td>独立 NDV product；missing → input rows。</td>
+              <td><a href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/src/Processors/QueryPlan/Optimizations/optimizeJoin.cpp#L308-L352">optimizeJoin.cpp</a></td>
+              <td><span class="status unknown">join-order only</span> 不外推为 plan-wide estimator。</td>
+            </tr>
+            <tr>
+              <th scope="row">ClickHouse</th>
+              <td>query sample</td>
+              <td>MergeTree sampling-key deterministic range；aggregate 不自动校正。</td>
+              <td><a href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/engines/table-engines/mergetree-family/mergetree.md#L92-L99">sampling-key constraints</a> · <a href="https://github.com/ClickHouse/ClickHouse/blob/7039251dbe2db9b9f59c127ed1ec3ef3b1073183/docs/en/sql-reference/statements/select/sample.md#L19-L67">SAMPLE semantics</a></td>
+              <td><span class="status fact">confirmed</span> key 必须在 primary key 且为 unsigned integer；不是通用 SQL TABLESAMPLE。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>调查限制</h3>
+      <ul>
+        <li>未运行四个系统的 workload benchmark；误差与性能判断均未伪装成实测结果。</li>
+        <li>DuckDB、ClickHouse 的 GROUP BY 公式只在 join-order relation estimates 中得到直接证据。</li>
+        <li>没有把 third-party extension、历史 release 或云服务私有实现并入当前 official source snapshot。</li>
+        <li>查询执行期近似聚合函数不计入 optimizer-statistics 功能表。</li>
+      </ul>
+    </section>
+
+    <section id="summary">
+      <h2>13. 一页结论</h2>
+      <div class="pill-row" aria-label="核心术语">
+        <span class="pill">tablet cluster sample</span>
+        <span class="pill">DUJ1</span>
+        <span class="pill">numeric NDV</span>
+        <span class="pill">HLL state</span>
+        <span class="pill">extended NDV</span>
+        <span class="pill">GROUP BY heuristic</span>
+        <span class="pill">query TABLESAMPLE</span>
+      </div>
+
+      <ol>
+        <li>
+          Doris 的 sampled OLAP statistics 不是“sample 后所有字段都外推”：min/max 先单独 full scan；
+          其余字段走 tablet sample，并在 linear 与 DUJ1 间选择。
+        </li>
+        <li>
+          Doris GROUP BY estimator 是明确可读的固定 heuristic：unknown 为 child/3；known NDV 降序并按位置用 0.75 衰减；
+          它没有观察 grouping columns 的 sample joint frequencies。
+        </li>
+        <li>
+          PostgreSQL 提供了两种值得区分的工程参照：收集侧 block→row reservoir，估算侧 workload-selected multicolumn NDV；
+          两者都不是任意组合 SCBC。
+        </li>
+        <li>
+          DuckDB 的 10%/30% 只是满 vector 时 append NDV 的前缀比例，短 vector 可全取，且不是 ANALYZE sample；
+          ClickHouse 统计 builder 接收完整 column，并可利用 sparse/low-cardinality 编码，而不是另设随机 sampler。
+        </li>
+        <li>
+          若 Doris 要支持任意 ad-hoc GROUP BY 组合，CIDR hybrid 是研究方向；若要把 tablet 当 block 套 COLLAPSE，
+          必须先重新推导不等 tablet 与 partition-aware selection 下的概率模型。
+        </li>
+      </ol>
+
+      <div class="good">
+        <p class="callout-title">最终心智模型</p>
+        <p>
+          先问“这条信息从哪里采、以什么单位采”，再问“保存了什么状态”，最后才问“哪个 estimator 怎样消费它”。
+          只要这三问中有一问没有源码证据，就应把结论标成推断，而不是用相似算法名补齐缺口。
+        </p>
+      </div>
+
+      <h3>继续阅读</h3>
+      <ul>
+        <li><a href="group-by-cardinality-estimation-tutorial.html">GROUP BY 结果基数估计：从 Statistics 到 Every Row Counts</a></li>
+        <li><a href="block-level-sampling-sigmod2004-notes.html">Effective Use of Block-Level Sampling 教学笔记</a></li>
+        <li><a href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=1">Every Row Counts 原论文</a></li>
+        <li><a href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">Block-Level Sampling 原论文</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>
+        文档日期：2026-08-03。本文是基于固定官方源码 commit 的教学型 source audit；
+        “confirmed / inference / unknown” 标签用于区分源码事实、工程推断和缺失证据。
+      </p>
+      <p>
+        图示均为本文重新设计的 inline SVG；不依赖外部图片或脚本。
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

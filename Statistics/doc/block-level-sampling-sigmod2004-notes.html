@@ -1,0 +1,2017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>当 I/O 单位改变抽样分布：Block-Level Sampling 的统计修复</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f5f8fa;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-2: #8a5a12;
+      --accent-3: #4f6f52;
+      --purple: #6941c6;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --note-bg: #f2f7fb;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --bad-bg: #fff0ed;
+      --purple-bg: #f5f1ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+      line-height: 1.72;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero {
+      padding: 48px 0 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 38px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4.5vw, 52px);
+      line-height: 1.1;
+      letter-spacing: -.025em;
+    }
+
+    .hero .lead {
+      max-width: 790px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      border: 1px solid var(--line);
+      background: #f6fbfd;
+      padding: 17px;
+      border-radius: 9px;
+      font-size: 14px;
+    }
+
+    .source-box strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .source-box div + div {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid #dde9ee;
+    }
+
+    nav {
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: rgba(255, 255, 255, .97);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 9px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: #ffffff;
+    }
+
+    nav a.companion {
+      border-color: #b9a8e8;
+      color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    main {
+      padding: 34px 0 62px;
+    }
+
+    section {
+      scroll-margin-top: 82px;
+      margin: 0 0 38px;
+      padding: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 28px;
+      line-height: 1.24;
+      letter-spacing: -.012em;
+    }
+
+    h3 {
+      margin: 29px 0 10px;
+      font-size: 21px;
+      line-height: 1.32;
+    }
+
+    h4 {
+      margin: 21px 0 8px;
+      color: var(--accent);
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      background: #111827;
+      color: #e7edf5;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    pre code {
+      color: inherit;
+      background: transparent;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    .card h3,
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .note,
+    .warning,
+    .good,
+    .bad,
+    .purple-note {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .note {
+      background: var(--note-bg);
+      border-color: #c8dce7;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border-color: #eed58d;
+    }
+
+    .good {
+      background: var(--good-bg);
+      border-color: #b8dfc4;
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      border-color: #efb3a8;
+    }
+
+    .purple-note {
+      background: var(--purple-bg);
+      border-color: #cabcf0;
+    }
+
+    .callout-title {
+      margin: 0 0 6px;
+      font-weight: 800;
+    }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 17px;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+      overflow-x: auto;
+    }
+
+    .formula.purple {
+      border-left-color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    .formula .label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    caption {
+      padding: 0 0 8px;
+      color: var(--muted);
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3f5;
+    }
+
+    td.number,
+    th.number {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .diagram-scroll {
+      padding: 14px;
+      overflow-x: auto;
+      background: #fbfcfd;
+    }
+
+    .diagram {
+      display: block;
+      width: 100%;
+      min-width: 760px;
+      height: auto;
+    }
+
+    .diagram text {
+      fill: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+    }
+
+    .diagram .muted {
+      fill: var(--muted);
+    }
+
+    .diagram .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    figcaption {
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .source-ref {
+      display: inline-block;
+      white-space: nowrap;
+      margin-left: .25em;
+      padding: 1px 7px;
+      border: 1px solid #bfcdd4;
+      border-radius: 999px;
+      color: #315b69;
+      background: #f6fbfd;
+      font-size: 12px;
+      vertical-align: .08em;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d8df;
+      background: #f7fbfc;
+      color: #245160;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .steps {
+      counter-reset: lesson-step;
+    }
+
+    .step {
+      counter-increment: lesson-step;
+      position: relative;
+      padding-left: 48px;
+      margin: 18px 0;
+    }
+
+    .step::before {
+      content: counter(lesson-step);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 31px;
+      height: 31px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfd;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--accent);
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    footer {
+      padding: 30px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      section {
+        padding: 23px 18px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        width: min(100% - 24px, 1120px);
+      }
+
+      .hero {
+        padding-top: 30px;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Statistics &amp; Physical Sampling Tutorial</p>
+        <h1>当 I/O 单位改变抽样分布：Block-Level Sampling 的统计修复</h1>
+        <p class="lead">
+          均匀抽 2% 的行仍可能触碰大量磁盘块；直接抽 2% 的块虽然便宜，
+          却会把物理聚簇带进统计样本。本文沿 SIGMOD 2004 的
+          <em>Effective Use of Block-Level Sampling in Statistics Estimation</em>，
+          分别精讲 Histogram 的 <strong>2PHASE</strong> 与 NDV 的
+          <strong>COLLAPSE</strong>，并严格标出它们能保证什么、不能保证什么。
+        </p>
+      </div>
+      <aside class="source-box">
+        <strong>主材料与页码约定</strong>
+        <div>
+          Chaudhuri、Das、Srivastava：
+          <a href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">
+            <em>Effective Use of Block-Level Sampling in Statistics Estimation</em>
+          </a>，SIGMOD 2004，论文 pp.287–298。
+        </div>
+        <div>
+          仓库 PDF 共 12 页：PDF p.1 对应论文 p.287。本文的页码链接均指向仓库内 PDF。
+        </div>
+        <div>
+           companion：
+          <a href="group-by-cardinality-estimation-tutorial.html">Every Row Counts 主教程</a> ·
+          <a href="open-source-statistics-estimation.html">开源系统调查</a>
+        </div>
+      </aside>
+    </div>
+    <nav aria-label="本文目录">
+      <div class="wrap">
+        <a href="#route">阅读路线</a>
+        <a href="#sampling-unit">抽样单位</a>
+        <a href="#histogram-error">Histogram 误差</a>
+        <a href="#theorem-one">Theorem 1</a>
+        <a href="#two-phase">2PHASE</a>
+        <a href="#takeall">TAKEALL</a>
+        <a href="#collapse">COLLAPSE</a>
+        <a href="#lower-bound">下界与 Badness</a>
+        <a href="#experiments">实验边界</a>
+        <a href="#modern-boundary">现代系统与 CIDR</a>
+        <a href="#summary">总结</a>
+        <a class="companion" href="group-by-cardinality-estimation-tutorial.html">返回主教程</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="route">
+      <h2>0. 为什么值得单独讲：这是“物理抽样单位”的问题</h2>
+      <p class="mini">
+        对应论文摘要与 §1。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">PDF p.1 / 论文 p.287</a>
+      </p>
+
+      <p>
+        在统计教材里，“抽取 \(q\) 比例的数据”很容易被写成一个抽象动作；在存储系统里，
+        一次 I/O 通常读回的是一个 page、block、row group 或 tablet，而不是一条孤立的 row。
+        如果一个块约有 50 行，做 2% 的均匀行抽样，平均每块恰好命中约 1 行。
+        在独立 Bernoulli 近似下，一块至少命中一行的概率是
+        \(1-(1-0.02)^{50}\approx63.6\%\)：不是字面上的“几乎每块”，但已经意味着读取约 64% 的块，
+        且 \(1-(1-q)^b\) 会随 \(qb\) 增大迅速逼近 1。Block sampling 的诱惑由此而来：
+        随机选少量块，再取走块内全部行。
+      </p>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>本文回答</h3>
+          <ul>
+            <li>为什么同样的 sample fraction，不等于同样的统计信息？</li>
+            <li>如何按数据的 block clustering 自适应决定 Histogram 样本量？</li>
+            <li>为什么现成 NDV estimator 在 block sample 上会灾难性低估？</li>
+            <li>COLLAPSE 的证明究竟等价到哪一层？</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>本文不声称</h3>
+          <ul>
+            <li>2PHASE 给出高概率误差保证。</li>
+            <li>COLLAPSE 把 block sample 变成原表的均匀 row sample。</li>
+            <li>论文的单列 NDV 结果可直接替代任意多列 GROUP BY estimator。</li>
+            <li>2004 年磁盘实验可以不经复核地外推到所有现代存储层。</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="note">
+        <p class="callout-title">先记住两条互不替代的主线</p>
+        <p>
+          <strong>2PHASE</strong> 解决的是 Histogram 构建需要抽多少行；
+          <strong>COLLAPSE</strong> 解决的是怎样把 block sample 交给某类 NDV estimator。
+          两者都以 block layout 为问题起点，但目标、证明和输出完全不同。
+        </p>
+      </div>
+    </section>
+
+    <section id="sampling-unit">
+      <h2>1. 从 row、block 到 sample：先把随机性写清楚</h2>
+      <p class="mini">
+        对应论文 §1、§3.1。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">PDF p.1 / 论文 p.287</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=3">PDF p.3 / 论文 p.289</a>
+      </p>
+
+      <div class="metric-grid">
+        <div class="metric"><strong>\(N\)</strong><span>表中的 block 数</span></div>
+        <div class="metric"><strong>\(b\)</strong><span>每个 block 的行数</span></div>
+        <div class="metric"><strong>\(n=Nb\)</strong><span>表的总行数</span></div>
+        <div class="metric"><strong>\(q=R/N=r/n\)</strong><span>block / row 抽样率</span></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>相同 q 下，两种抽样设计的随机单位与代价</caption>
+          <thead>
+            <tr>
+              <th>设计</th>
+              <th>随机单位</th>
+              <th>拿到的行</th>
+              <th>主要优势</th>
+              <th>主要风险</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Uniform row sampling</td>
+              <td>每一行</td>
+              <td>散布在许多块中的约 \(r=qn\) 行</td>
+              <td>经典 estimator 的抽样假设更直接</td>
+              <td>随机 I/O；小样本也可能触碰大量块</td>
+            </tr>
+            <tr>
+              <td>Uniform block sampling</td>
+              <td>每一个块</td>
+              <td>约 \(R=qN\) 个整块，共 \(r=Rb\) 行</td>
+              <td>I/O 连续，读到一块就利用其全部行</td>
+              <td>块内行相关；物理 layout 进入 estimator</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1040 450" role="img"
+               aria-labelledby="layout-title layout-desc">
+            <title id="layout-title">同样抽取两个整块时，三种物理布局提供的信息不同</title>
+            <desc id="layout-desc">
+              图中比较随机布局、部分聚簇和完全聚簇。每列有六个块，每块六行；
+              虚线框标出被抽中的两个块。随机布局覆盖多种值，完全聚簇布局只看到少数值。
+            </desc>
+
+            <text x="170" y="34" text-anchor="middle" font-size="20" font-weight="700">随机布局</text>
+            <text x="520" y="34" text-anchor="middle" font-size="20" font-weight="700">部分聚簇</text>
+            <text x="870" y="34" text-anchor="middle" font-size="20" font-weight="700">完全聚簇</text>
+
+            <g transform="translate(55,58)">
+              <rect x="0" y="0" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="21" r="10"/><circle cx="92" cy="21" r="10"/><circle cx="197" cy="21" r="10"/></g>
+              <g fill="#d6a552"><circle cx="57" cy="21" r="10"/><circle cx="127" cy="21" r="10"/></g>
+              <circle cx="162" cy="21" r="10" fill="#8ca47d"/>
+              <rect x="0" y="53" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="74" r="10"/><circle cx="127" cy="74" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="57" cy="74" r="10"/><circle cx="162" cy="74" r="10"/></g>
+              <g fill="#d6a552"><circle cx="92" cy="74" r="10"/><circle cx="197" cy="74" r="10"/></g>
+              <rect x="-7" y="46" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="106" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="127" r="10"/><circle cx="162" cy="127" r="10"/></g>
+              <g fill="#8ca47d"><circle cx="57" cy="127" r="10"/><circle cx="197" cy="127" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="92" cy="127" r="10"/><circle cx="127" cy="127" r="10"/></g>
+              <rect x="0" y="159" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="180" r="10"/><circle cx="127" cy="180" r="10"/></g>
+              <g fill="#d6a552"><circle cx="57" cy="180" r="10"/><circle cx="197" cy="180" r="10"/></g>
+              <g fill="#8ca47d"><circle cx="92" cy="180" r="10"/><circle cx="162" cy="180" r="10"/></g>
+              <rect x="0" y="212" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="233" r="10"/><circle cx="92" cy="233" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="57" cy="233" r="10"/><circle cx="197" cy="233" r="10"/></g>
+              <g fill="#d6a552"><circle cx="127" cy="233" r="10"/><circle cx="162" cy="233" r="10"/></g>
+              <rect x="-7" y="205" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="265" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="286" r="10"/><circle cx="92" cy="286" r="10"/></g>
+              <g fill="#8ca47d"><circle cx="57" cy="286" r="10"/><circle cx="162" cy="286" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="127" cy="286" r="10"/><circle cx="197" cy="286" r="10"/></g>
+              <text x="115" y="337" text-anchor="middle" font-size="15">抽中块仍覆盖 A / B / C</text>
+            </g>
+
+            <g transform="translate(405,58)">
+              <rect x="0" y="0" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="21" r="10"/><circle cx="57" cy="21" r="10"/><circle cx="92" cy="21" r="10"/><circle cx="127" cy="21" r="10"/></g>
+              <g fill="#d6a552"><circle cx="162" cy="21" r="10"/><circle cx="197" cy="21" r="10"/></g>
+              <rect x="0" y="53" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="74" r="10"/><circle cx="57" cy="74" r="10"/><circle cx="92" cy="74" r="10"/></g>
+              <g fill="#d6a552"><circle cx="127" cy="74" r="10"/><circle cx="162" cy="74" r="10"/><circle cx="197" cy="74" r="10"/></g>
+              <rect x="-7" y="46" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="106" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="127" r="10"/><circle cx="57" cy="127" r="10"/><circle cx="92" cy="127" r="10"/><circle cx="127" cy="127" r="10"/></g>
+              <g fill="#8ca47d"><circle cx="162" cy="127" r="10"/><circle cx="197" cy="127" r="10"/></g>
+              <rect x="0" y="159" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="180" r="10"/><circle cx="57" cy="180" r="10"/><circle cx="92" cy="180" r="10"/></g>
+              <g fill="#8ca47d"><circle cx="127" cy="180" r="10"/><circle cx="162" cy="180" r="10"/><circle cx="197" cy="180" r="10"/></g>
+              <rect x="0" y="212" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="233" r="10"/><circle cx="57" cy="233" r="10"/><circle cx="92" cy="233" r="10"/><circle cx="127" cy="233" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="162" cy="233" r="10"/><circle cx="197" cy="233" r="10"/></g>
+              <rect x="-7" y="205" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="265" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="286" r="10"/><circle cx="57" cy="286" r="10"/><circle cx="92" cy="286" r="10"/></g>
+              <g fill="#6fa9bd"><circle cx="127" cy="286" r="10"/><circle cx="162" cy="286" r="10"/><circle cx="197" cy="286" r="10"/></g>
+              <text x="115" y="337" text-anchor="middle" font-size="15">覆盖面开始依赖选中了哪些块</text>
+            </g>
+
+            <g transform="translate(755,58)">
+              <rect x="0" y="0" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="21" r="10"/><circle cx="57" cy="21" r="10"/><circle cx="92" cy="21" r="10"/><circle cx="127" cy="21" r="10"/><circle cx="162" cy="21" r="10"/><circle cx="197" cy="21" r="10"/></g>
+              <rect x="0" y="53" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#6fa9bd"><circle cx="22" cy="74" r="10"/><circle cx="57" cy="74" r="10"/><circle cx="92" cy="74" r="10"/><circle cx="127" cy="74" r="10"/><circle cx="162" cy="74" r="10"/><circle cx="197" cy="74" r="10"/></g>
+              <rect x="-7" y="46" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="106" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="127" r="10"/><circle cx="57" cy="127" r="10"/><circle cx="92" cy="127" r="10"/><circle cx="127" cy="127" r="10"/><circle cx="162" cy="127" r="10"/><circle cx="197" cy="127" r="10"/></g>
+              <rect x="0" y="159" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#d6a552"><circle cx="22" cy="180" r="10"/><circle cx="57" cy="180" r="10"/><circle cx="92" cy="180" r="10"/><circle cx="127" cy="180" r="10"/><circle cx="162" cy="180" r="10"/><circle cx="197" cy="180" r="10"/></g>
+              <rect x="0" y="212" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="233" r="10"/><circle cx="57" cy="233" r="10"/><circle cx="92" cy="233" r="10"/><circle cx="127" cy="233" r="10"/><circle cx="162" cy="233" r="10"/><circle cx="197" cy="233" r="10"/></g>
+              <rect x="-7" y="205" width="244" height="57" rx="8" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <rect x="0" y="265" width="230" height="43" rx="6" fill="#fff" stroke="#97a5ad"/>
+              <g fill="#8ca47d"><circle cx="22" cy="286" r="10"/><circle cx="57" cy="286" r="10"/><circle cx="92" cy="286" r="10"/><circle cx="127" cy="286" r="10"/><circle cx="162" cy="286" r="10"/><circle cx="197" cy="286" r="10"/></g>
+              <text x="115" y="337" text-anchor="middle" font-size="15">抽中块只覆盖 A 与 C，完全漏掉 B</text>
+            </g>
+
+            <g transform="translate(300,420)">
+              <circle cx="0" cy="0" r="9" fill="#6fa9bd"/><text x="17" y="5" font-size="14">值 A</text>
+              <circle cx="105" cy="0" r="9" fill="#d6a552"/><text x="122" y="5" font-size="14">值 B</text>
+              <circle cx="210" cy="0" r="9" fill="#8ca47d"/><text x="227" y="5" font-size="14">值 C</text>
+              <rect x="315" y="-15" width="65" height="30" rx="5" fill="none" stroke="#176b87" stroke-width="3" stroke-dasharray="8 5"/>
+              <text x="392" y="5" font-size="14">抽中的块</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>
+          教学示意，不复刻论文图。三列的 row 数、block 数和抽样率相同；变化的只有值在块之间的布局。
+          颜色同时配有 A/B/C 图例，虚线框表示被抽中的整块。
+        </figcaption>
+      </figure>
+
+      <div class="warning">
+        <p class="callout-title">“随机抽 block”不等于“随机抽 row”</p>
+        <p>
+          每个 block 被均匀选中，只能推出每一行具有相同的<strong>边际入样概率</strong> \(q\)；
+          同一块内的行会一起入样，彼此高度相关。Histogram 与 NDV estimator 依赖的不只是
+          单行入样概率，还依赖联合分布、频数和方差。
+        </p>
+      </div>
+    </section>
+
+    <section id="histogram-error">
+      <h2>2. Histogram：先定义“够准”，再问抽多少</h2>
+      <p class="mini">
+        对应论文 §3.1–§3.2、Algorithm DOUBLE。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=3">PDF p.3 / 论文 p.289</a>
+      </p>
+
+      <p>
+        设最终 Histogram 有 \(k\) 个 bucket，真实 bucket 计数为 \(n_i\)，
+        从样本放大得到的估计为 \(\hat n_i\)。论文主要使用
+        <strong>variance error</strong>，也给出 max error 作为对照：
+      </p>
+
+      <div class="formula">
+        <span class="label">Equation (1)：variance error，按平均 bucket 大小归一化的 RMS error</span>
+        \[
+          \Delta_{\mathrm{var}}
+          = \frac{k}{n}
+            \sqrt{\frac{1}{k}\sum_{i=1}^{k}(\hat n_i-n_i)^2}
+        \]
+      </div>
+
+      <div class="formula">
+        <span class="label">Equation (2)：max error，只盯最坏 bucket</span>
+        \[
+          \Delta_{\max}
+          = \max_i \left\{
+              \frac{|\hat n_i-n_i|}{n/k}
+            \right\}
+        \]
+      </div>
+
+      <p>
+        \(\Delta_{\mathrm{var}}=0.25\) 可以直观理解为：bucket 计数的 RMS 偏差约等于
+        “平均 bucket 大小”的 25%。论文选择它，是因为 max error 容易被单个异常 bucket
+        支配，作为自适应停止条件过于保守。
+      </p>
+
+      <h3>没有真值时，怎样知道当前样本够不够？</h3>
+      <p>
+        取两份大小同为 \(r\) 的独立 block sample \(S_1,S_2\)，先在 \(S_1\) 上构建
+        Histogram \(H\)。保持 \(H\) 的同一组 bucket separators，分别统计 \(S_1\) 与
+        \(S_2\) 的 bucket counts \(\tilde n_i,\tilde m_i\)，论文对这一个方向定义：
+      </p>
+
+      <div class="formula">
+        <span class="label">Equation (3)：cross-validation error</span>
+        \[
+          \Delta_{\mathrm{CV}}
+          = \frac{k}{r}
+            \sqrt{\frac{1}{k}\sum_{i=1}^{k}(\tilde n_i-\tilde m_i)^2}
+        \]
+      </div>
+
+      <p class="mini">
+        Equation (3) 本身不同时包含“反向验证”。后续 2PHASE 的
+        <code>sortAndValidate</code> 会在左右子样本之间交换训练/验证角色，取得第二个独立的
+        squared-error observation，再把同一尺度的多次观测求均值。
+      </p>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>DOUBLE 的工作方式</h3>
+          <ol>
+            <li>从均匀行抽样理论给出的 \(r_{\mathrm{unf}}\) 开始。</li>
+            <li>采两份样本，计算 \(\Delta_{\mathrm{CV}}\)。</li>
+            <li>未达目标就把样本量翻倍，再试一次。</li>
+            <li>达标后使用样本构建 Histogram。</li>
+          </ol>
+        </article>
+        <article class="card">
+          <h3>为什么它会浪费</h3>
+          <ul>
+            <li>每一轮采样都有固定启动开销。</li>
+            <li>指数增长天然会越过“刚好够用”的 \(r_{\mathrm{blk}}\)。</li>
+            <li>把最后一次验证也计入，论文分析最坏可接近 \(4r_{\mathrm{blk}}\)。</li>
+            <li>它观察到误差，却没有显式利用 \(1/r\) 的规律。</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">理论分析先固定 bucket separators</p>
+        <p>
+          后续定理把 bucket 边界视为预先给定，因此直接覆盖的是 equi-width 一类情形。
+          Equi-depth、MaxDiff 的边界会随样本改变，不满足这项假设；论文对它们给的是实验支持，
+          不是同一个定理的形式化保证。
+        </p>
+      </div>
+    </section>
+
+    <section id="theorem-one">
+      <h2>3. Theorem 1：布局如何变成所需样本量</h2>
+      <p class="mini">
+        对应论文 §3.3、Theorem 1。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=4">PDF p.4 / 论文 p.290</a>
+      </p>
+
+      <p>
+        对每个 bucket \(i\) 和 block \(j\)，定义 \(a_{ij}\) 为：
+        “block \(j\) 中落入 bucket \(i\) 的行所占比例”。令
+        \(\sigma_i^2\) 是 \(a_{i1},\ldots,a_{iN}\) 在所有块之间的方差。
+      </p>
+
+      <div class="formula">
+        <span class="label">Theorem 1：两份独立 block sample 的期望平方 CV error</span>
+        \[
+          \mathbb{E}\!\left[\Delta_{\mathrm{CV}}^2\right]
+          = \frac{2kb}{r}\sum_{i=1}^{k}\sigma_i^2
+        \]
+      </div>
+
+      <p>
+        论文对 Equation (4) 的拆解还给出一个实用关系：两份独立样本各贡献一个相同的方差项，
+        而真正 Histogram 相对总体的 squared variance error 只对应其中一项。因此在相同假设下，
+        \(\mathbb E[\Delta_{\mathrm{CV}}^2]
+        =2\mathbb E[\Delta_{\mathrm{var}}^2]\)，CV error 的典型量级约是真实 variance error
+        的 \(\sqrt 2\) 倍。也就是说，用 CV target 停止通常偏保守，而不是把验证误差当成真实误差。
+      </p>
+
+      <div class="pill-row" aria-label="定理拆解">
+        <span class="pill">样本 \(r\) 翻倍 → 期望平方误差减半</span>
+        <span class="pill">block 越大 \(b\) 越大 → 同行数的信息越相关</span>
+        <span class="pill">bucket 越多 \(k\) 越大 → 更多边界要估</span>
+        <span class="pill">布局越聚簇 → \(\sum\sigma_i^2\) 越大</span>
+      </div>
+
+      <h3>Hist Badness：把“物理布局不友好”压缩成一个量</h3>
+      <div class="formula purple">
+        <span class="label">论文定义</span>
+        \[
+          \mathrm{HistBadness}=\sum_{i=1}^{k}\sigma_i^2
+        \]
+      </div>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1000 430" role="img"
+               aria-labelledby="badness-title badness-desc">
+            <title id="badness-title">块内 bucket 比例的方差决定 Histogram Badness</title>
+            <desc id="badness-desc">
+              左侧随机布局中，每个块的 A B C 比例接近，因此跨块方差小；
+              右侧聚簇布局中，不同块几乎由单一值组成，因此跨块方差大。
+              两边通过箭头进入期望平方误差公式。
+            </desc>
+            <defs>
+              <marker id="arrow-badness" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <text x="185" y="34" text-anchor="middle" font-size="20" font-weight="700">随机：各块比例相近</text>
+            <text x="810" y="34" text-anchor="middle" font-size="20" font-weight="700">聚簇：各块比例极端</text>
+
+            <g transform="translate(55,65)">
+              <text x="0" y="23" font-size="14">block 1</text>
+              <rect x="70" y="0" width="90" height="32" fill="#6fa9bd"/><rect x="160" y="0" width="75" height="32" fill="#d6a552"/><rect x="235" y="0" width="75" height="32" fill="#8ca47d"/>
+              <text x="0" y="73" font-size="14">block 2</text>
+              <rect x="70" y="50" width="75" height="32" fill="#6fa9bd"/><rect x="145" y="50" width="90" height="32" fill="#d6a552"/><rect x="235" y="50" width="75" height="32" fill="#8ca47d"/>
+              <text x="0" y="123" font-size="14">block 3</text>
+              <rect x="70" y="100" width="75" height="32" fill="#6fa9bd"/><rect x="145" y="100" width="75" height="32" fill="#d6a552"/><rect x="220" y="100" width="90" height="32" fill="#8ca47d"/>
+              <path d="M190 155 L190 202" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-badness)"/>
+              <rect x="64" y="215" width="252" height="67" rx="8" fill="#eef8f2" stroke="#8bc39b"/>
+              <text x="190" y="242" text-anchor="middle" font-size="16" font-weight="700">每个 σᵢ² 小</text>
+              <text x="190" y="266" text-anchor="middle" font-size="14">HistBadness 小 → 需要较少样本</text>
+            </g>
+
+            <g transform="translate(650,65)">
+              <text x="0" y="23" font-size="14">block 1</text>
+              <rect x="70" y="0" width="240" height="32" fill="#6fa9bd"/>
+              <text x="0" y="73" font-size="14">block 2</text>
+              <rect x="70" y="50" width="240" height="32" fill="#d6a552"/>
+              <text x="0" y="123" font-size="14">block 3</text>
+              <rect x="70" y="100" width="240" height="32" fill="#8ca47d"/>
+              <path d="M190 155 L190 202" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-badness)"/>
+              <rect x="64" y="215" width="252" height="67" rx="8" fill="#fff0ed" stroke="#df8d80"/>
+              <text x="190" y="242" text-anchor="middle" font-size="16" font-weight="700">每个 σᵢ² 大</text>
+              <text x="190" y="266" text-anchor="middle" font-size="14">HistBadness 大 → 需要更多样本</text>
+            </g>
+
+            <rect x="335" y="354" width="330" height="55" rx="9" fill="#f2f7fb" stroke="#9ec0d1"/>
+            <text x="500" y="378" text-anchor="middle" font-size="15" font-weight="700">同样 r 下：E[Δ²] ∝ b · k · HistBadness</text>
+            <text x="500" y="399" text-anchor="middle" font-size="13" class="muted">版面结构进入 estimator，而不是只进入 I/O cost</text>
+          </svg>
+        </div>
+        <figcaption>
+          \(a_{ij}\) 是每条堆叠条中 bucket \(i\) 的长度比例。图示省略具体数值，强调论文模型中的方差来源。
+        </figcaption>
+      </figure>
+
+      <h3>从定理反推样本量</h3>
+      <p>
+        若目标是 \(\Delta_{\mathrm{req}}\)，形式上可把误差曲线写成
+        \(\Delta^2=c/r\)，其中
+        \(c=2kb\cdot\mathrm{HistBadness}\)。问题是系统事前并不知道
+        HistBadness；2PHASE 的第一阶段正是用一小批 block sample 估计这个 \(c\)。
+      </p>
+
+      <div class="bad">
+        <p class="callout-title">Expectation 不是 guarantee</p>
+        <p>
+          定理给出的是 \(\mathbb{E}[\Delta_{\mathrm{CV}}^2]\)，不是
+          “每次运行都满足 \(\Delta\le\Delta_{\mathrm{req}}\)”的高概率界。
+          论文还用“有放回抽 block”近似分析无放回抽样，并假设每块恰有 \(b\) 行、bucket 边界固定。
+          这些假设必须与公式一起读，不能只摘出 \(1/r\) 曲线。
+        </p>
+      </div>
+    </section>
+
+    <section id="two-phase">
+      <h2>4. 2PHASE：用一次初始样本预测，而不是反复翻倍</h2>
+      <p class="mini">
+        对应论文 §3.3–§3.4、Algorithm 2PHASE。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=5">PDF p.5 / 论文 p.291</a>
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1060 440" role="img"
+               aria-labelledby="double-two-title double-two-desc">
+            <title id="double-two-title">DOUBLE 与 2PHASE 的采样流程对比</title>
+            <desc id="double-two-desc">
+              上半部分 DOUBLE 以 r-unf 开始，验证失败后重复采样并把样本量翻倍。
+              下半部分 2PHASE 用 2r1 初始样本估计误差曲线，一次预测 r-blk，
+              然后只补采缺少的块。
+            </desc>
+            <defs>
+              <marker id="arrow-flow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <text x="30" y="50" font-size="20" font-weight="700">DOUBLE</text>
+            <rect x="155" y="20" width="145" height="62" rx="9" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="228" y="47" text-anchor="middle" font-size="15" font-weight="700">采 r_unf</text>
+            <text x="228" y="68" text-anchor="middle" font-size="13">两份样本验证</text>
+            <path d="M300 51 L365 51" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <polygon points="440,15 520,51 440,87 360,51" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="440" y="47" text-anchor="middle" font-size="14" font-weight="700">达标？</text>
+            <text x="440" y="66" text-anchor="middle" font-size="12">ΔCV ≤ Δreq</text>
+            <path d="M520 51 L600 51" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="550" y="40" font-size="12">是</text>
+            <rect x="605" y="20" width="150" height="62" rx="9" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="680" y="56" text-anchor="middle" font-size="15" font-weight="700">构建 Histogram</text>
+            <path d="M440 87 L440 123 L270 123 L270 160" fill="none" stroke="#a5680f" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <text x="450" y="112" font-size="12">否</text>
+            <rect x="190" y="160" width="160" height="58" rx="9" fill="#fff0ed" stroke="#df8d80"/>
+            <text x="270" y="185" text-anchor="middle" font-size="15" font-weight="700">r ← 2r</text>
+            <text x="270" y="206" text-anchor="middle" font-size="13">再启一轮采样与验证</text>
+            <path d="M190 189 L120 189 L120 51 L155 51" fill="none" stroke="#a5680f" stroke-width="2" marker-end="url(#arrow-flow)"/>
+
+            <line x1="25" y1="245" x2="1035" y2="245" stroke="#d7dce2" stroke-width="2"/>
+
+            <text x="30" y="306" font-size="20" font-weight="700">2PHASE</text>
+            <rect x="155" y="272" width="150" height="70" rx="9" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="230" y="299" text-anchor="middle" font-size="15" font-weight="700">Phase I：采 2r₁</text>
+            <text x="230" y="321" text-anchor="middle" font-size="13">递归切半 + 交叉验证</text>
+            <path d="M305 307 L380 307" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <rect x="385" y="272" width="185" height="70" rx="9" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="478" y="299" text-anchor="middle" font-size="15" font-weight="700">拟合 Δ² = c/r</text>
+            <text x="478" y="321" text-anchor="middle" font-size="13">预测 r_blk = c/Δ_req²</text>
+            <path d="M570 307 L645 307" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <rect x="650" y="272" width="185" height="70" rx="9" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="743" y="299" text-anchor="middle" font-size="15" font-weight="700">Phase II：只补采</text>
+            <text x="743" y="321" text-anchor="middle" font-size="13">max(0, r_blk − 2r₁)</text>
+            <path d="M835 307 L900 307" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-flow)"/>
+            <rect x="905" y="272" width="125" height="70" rx="9" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="968" y="299" text-anchor="middle" font-size="14" font-weight="700">合并样本</text>
+            <text x="968" y="321" text-anchor="middle" font-size="13">构建 Histogram</text>
+
+            <rect x="310" y="376" width="440" height="42" rx="8" fill="#fbfcfd" stroke="#c3ccd1"/>
+            <text x="530" y="402" text-anchor="middle" font-size="14">
+              关键差别：DOUBLE 只问“够不够”；2PHASE 还估计“离目标多远”
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          流程图对应论文两种算法的控制结构。\(r\) 以“抽到的行数”表达，实际 I/O 仍按整块完成。
+        </figcaption>
+      </figure>
+
+      <div class="steps">
+        <div class="step">
+          <h3>Phase I：一次取得 \(2r_1\) 行</h3>
+          <p>
+            论文建议 \(r_1\) 可从均匀 row sampling 的理论样本量 \(r_{\mathrm{unf}}\) 起步；
+            实验中取其 2–3 倍更稳健。这里的 \(2r_1\) 会被复用，而不是只做一次性验证。
+          </p>
+        </div>
+        <div class="step">
+          <h3><code>sortAndValidate</code>：从一份样本制造多尺度观测</h3>
+          <p>
+            像 merge sort 一样递归把样本切半：每层左右子样本互相 cross-validate，
+            记录该层的 \((r,\Delta_{\mathrm{CV}}^2)\)，再把已排序结果 merge。
+            论文经验上让递归深度 \(l_{\max}\) 约为 3。
+          </p>
+        </div>
+        <div class="step">
+          <h3>拟合 \(c\)，预测目标 \(r_{\mathrm{blk}}\)</h3>
+          <p>
+            若最初样本已经足够，就返回 \(2r_1\)；否则用多个尺度的误差点最小二乘拟合
+            \(\Delta^2=c/r\)，再算 \(r_{\mathrm{blk}}=c/\Delta_{\mathrm{req}}^2\)。
+          </p>
+        </div>
+        <div class="step">
+          <h3>Phase II：补齐一次，合并构建</h3>
+          <p>
+            只再采 \(r_{\mathrm{blk}}-2r_1\) 行对应的块，与第一阶段的排序样本合并，
+            最终构建 Histogram。第一阶段数据全部进入最终产物。
+          </p>
+        </div>
+      </div>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1060 510" role="img"
+               aria-labelledby="tree-fit-title tree-fit-desc">
+            <title id="tree-fit-title">2PHASE 在递归合并树上取得多个样本尺度并拟合误差曲线</title>
+            <desc id="tree-fit-desc">
+              左半图是一棵三层树。根节点样本被切成左右半边，叶子继续切半；
+              同层兄弟互相验证，随后向上合并。右半图以一除以样本量为横轴、
+              平方交叉验证误差为纵轴，多个观测点拟合为过原点直线，
+              等价于 Delta 平方等于 c 除以 r。
+            </desc>
+            <defs>
+              <marker id="arrow-tree" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <text x="250" y="34" text-anchor="middle" font-size="20" font-weight="700">递归切半、同层互验、向上归并</text>
+            <rect x="180" y="55" width="140" height="48" rx="8" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="250" y="85" text-anchor="middle" font-size="15" font-weight="700">完整 2r₁</text>
+            <path d="M215 103 L135 152" stroke="#60727b" stroke-width="2"/>
+            <path d="M285 103 L365 152" stroke="#60727b" stroke-width="2"/>
+            <rect x="65" y="152" width="140" height="48" rx="8" fill="#f5f1ff" stroke="#a993df"/>
+            <rect x="295" y="152" width="140" height="48" rx="8" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="135" y="181" text-anchor="middle" font-size="14">左半 r₁</text>
+            <text x="365" y="181" text-anchor="middle" font-size="14">右半 r₁</text>
+            <path d="M205 176 L290 176" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <path d="M295 190 L210 190" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <text x="250" y="222" text-anchor="middle" font-size="13" fill="#6941c6">双向 cross-validation</text>
+
+            <path d="M105 200 L72 268" stroke="#60727b" stroke-width="2"/>
+            <path d="M165 200 L198 268" stroke="#60727b" stroke-width="2"/>
+            <path d="M335 200 L302 268" stroke="#60727b" stroke-width="2"/>
+            <path d="M395 200 L428 268" stroke="#60727b" stroke-width="2"/>
+            <g fill="#fff7df" stroke="#d0a33c">
+              <rect x="22" y="268" width="100" height="43" rx="7"/>
+              <rect x="148" y="268" width="100" height="43" rx="7"/>
+              <rect x="252" y="268" width="100" height="43" rx="7"/>
+              <rect x="378" y="268" width="100" height="43" rx="7"/>
+            </g>
+            <g font-size="13" text-anchor="middle">
+              <text x="72" y="294">r₁/2</text>
+              <text x="198" y="294">r₁/2</text>
+              <text x="302" y="294">r₁/2</text>
+              <text x="428" y="294">r₁/2</text>
+            </g>
+            <path d="M122 322 L148 322" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <path d="M252 322 L226 322" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <path d="M352 322 L378 322" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <path d="M478 336 L452 336" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-tree)"/>
+            <rect x="80" y="375" width="340" height="55" rx="8" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="250" y="398" text-anchor="middle" font-size="14" font-weight="700">每层只排序一次；子结果 merge 后供父层复用</text>
+            <text x="250" y="419" text-anchor="middle" font-size="13">得到多个 (r, Δ_CV²) 点</text>
+
+            <line x1="535" y1="40" x2="535" y2="465" stroke="#d7dce2" stroke-width="2"/>
+            <text x="790" y="34" text-anchor="middle" font-size="20" font-weight="700">把定理的 1/r 关系变成预测器</text>
+            <line x1="620" y1="390" x2="990" y2="390" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-tree)"/>
+            <line x1="620" y1="390" x2="620" y2="75" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-tree)"/>
+            <text x="1000" y="410" text-anchor="end" font-size="13">1/r</text>
+            <text x="595" y="82" text-anchor="end" font-size="13">Δ_CV²</text>
+            <line x1="620" y1="390" x2="940" y2="105" stroke="#176b87" stroke-width="4"/>
+            <circle cx="700" cy="323" r="8" fill="#6941c6"/>
+            <circle cx="776" cy="245" r="8" fill="#6941c6"/>
+            <circle cx="884" cy="166" r="8" fill="#6941c6"/>
+            <line x1="620" y1="180" x2="855" y2="180" stroke="#a5680f" stroke-width="2" stroke-dasharray="7 5"/>
+            <line x1="855" y1="180" x2="855" y2="390" stroke="#a5680f" stroke-width="2" stroke-dasharray="7 5"/>
+            <text x="610" y="176" text-anchor="end" font-size="13" fill="#8a5a12">Δ_req²</text>
+            <text x="855" y="414" text-anchor="middle" font-size="13" fill="#8a5a12">1/r_blk</text>
+            <rect x="660" y="435" width="270" height="48" rx="8" fill="#f2f7fb" stroke="#9ec0d1"/>
+            <text x="795" y="465" text-anchor="middle" font-size="15" font-weight="700">
+              拟合斜率 c，求 r_blk = c/Δ_req²
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          右图把横轴画成 \(1/r\)，所以 \(\Delta^2=c/r\) 成为直线；紫色点只是教学示意，
+          不对应论文某一组实验数值。
+        </figcaption>
+      </figure>
+
+      <div class="warning">
+        <p class="callout-title">2PHASE 选择“不做最终验证”</p>
+        <p>
+          Phase II 后算法直接构建 Histogram，因此目标是<strong>期望意义上的误差</strong>。
+          论文讨论了两种更强做法：推导高概率界，或追加重复/最终验证；前者可能很保守，
+          后者会重新引入额外采样和 oversampling。2PHASE 的效率正来自这项明确取舍。
+        </p>
+      </div>
+    </section>
+
+    <section id="takeall">
+      <h2>5. NDV：为什么 TAKEALL 会把“块内重复”误读成“全表重复”</h2>
+      <p class="mini">
+        对应论文 §4.1–§4.2。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=6">PDF p.6 / 论文 p.292</a>
+      </p>
+
+      <p>
+        NDV（number of distinct values）常用于 Histogram bucket density 和等值选择率。
+        令真实 NDV 为 \(D\)，一次估计为 \(\hat D\)。论文刻意区分 bias 与 ratio error：
+      </p>
+
+      <div class="formula">
+        <span class="label">Bias 看跨重复实验的期望；ratio error 看一次估计偏离真值的倍数</span>
+        \[
+          \mathrm{Bias}=\left|\mathbb E[\hat D]-D\right|,
+          \qquad
+          \mathrm{Error}=\max\left\{\frac{\hat D}{D},\frac{D}{\hat D}\right\}
+        \]
+      </div>
+
+      <p>
+        完美 ratio error 是 1；一个 estimator 可以无偏，却仍因方差很大而有很高的期望 ratio error。
+        对一份样本，再令 \(d\) 为样本中不同值数，\(f_i\) 为“在样本里恰好出现 \(i\) 次”的值数。
+        很多经典 estimator 可概括为：
+      </p>
+
+      <div class="formula">
+        <span class="label">典型 unseen-species 修正</span>
+        \[
+          \hat D = d + K f_1
+        \]
+      </div>
+
+      <p>
+        \(d\) 是已经看见的值；\(f_1\)（singleton 数量）提供“还有多少 unseen values”
+        的信号。TAKEALL 的做法很直接：把抽中块里的每一行全部拿来，假装这是一份均匀 row sample，
+        再调用现成 estimator。危险恰恰来自这个“假装”。
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1040 500" role="img"
+               aria-labelledby="takeall-title takeall-desc">
+            <title id="takeall-title">TAKEALL 与 COLLAPSE 对 singleton 信号的不同处理</title>
+            <desc id="takeall-desc">
+              原表有三个块。值 A 在第一个块重复四次，B 在第二块重复四次，
+              C 和 D 在第三块各重复两次。抽中第一个和第三个块后，
+              TAKEALL 的频数只有四和二，没有 singleton；COLLAPSE 在每块内把重复值压成一次，
+              得到 A C D 各一次，因此 f1 等于三。
+            </desc>
+            <defs>
+              <marker id="arrow-takeall" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <text x="180" y="35" text-anchor="middle" font-size="20" font-weight="700">原表：值在块内成团</text>
+            <g transform="translate(50,65)">
+              <rect x="0" y="0" width="260" height="55" rx="8" fill="#e8f3f7" stroke="#176b87" stroke-width="3"/>
+              <g font-size="17" font-weight="700" text-anchor="middle">
+                <text x="35" y="34">A</text><text x="95" y="34">A</text><text x="155" y="34">A</text><text x="215" y="34">A</text>
+              </g>
+              <text x="275" y="34" font-size="13">抽中</text>
+              <rect x="0" y="78" width="260" height="55" rx="8" fill="#fff" stroke="#9aa6ac"/>
+              <g font-size="17" font-weight="700" text-anchor="middle">
+                <text x="35" y="112">B</text><text x="95" y="112">B</text><text x="155" y="112">B</text><text x="215" y="112">B</text>
+              </g>
+              <text x="275" y="112" font-size="13" class="muted">未抽中</text>
+              <rect x="0" y="156" width="260" height="55" rx="8" fill="#e8f3f7" stroke="#176b87" stroke-width="3"/>
+              <g font-size="17" font-weight="700" text-anchor="middle">
+                <text x="35" y="190">C</text><text x="95" y="190">C</text><text x="155" y="190">D</text><text x="215" y="190">D</text>
+              </g>
+              <text x="275" y="190" font-size="13">抽中</text>
+            </g>
+
+            <path d="M350 170 L460 105" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-takeall)"/>
+            <path d="M350 170 L460 315" stroke="#60727b" stroke-width="2" marker-end="url(#arrow-takeall)"/>
+
+            <rect x="470" y="48" width="520" height="150" rx="10" fill="#fff0ed" stroke="#df8d80"/>
+            <text x="490" y="78" font-size="19" font-weight="700">TAKEALL：保留块内所有重复</text>
+            <text x="490" y="110" font-size="17" class="mono">A A A A · C C · D D</text>
+            <text x="490" y="142" font-size="15">频数：f₄ = 1，f₂ = 2，f₁ = 0</text>
+            <text x="490" y="174" font-size="15" fill="#9f3427">估计器看不见 singleton，容易把 unseen 修正压到 0</text>
+
+            <rect x="470" y="258" width="520" height="150" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="490" y="288" font-size="19" font-weight="700">COLLAPSE：每个已抽中块内，每值只留一次</text>
+            <text x="490" y="320" font-size="17" class="mono">A · C · D</text>
+            <text x="490" y="352" font-size="15">频数：f₁ = 3</text>
+            <text x="490" y="384" font-size="15" fill="#356140">保留“一个值出现于多少个块”的抽样信号</text>
+
+            <rect x="180" y="445" width="680" height="40" rx="8" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="520" y="471" text-anchor="middle" font-size="14">
+              注意：COLLAPSE 修复的是 estimator 输入语义，不是在恢复被删掉的真实 multiplicity
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          教学例子展示论文的核心反例：若每个值在其出现的块内总是出现 0 次或至少 2 次，
+          TAKEALL 样本会有 \(f_1=0\)，很多 \(\hat D=d+Kf_1\) estimator 只能返回 \(d\)。
+        </figcaption>
+      </figure>
+
+      <div class="bad">
+        <p class="callout-title">错误不在“重复值太多”，而在重复的来源被混淆</p>
+        <p>
+          均匀 row sample 中，一个值重复出现通常说明它在全表频繁；
+          block sample 中，它也可能只是因为该值被物理聚簇在刚好抽中的块里。
+          TAKEALL 丢掉了 block identity，无法区分这两种原因。
+        </p>
+      </div>
+
+      <p>
+        论文同时指出：针对 block sampling 设计一个达到指定 NDV 精度的自适应样本量算法，
+        在该工作中仍是开放问题。COLLAPSE 修复的是“已有 block sample 如何估 NDV”，
+        不是 NDV 版的 2PHASE。
+      </p>
+    </section>
+
+    <section id="collapse">
+      <h2>6. COLLAPSE：先构造虚拟表，再复用已有 estimator</h2>
+      <p class="mini">
+        对应论文 §4.2、Lemma 1、Theorem 2。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=7">PDF p.7 / 论文 p.293</a>
+      </p>
+
+      <h3>算法动作只有一句，但证明对象要换</h3>
+      <p>
+        以概率 \(q\) 抽取 block。对每个已抽中的 block，把同一 value 的多次出现
+        <strong>collapse 成一次</strong>；把得到的 \(S_{\mathrm{coll}}\) 交给一个原本面向
+        均匀抽样的 NDV estimator，并仍使用抽样率 \(q\)。
+      </p>
+
+      <p>
+        为理解它，定义虚拟表 \(T_{\mathrm{coll}}\)：对原表的<strong>每一个</strong> block
+        都做相同的块内去重。若值 \(j\) 在原表中出现 \(n_j\) 次、分布在 \(N_j\) 个块，
+        那么它在 \(T_{\mathrm{coll}}\) 中恰好出现 \(N_j\) 次。
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1080 500" role="img"
+               aria-labelledby="collapse-proof-title collapse-proof-desc">
+            <title id="collapse-proof-title">COLLAPSE 通过虚拟表 T-coll 建立频数期望等价</title>
+            <desc id="collapse-proof-desc">
+              左侧原表每个块内可能重复同一值。上路径先抽块，再对样本块内去重，
+              得到 S-coll。下路径先对全表每个块内去重得到虚拟表 T-coll，
+              再按 q 做均匀 Bernoulli 行抽样。两条路径对每个值恰出现 i 次的概率相同，
+              因而 f-i 的期望相同；图中特别标明这不是原表 T 的均匀行样本。
+            </desc>
+            <defs>
+              <marker id="arrow-collapse" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <rect x="30" y="155" width="220" height="180" rx="10" fill="#fbfcfd" stroke="#97a5ad"/>
+            <text x="140" y="185" text-anchor="middle" font-size="19" font-weight="700">原表 T</text>
+            <rect x="55" y="205" width="170" height="35" rx="5" fill="#fff" stroke="#97a5ad"/>
+            <text x="140" y="229" text-anchor="middle" font-size="15" class="mono">A A A · B</text>
+            <rect x="55" y="250" width="170" height="35" rx="5" fill="#fff" stroke="#97a5ad"/>
+            <text x="140" y="274" text-anchor="middle" font-size="15" class="mono">A · C C C</text>
+            <rect x="55" y="295" width="170" height="35" rx="5" fill="#fff" stroke="#97a5ad"/>
+            <text x="140" y="319" text-anchor="middle" font-size="15" class="mono">B B · D D</text>
+
+            <path d="M250 205 L385 105" stroke="#176b87" stroke-width="3" marker-end="url(#arrow-collapse)"/>
+            <text x="300" y="132" font-size="14" fill="#176b87">先以 q 抽 block</text>
+            <rect x="395" y="45" width="235" height="125" rx="10" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="512" y="75" text-anchor="middle" font-size="17" font-weight="700">被抽中的整块</text>
+            <text x="512" y="108" text-anchor="middle" font-size="15" class="mono">A A A · B</text>
+            <text x="512" y="139" text-anchor="middle" font-size="15" class="mono">B B · D D</text>
+            <path d="M630 108 L750 108" stroke="#176b87" stroke-width="3" marker-end="url(#arrow-collapse)"/>
+            <text x="690" y="92" text-anchor="middle" font-size="14" fill="#176b87">块内去重</text>
+            <rect x="760" y="45" width="280" height="125" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="900" y="75" text-anchor="middle" font-size="17" font-weight="700">S_coll</text>
+            <text x="900" y="108" text-anchor="middle" font-size="15" class="mono">A · B</text>
+            <text x="900" y="139" text-anchor="middle" font-size="15" class="mono">B · D</text>
+
+            <path d="M250 285 L385 385" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-collapse)"/>
+            <text x="287" y="373" font-size="14" fill="#6941c6">先把每块内去重</text>
+            <rect x="395" y="325" width="235" height="135" rx="10" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="512" y="355" text-anchor="middle" font-size="17" font-weight="700">虚拟表 T_coll</text>
+            <text x="512" y="385" text-anchor="middle" font-size="15" class="mono">A · B</text>
+            <text x="512" y="413" text-anchor="middle" font-size="15" class="mono">A · C</text>
+            <text x="512" y="441" text-anchor="middle" font-size="15" class="mono">B · D</text>
+            <path d="M630 392 L750 392" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-collapse)"/>
+            <text x="690" y="371" text-anchor="middle" font-size="14" fill="#6941c6">再以 q 均匀抽行</text>
+            <rect x="760" y="325" width="280" height="135" rx="10" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="900" y="362" text-anchor="middle" font-size="17" font-weight="700">S_unf(T_coll)</text>
+            <text x="900" y="400" text-anchor="middle" font-size="15">对每个值的 sampled frequency</text>
+            <text x="900" y="429" text-anchor="middle" font-size="15">与上路径有相同边际分布</text>
+
+            <path d="M900 170 L900 315" stroke="#4f6f52" stroke-width="3" stroke-dasharray="8 5" marker-end="url(#arrow-collapse)"/>
+            <rect x="695" y="210" width="335" height="64" rx="8" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="862" y="235" text-anchor="middle" font-size="14" font-weight="700">
+              E[fᵢ(S_coll)] = E[fᵢ(S_unf)]
+            </text>
+            <text x="862" y="258" text-anchor="middle" font-size="13">等价对象是 T_coll，不是原表 T</text>
+          </svg>
+        </div>
+        <figcaption>
+          证明桥梁是虚拟表 \(T_{\mathrm{coll}}\)。COLLAPSE 无需真的物化它；
+          它只是帮助说明 block inclusion 如何映射成每个值的频数分布。
+        </figcaption>
+      </figure>
+
+      <h3>Lemma 1：为什么 \(f_i\) 的期望相同</h3>
+      <p>
+        对值 \(j\)，它在 \(T_{\mathrm{coll}}\) 中有 \(N_j\) 个 occurrence，
+        一一对应原表中包含该值的 \(N_j\) 个 block。在 Bernoulli block sampling 模型下，
+        它恰好在样本出现 \(i\) 次的概率为：
+      </p>
+
+      <div class="formula">
+        <span class="label">对单个值 j 的入样频数</span>
+        \[
+          \Pr[F_j=i]
+          = {N_j\choose i}q^i(1-q)^{N_j-i}
+        \]
+      </div>
+
+      <p>
+        这正是以概率 \(q\) 均匀抽取 \(T_{\mathrm{coll}}\) 中该值的 \(N_j\) 个 occurrence
+        时的二项分布。因此，对所有值求和后，
+        \(\mathbb E[f_i(S_{\mathrm{coll}})]
+        =\mathbb E[f_i(S_{\mathrm{unf}}(T_{\mathrm{coll}}))]\)。
+      </p>
+
+      <p class="mini">
+        假设边界：Lemma 1 使用 Bernoulli sampling——每个 block / item 独立地以概率 \(q\)
+        入样；论文把它视为大表上固定大小均匀抽样的近似。\(T_{\mathrm{coll}}\) 的虚拟 block
+        在去重后可以大小不一，这不影响上述按 value 计数的证明；但多个 value 共享同一 block
+        仍会造成联合相关。
+      </p>
+
+      <h3>Theorem 2：线性 frequency estimator 的 bias 被保留</h3>
+      <div class="formula purple">
+        <span class="label">适用 estimator 形式；系数 \(a_i\) 只能依赖 q，不能依赖样本的 \(f_i\)</span>
+        \[
+          \hat D=\sum_i a_i f_i
+        \]
+      </div>
+      <p>
+        因为期望可线性穿过求和，COLLAPSE 在原 block sample 上运行该 estimator 的 bias，
+        与 estimator 在 \(T_{\mathrm{coll}}\) 的均匀样本上运行时相同。论文以 GEE 为例：
+      </p>
+      <div class="formula">
+        <span class="label">GEE 示例</span>
+        \[
+          \hat D_{\mathrm{GEE}}
+          = \sum_{i\ge 2} f_i + \frac{f_1}{\sqrt q}
+        \]
+      </div>
+
+      <div class="grid-3">
+        <article class="card">
+          <h3>证明了</h3>
+          <p>对指定线性 estimator，COLLAPSE 与 \(T_{\mathrm{coll}}\) 均匀样本具有相同 bias。</p>
+        </article>
+        <article class="card">
+          <h3>没有证明</h3>
+          <p>方差、ratio error 或某次运行的误差相同；也没有说样本联合分布完全相同。</p>
+        </article>
+        <article class="card">
+          <h3>不能直接覆盖</h3>
+          <p>AE、HYBSKEW 等系数依赖观测 \(f_i\) 的 estimator；论文对其表现给实验结果。</p>
+        </article>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">COLLAPSE 改变了问题中的 multiplicity</p>
+        <p>
+          原值 \(j\) 的频数是 \(n_j\)，虚拟表中的频数是 \(N_j\)。
+          两张表的 NDV 相同，但频数分布不同。之所以还能估 NDV，是因为目标只关心
+          “有哪些值”，而不是保留原表每个值出现多少次。
+        </p>
+      </div>
+    </section>
+
+    <section id="lower-bound">
+      <h2>7. 下界与两种 Badness：COLLAPSE 也不能消除所有 block correlation</h2>
+      <p class="mini">
+        对应论文 Theorem 3、§4.3。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=7">PDF p.7 / 论文 p.293</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=8">PDF p.8 / 论文 p.294</a>
+      </p>
+
+      <p>
+        论文构造两个难以区分的数据库，说明只抽取 \(N\) 个 block 中的 \(R\) 个、
+        每块 \(b\) 行时，任何 NDV estimator 都无法普遍给出优于下列量级的 ratio-error 保证：
+      </p>
+
+      <div class="formula">
+        <span class="label">Theorem 3 的下界量级；写成 block 数与 row 数两种形式</span>
+        \[
+          \sqrt{\frac{Nb}{R}}
+          = \sqrt{\frac{nb}{r}}
+        \]
+      </div>
+
+      <p class="mini">
+        论文原文表述为：不存在能对所有输入以高概率保证 ratio error
+        “小于 \(O(\sqrt{Nb/R})\)”的 estimator。这里保留其原始渐近记号；
+        按下界语义理解，就是不能给出渐近优于该量级的普遍保证。
+      </p>
+
+      <p>
+        对相同行数 \(r\) 的均匀 row sample，经典下界量级少一个 \(\sqrt b\) 因子。
+        直觉是：一次抽中整块带来 \(b\) 行，却未必带来 \(b\) 份独立证据。
+        COLLAPSE 能修复某些 estimator 的 bias，但不能违反信息论下界。
+      </p>
+
+      <h3>DV Badness 与 Hist Badness 不是同一个旋钮</h3>
+      <p>
+        令 \(d_j\) 是 block \(j\) 内的不同值数。论文用其变异系数衡量 NDV 任务对布局的敏感性：
+      </p>
+      <div class="formula purple">
+        <span class="label">论文定义</span>
+        \[
+          \mathrm{DVBadness}
+          = \frac{\sigma(d_j)}{\mu(d_j)}
+        \]
+      </div>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1040 500" role="img"
+               aria-labelledby="two-badness-title two-badness-desc">
+            <title id="two-badness-title">Hist Badness 与 DV Badness 是两个独立维度</title>
+            <desc id="two-badness-desc">
+              坐标图横轴为 Histogram Badness，纵轴为 DV Badness。
+              四个象限分别标出均匀混合、频数聚簇但每块 distinct 数稳定、
+              distinct-rich 和 distinct-poor 块混杂，以及两者都差的情形。
+              特别强调完全聚簇可以有高 Histogram Badness、低 DV Badness。
+            </desc>
+            <defs>
+              <marker id="arrow-axes" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+            </defs>
+
+            <line x1="150" y1="410" x2="950" y2="410" stroke="#60727b" stroke-width="3" marker-end="url(#arrow-axes)"/>
+            <line x1="150" y1="410" x2="150" y2="55" stroke="#60727b" stroke-width="3" marker-end="url(#arrow-axes)"/>
+            <line x1="550" y1="80" x2="550" y2="410" stroke="#c4ccd1" stroke-width="2" stroke-dasharray="7 6"/>
+            <line x1="150" y1="240" x2="930" y2="240" stroke="#c4ccd1" stroke-width="2" stroke-dasharray="7 6"/>
+            <text x="950" y="445" text-anchor="end" font-size="16" font-weight="700">Hist Badness →</text>
+            <text x="68" y="72" font-size="16" font-weight="700">DV Badness ↑</text>
+
+            <rect x="205" y="285" width="270" height="78" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="340" y="313" text-anchor="middle" font-size="16" font-weight="700">两者都低：块间分布近似</text>
+            <text x="340" y="338" text-anchor="middle" font-size="13">Histogram 与 NDV 都较容易</text>
+
+            <rect x="625" y="285" width="270" height="78" rx="10" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="760" y="313" text-anchor="middle" font-size="16" font-weight="700">频数高度聚簇</text>
+            <text x="760" y="338" text-anchor="middle" font-size="13">但每块 distinct 数稳定：DV 可仍低</text>
+
+            <rect x="205" y="120" width="270" height="78" rx="10" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="340" y="148" text-anchor="middle" font-size="16" font-weight="700">块间 distinct 数差异大</text>
+            <text x="340" y="173" text-anchor="middle" font-size="13">即使 bucket 比例未必极端</text>
+
+            <rect x="625" y="120" width="270" height="78" rx="10" fill="#fff0ed" stroke="#df8d80"/>
+            <text x="760" y="148" text-anchor="middle" font-size="16" font-weight="700">两者都高</text>
+            <text x="760" y="173" text-anchor="middle" font-size="13">Histogram 与 NDV 都需要更谨慎</text>
+
+            <circle cx="780" cy="335" r="10" fill="#176b87"/>
+            <path d="M780 335 C880 360 900 385 920 404" fill="none" stroke="#176b87" stroke-width="2"/>
+            <text x="980" y="385" text-anchor="end" font-size="13" fill="#176b87">完全按值聚簇</text>
+            <text x="980" y="404" text-anchor="end" font-size="13" fill="#176b87">可落在这里</text>
+          </svg>
+        </div>
+        <figcaption>
+          教学坐标图，不是论文实验散点。HistBadness 看“每个 Histogram bucket 在块间的比例方差”；
+          DVBadness 看“每块 distinct 数的变异系数”，不能用一个替代另一个。
+        </figcaption>
+      </figure>
+
+      <div class="note">
+        <p class="callout-title">一个容易反直觉的例子</p>
+        <p>
+          完全按值聚簇会把某个 Histogram bucket 集中到少量块，因而 HistBadness 很高；
+          但如果每块都稳定地装着相同数量的 distinct values，\(d_j\) 几乎不变，
+          DVBadness 反而可能很低。论文实验中，完全聚簇时 COLLAPSE 甚至可能优于均匀 row sample；
+          这不是“block sample 普遍更好”，而是该数据的 NDV 信息恰好按块分布得很稳定。
+        </p>
+      </div>
+    </section>
+
+    <section id="experiments">
+      <h2>8. 怎样读论文实验：看趋势，也看证据边界</h2>
+      <p class="mini">
+        对应论文 §5。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=8">PDF p.8 / 论文 p.294</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=9">PDF p.9 / 论文 p.295</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=10">PDF p.10 / 论文 p.296</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=12">PDF p.12 / 论文 p.298</a>
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>实验设置与能支持的结论</caption>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>论文设置</th>
+              <th>阅读时应注意</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>实现环境</td>
+              <td>SQL Server 原型；Intel 2.3GHz、1GB 内存</td>
+              <td>结论来自磁盘时代的采样成本模型；算法洞见可迁移，绝对时间不能直接外推。</td>
+            </tr>
+            <tr>
+              <td>合成表规模</td>
+              <td>\(10^5\)–\(10^7\) 行；block size 50–200；Zipf \(Z=0\)–2</td>
+              <td>覆盖了规模、skew、block size，但不是任意存储格式或并发场景。</td>
+            </tr>
+            <tr>
+              <td>聚簇控制</td>
+              <td>比例 \(C\) 的 occurrence 连续编号，其余随机；\(C=0\) 随机，\(C=1\) 完全聚簇</td>
+              <td>这是可控的一维 clustering 生成器，不代表所有多列/分区/LSM layout。</td>
+            </tr>
+            <tr>
+              <td>Histogram</td>
+              <td>Equi-depth 与 MaxDiff；常用 \(k=100,b=132,\Delta_{\rm req}=0.25\)</td>
+              <td>形式化推导固定 separators；动态边界算法主要由实验验证。</td>
+            </tr>
+            <tr>
+              <td>NDV</td>
+              <td>AE、HYBSKEW × COLLAPSE / TAKEALL；与 UNIFORM 比较</td>
+              <td>Theorem 2 严格覆盖线性 frequency estimator；AE/HYBSKEW 结论是经验性的。</td>
+            </tr>
+            <tr>
+              <td>真实数据</td>
+              <td>Home：667,877 行，按 neighborhood 聚簇；zipcode，约 25 行/block</td>
+              <td>只有一张规模不到百万的真实表，不能单独证明跨 workload 普适性。</td>
+            </tr>
+            <tr>
+              <td>重复次数</td>
+              <td>Histogram 多为 5 次均值；NDV ratio error 多为 10 次均值</td>
+              <td>均值展示总体趋势，不等于 tail guarantee 或显著性分析。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>论文实验真正稳定支持的趋势</h3>
+      <div class="grid-2">
+        <article class="card">
+          <h3>Histogram / 2PHASE</h3>
+          <ul>
+            <li>所需样本量对总表规模相对不敏感，更受 layout、\(b\)、\(k\) 和目标误差影响。</li>
+            <li>clustering 增强时，block sample 需要更多行；2PHASE 能从 Phase I 估出趋势。</li>
+            <li>DOUBLE 常因翻倍和多轮固定开销 oversample；部分设置中约有 4× 差距。</li>
+            <li>MaxDiff 在 skew 增强时可用更少样本；Equi-depth 对 skew 较不敏感。</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>NDV / COLLAPSE</h3>
+          <ul>
+            <li>TAKEALL 在低 sample fraction 下 ratio error 可非常大，论文图中有接近 200 的案例。</li>
+            <li>clustering 增强时 TAKEALL 恶化；COLLAPSE 通常保持接近 UNIFORM。</li>
+            <li>完全聚簇时 COLLAPSE 可能因低 DVBadness 优于 UNIFORM。</li>
+            <li>高 skew 下偶见 HYB_TAKEALL “胜出”，论文解释为高估与低估的误差抵消。</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">不要把图上的极值写成普遍常数</p>
+        <p>
+          “TAKEALL 误差约 200”或“DOUBLE 多抽 4×”都是特定参数、数据和 estimator 下的观测，
+          不是算法对所有输入的固定误差。更可靠的教学结论是：
+          <strong>物理聚簇会系统性破坏 naive block-sample estimator，而 2PHASE / COLLAPSE
+          对应地缓解了样本量与频数语义问题。</strong>
+        </p>
+      </div>
+
+      <h3>从 2004 迁移到今天，要重新测什么？</h3>
+      <ul>
+        <li>物理抽样单位从 page/block 变成 row group、segment、stripe 或 tablet 后，块内相关性怎样变化？</li>
+        <li>压缩、列存和异步预取改变了“随机 row I/O 很贵”的程度，但是否改变 estimator 假设？</li>
+        <li>分区裁剪、compaction、sort key 和冷热分层会不会让样本只代表一部分 layout？</li>
+        <li>统计采集是单机、分布式聚合还是 per-part sketch merge？网络成本是否成为新的 block cost？</li>
+        <li>除了平均误差，还需要报告 p95/p99、最坏分区和 optimizer plan regret 吗？</li>
+      </ul>
+    </section>
+
+    <section id="modern-boundary">
+      <h2>9. 现代系统与 CIDR 2019：相邻，但不能偷换样本语义</h2>
+      <p class="mini">
+        对照论文的问题范围与结论。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">PDF p.1 / 论文 p.287</a>
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=12">PDF p.12 / 论文 p.298</a>
+      </p>
+
+      <p>
+        <a href="group-by-cardinality-estimation-tutorial.html"><em>Every Row Counts</em> 主教程</a>
+        讨论的是任意多列 GROUP BY 的结果 NDV：它从<strong>均匀 row sample</strong> 提取组合
+        frequency vector，再用全表单列 sketch 收紧估计。本文则讨论：
+        当物理上只能便宜地抽整块时，如何构建<strong>单列 Histogram</strong> 与估计
+        <strong>单列 NDV</strong>。两篇论文都出现 sample 与 distinct，但问题轴并不相同。
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1080 510" role="img"
+               aria-labelledby="cidr-boundary-title cidr-boundary-desc">
+            <title id="cidr-boundary-title">Block-level sampling 与 CIDR group-by estimator 的边界</title>
+            <desc id="cidr-boundary-desc">
+              图中从原表分出两条路径。上路径按块抽样，分别进入 2PHASE Histogram 或
+              COLLAPSE 单列 NDV；Theorem 2 以虚拟表 T-coll 的均匀样本作为边际频数期望与线性 estimator bias 的比较基线，
+              并不声称两种样本的联合分布等价。
+              下路径按行均匀抽样，组合多列后形成 frequency vector，再与单列全表 sketch
+              一起进入 CIDR SCBC。红色禁止箭头表示不能把 S-coll 直接当作原表的均匀行样本。
+            </desc>
+            <defs>
+              <marker id="arrow-boundary" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60727b"/>
+              </marker>
+              <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#b54235"/>
+              </marker>
+            </defs>
+
+            <rect x="30" y="202" width="145" height="70" rx="10" fill="#fbfcfd" stroke="#97a5ad"/>
+            <text x="102" y="233" text-anchor="middle" font-size="18" font-weight="700">原表 T</text>
+            <text x="102" y="256" text-anchor="middle" font-size="13">rows in blocks</text>
+
+            <path d="M175 225 C230 225 225 105 290 105" fill="none" stroke="#176b87" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <text x="220" y="138" text-anchor="middle" font-size="14" fill="#176b87">随机抽整块</text>
+            <rect x="300" y="50" width="170" height="105" rx="10" fill="#f2f7fb" stroke="#8ab3c6"/>
+            <text x="385" y="80" text-anchor="middle" font-size="17" font-weight="700">Block sample</text>
+            <text x="385" y="106" text-anchor="middle" font-size="14">保留 block identity</text>
+            <text x="385" y="132" text-anchor="middle" font-size="14">块内 rows 联动入样</text>
+
+            <path d="M470 85 L555 85" stroke="#176b87" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <rect x="565" y="35" width="205" height="100" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="668" y="66" text-anchor="middle" font-size="17" font-weight="700">2PHASE</text>
+            <text x="668" y="92" text-anchor="middle" font-size="14">自适应样本量</text>
+            <text x="668" y="116" text-anchor="middle" font-size="14">单列 Histogram</text>
+
+            <path d="M470 125 L555 172" stroke="#176b87" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <rect x="565" y="147" width="205" height="100" rx="10" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="668" y="178" text-anchor="middle" font-size="17" font-weight="700">COLLAPSE</text>
+            <text x="668" y="204" text-anchor="middle" font-size="14">块内 per-value 去重</text>
+            <text x="668" y="228" text-anchor="middle" font-size="14">单列 NDV</text>
+            <path d="M770 197 L860 197" stroke="#6941c6" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <rect x="870" y="155" width="175" height="84" rx="10" fill="#f5f1ff" stroke="#a993df"/>
+            <text x="957" y="182" text-anchor="middle" font-size="15" font-weight="700">Theorem 2 比较基线</text>
+            <text x="957" y="207" text-anchor="middle" font-size="13">T_coll row sample</text>
+            <text x="957" y="226" text-anchor="middle" font-size="12">边际 fᵢ 期望 / bias</text>
+
+            <path d="M175 250 C230 250 225 375 290 375" fill="none" stroke="#4f6f52" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <text x="220" y="350" text-anchor="middle" font-size="14" fill="#4f6f52">均匀抽 row</text>
+            <rect x="300" y="322" width="170" height="105" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="385" y="352" text-anchor="middle" font-size="17" font-weight="700">Row sample</text>
+            <text x="385" y="378" text-anchor="middle" font-size="14">保留多列组合</text>
+            <text x="385" y="404" text-anchor="middle" font-size="14">形成 frequency vector</text>
+            <path d="M470 375 L620 375" stroke="#4f6f52" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+            <rect x="630" y="322" width="190" height="105" rx="10" fill="#eef8f2" stroke="#8bc39b"/>
+            <text x="725" y="352" text-anchor="middle" font-size="17" font-weight="700">CIDR: BC / SCBC</text>
+            <text x="725" y="378" text-anchor="middle" font-size="14">任意多列 GROUP BY NDV</text>
+            <text x="725" y="404" text-anchor="middle" font-size="14">+ 全表单列 sketches</text>
+            <rect x="870" y="335" width="175" height="80" rx="10" fill="#fff7df" stroke="#d0a33c"/>
+            <text x="957" y="365" text-anchor="middle" font-size="16" font-weight="700">关键输入假设</text>
+            <text x="957" y="393" text-anchor="middle" font-size="14">原表 T 的 uniform rows</text>
+            <path d="M870 375 L820 375" stroke="#a5680f" stroke-width="3" marker-end="url(#arrow-boundary)"/>
+
+            <path d="M760 250 C820 280 810 320 790 337" fill="none" stroke="#b54235" stroke-width="4" stroke-dasharray="9 6" marker-end="url(#arrow-red)"/>
+            <line x1="795" y1="277" x2="835" y2="317" stroke="#b54235" stroke-width="5"/>
+            <line x1="835" y1="277" x2="795" y2="317" stroke="#b54235" stroke-width="5"/>
+            <text x="552" y="288" font-size="14" fill="#b54235" font-weight="700">
+              S_coll ≠ 原表 T 的 uniform row sample
+            </text>
+
+            <rect x="285" y="462" width="570" height="35" rx="7" fill="#fff0ed" stroke="#df8d80"/>
+            <text x="570" y="485" text-anchor="middle" font-size="14">
+              若要组合两条路径，必须重新推导 inclusion probability、frequency semantics 与 estimator
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          两条工作线可以在一个系统中共存，但接口必须带着 sampling design。
+          仅凭“它们都是 sample”就把 COLLAPSE 输出送进 SCBC，会违反 CIDR estimator 的输入假设。
+        </figcaption>
+      </figure>
+
+      <h3>为什么 COLLAPSE 不能直接喂给 Every Row Counts</h3>
+      <ol>
+        <li>
+          <strong>样本总体不同：</strong>COLLAPSE 对应 \(T_{\mathrm{coll}}\)，CIDR 要估的是原表 \(T\)
+          中多列组合的 group count。
+        </li>
+        <li>
+          <strong>multiplicity 被改写：</strong>一个组合在同一块出现 100 次，COLLAPSE 后只剩一次；
+          CIDR 的 sample frequency vector 会把它当成真实 sampled frequency。
+        </li>
+        <li>
+          <strong>联合入样相关：</strong>同一块内不同组合一起出现或一起消失；
+          COLLAPSE 的 Lemma 只给每个 \(f_i\) 的期望桥梁，没有为 CIDR 的 bounds 重做证明。
+        </li>
+        <li>
+          <strong>sketch 约束对象不同：</strong>CIDR 的单列 sketches 描述原表全量列分布，
+          而 COLLAPSE sample 描述按 block-presence 改写后的频数。
+        </li>
+      </ol>
+
+      <div class="good">
+        <p class="callout-title">可研究的组合方式，而不是可直接拼接的 pipeline</p>
+        <p>
+          可以让收集器保留 block identity、每个组合的 sampled-block multiplicity 和原始行频数，
+          再按真实 inclusion probability 重新推导 estimator；也可以在抽中 block 后继续做块内
+          row reservoir，生成满足所需设计的二阶段样本。但这些都是新算法设计，
+          不能引用 COLLAPSE Theorem 2 自动获得正确性。
+        </p>
+      </div>
+
+      <h3>调查现代系统时，用这张检查表</h3>
+      <div class="table-wrap">
+        <table>
+          <caption>不要只搜索 “sample” 关键字，要还原完整 sampling design</caption>
+          <thead>
+            <tr>
+              <th>检查项</th>
+              <th>要问的具体问题</th>
+              <th>常见误判</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>用途</td>
+              <td>这是统计收集、查询 TABLESAMPLE，还是近似查询执行？</td>
+              <td>把查询语法的 sample 当成 optimizer stats sample。</td>
+            </tr>
+            <tr>
+              <td>第一阶段单位</td>
+              <td>page、block、row group、tablet、part 还是 segment？</td>
+              <td>源码写“random sample”就默认是 uniform rows。</td>
+            </tr>
+            <tr>
+              <td>块内动作</td>
+              <td>TAKEALL、reservoir、Bernoulli rows、collapse，还是 sketch merge？</td>
+              <td>只看到随机选块，忽略块内是否再次抽行。</td>
+            </tr>
+            <tr>
+              <td>权重</td>
+              <td>block 大小不等时如何定义 inclusion probability 与放大权重？</td>
+              <td>直接套用论文的固定 \(b\) 模型。</td>
+            </tr>
+            <tr>
+              <td>layout</td>
+              <td>sort key、partition、compaction 会怎样改变 Hist/DV Badness？</td>
+              <td>把 logical partition independence 当作物理随机性。</td>
+            </tr>
+            <tr>
+              <td>estimator 接口</td>
+              <td>是否显式传入 sampling unit、rate、seed、block identity？</td>
+              <td>用一个裸 sample row count 隐藏抽样设计。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Doris、PostgreSQL、DuckDB、ClickHouse 的具体源码入口、版本快照和差异，
+        统一放在
+        <a href="open-source-statistics-estimation.html">开源数据库 Statistics / Estimates / Sampling 调查</a>；
+        此处保留论文给出的判断框架，避免把系统实现细节与 2004 年定理混成一层。
+      </p>
+    </section>
+
+    <section id="summary">
+      <h2>10. 一页复盘：从 I/O 优化走到 estimator 语义</h2>
+      <p class="mini">
+        回看论文结论与全文。
+        <a class="source-ref" href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=12">PDF p.12 / 论文 p.298</a>
+      </p>
+
+      <div class="pill-row" aria-label="核心术语链">
+        <span class="pill">Block sampling</span>
+        <span class="pill">Cross-validation</span>
+        <span class="pill">Hist Badness</span>
+        <span class="pill">2PHASE</span>
+        <span class="pill">Frequency \(f_i\)</span>
+        <span class="pill">TAKEALL</span>
+        <span class="pill">\(T_{\rm coll}\)</span>
+        <span class="pill">COLLAPSE</span>
+        <span class="pill">DV Badness</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>读完后应能回答的六个问题</caption>
+          <thead>
+            <tr>
+              <th>问题</th>
+              <th>简答</th>
+              <th>回看</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>为什么 block sample 更便宜，却不自动等价于 row sample？</td>
+              <td>随机单位是块；块内 rows 联动入样，layout 造成 correlation。</td>
+              <td><a href="#sampling-unit">§1</a></td>
+            </tr>
+            <tr>
+              <td>Histogram 所需样本量由什么决定？</td>
+              <td>\(r\)、\(b\)、\(k\) 与跨块比例方差 \(\sum_i\sigma_i^2\)。</td>
+              <td><a href="#theorem-one">§3</a></td>
+            </tr>
+            <tr>
+              <td>2PHASE 比 DOUBLE 多知道了什么？</td>
+              <td>它从多尺度 CV 点拟合 \(\Delta^2=c/r\)，预测“还差多少”，而非只问“够不够”。</td>
+              <td><a href="#two-phase">§4</a></td>
+            </tr>
+            <tr>
+              <td>TAKEALL 为什么会低估 NDV？</td>
+              <td>块内重复压低 \(f_1\)，被误当成全表高频证据。</td>
+              <td><a href="#takeall">§5</a></td>
+            </tr>
+            <tr>
+              <td>COLLAPSE 的定理到底证明了什么？</td>
+              <td>对系数只依赖 \(q\) 的线性 frequency estimator，bias 等于其在 \(T_{\rm coll}\) 均匀样本上的 bias。</td>
+              <td><a href="#collapse">§6</a></td>
+            </tr>
+            <tr>
+              <td>COLLAPSE 能当作 CIDR 的 row sample 吗？</td>
+              <td>不能；总体、multiplicity 与联合入样结构都不同，必须重推 estimator。</td>
+              <td><a href="#modern-boundary">§9</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>实现前的最小契约</h3>
+          <ul>
+            <li>明确 sample 的总体、随机单位与 inclusion probability。</li>
+            <li>保留 block identity，直到 estimator 明确不再需要它。</li>
+            <li>分别验证 bias、variance、ratio error 与高概率 guarantee。</li>
+            <li>把固定 separators、固定 block size 等假设写进接口或测试。</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>实验前的最小矩阵</h3>
+          <ul>
+            <li>随机、部分聚簇、完全聚簇三种 layout。</li>
+            <li>不同 block size、skew、NDV、Histogram bucket 数。</li>
+            <li>TAKEALL / COLLAPSE / row sample 对照。</li>
+            <li>平均误差之外，同时记录 tail error、I/O 与计划质量。</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="good">
+        <p class="callout-title">最后的心智模型</p>
+        <p>
+          Block sampling 不是一份“质量稍差的 row sample”，而是一种不同的 sampling design。
+          2PHASE 把 layout 的影响转成可估计的 Histogram 样本需求；
+          COLLAPSE 把块内重复转成 block-presence frequency，再在严格限定的 estimator 类里迁移 bias。
+          两个技巧的共同价值，是不再把物理 I/O 细节藏在一个含糊的 sample fraction 后面。
+        </p>
+      </div>
+
+      <h3>参考材料</h3>
+      <ol>
+        <li>
+          Surajit Chaudhuri, Gautam Das, Utkarsh Srivastava:
+          <a href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">
+            <em>Effective Use of Block-Level Sampling in Statistics Estimation</em>
+          </a>，SIGMOD 2004，pp.287–298。
+        </li>
+        <li>
+          Michael Freitag, Thomas Neumann:
+          <a href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=1">
+            <em>Every Row Counts: Combining Sketches and Sampling for Accurate Group-By Result Estimates</em>
+          </a>，CIDR 2019；配套
+          <a href="group-by-cardinality-estimation-tutorial.html">中文主教程</a>。
+        </li>
+        <li>
+          <a href="open-source-statistics-estimation.html">
+            开源数据库 Statistics / Estimates / Sampling 调查
+          </a>，用于把论文判断框架映射到 Doris 等实际系统。
+        </li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>
+        文档日期：2026-08-03。正文为中文教学重述与 review，不是原文逐句翻译；
+        图示均依据论文重新设计，示意点与布局不冒充论文实验数据。
+        公式、定理适用条件和实验数字以仓库内 PDF 为准。
+      </p>
+      <p>
+        继续阅读：
+        <a href="group-by-cardinality-estimation-tutorial.html">Every Row Counts 主教程</a> ·
+        <a href="open-source-statistics-estimation.html">开源系统调查（Doris 精讲）</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

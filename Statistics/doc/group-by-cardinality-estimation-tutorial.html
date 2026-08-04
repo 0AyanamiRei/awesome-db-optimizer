@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GROUP BY 结果基数估计：从 Statistics 到 Every Row Counts</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f5f8fa;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-2: #8a5a12;
+      --accent-3: #4f6f52;
+      --purple: #6941c6;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --note-bg: #f2f7fb;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --bad-bg: #fff0ed;
+      --purple-bg: #f5f1ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+      line-height: 1.72;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero {
+      padding: 48px 0 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 38px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4.5vw, 52px);
+      line-height: 1.1;
+      letter-spacing: -.025em;
+    }
+
+    .hero .lead {
+      max-width: 790px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      border: 1px solid var(--line);
+      background: #f6fbfd;
+      padding: 17px;
+      border-radius: 9px;
+      font-size: 14px;
+    }
+
+    .source-box strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .source-box div + div {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid #dde9ee;
+    }
+
+    nav {
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: rgba(255, 255, 255, .97);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 9px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: #ffffff;
+    }
+
+    nav a.companion {
+      border-color: #b9a8e8;
+      color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    main {
+      padding: 34px 0 62px;
+    }
+
+    section {
+      scroll-margin-top: 82px;
+      margin: 0 0 38px;
+      padding: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 28px;
+      line-height: 1.24;
+      letter-spacing: -.012em;
+    }
+
+    h3 {
+      margin: 29px 0 10px;
+      font-size: 21px;
+      line-height: 1.32;
+    }
+
+    h4 {
+      margin: 21px 0 8px;
+      color: var(--accent);
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      background: #111827;
+      color: #e7edf5;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    pre code {
+      color: inherit;
+      background: transparent;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    .card h3,
+    .card h4 {
+      margin-top: 0;
+    }
+
+    .note,
+    .warning,
+    .good,
+    .bad,
+    .purple-note {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .note {
+      background: var(--note-bg);
+      border-color: #c8dce7;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border-color: #eed58d;
+    }
+
+    .good {
+      background: var(--good-bg);
+      border-color: #b8dfc4;
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      border-color: #efb3a8;
+    }
+
+    .purple-note {
+      background: var(--purple-bg);
+      border-color: #cabcf0;
+    }
+
+    .callout-title {
+      margin: 0 0 6px;
+      font-weight: 800;
+    }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 17px;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+      overflow-x: auto;
+    }
+
+    .formula.purple {
+      border-left-color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    .formula .label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3f5;
+    }
+
+    td.number,
+    th.number {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    .diagram-scroll {
+      padding: 14px;
+      overflow-x: auto;
+      background: #fbfcfd;
+    }
+
+    .diagram {
+      display: block;
+      width: 100%;
+      min-width: 760px;
+      height: auto;
+    }
+
+    .diagram text {
+      fill: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", sans-serif;
+    }
+
+    .diagram .muted {
+      fill: var(--muted);
+    }
+
+    .diagram .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    figcaption {
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .source-ref {
+      display: inline-block;
+      white-space: nowrap;
+      margin-left: .25em;
+      padding: 1px 7px;
+      border: 1px solid #bfcdd4;
+      border-radius: 999px;
+      color: #315b69;
+      background: #f6fbfd;
+      font-size: 12px;
+      vertical-align: .08em;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 4px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d8df;
+      background: #f7fbfc;
+      color: #245160;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .steps {
+      counter-reset: lesson-step;
+    }
+
+    .step {
+      counter-increment: lesson-step;
+      position: relative;
+      padding-left: 48px;
+      margin: 18px 0;
+    }
+
+    .step::before {
+      content: counter(lesson-step);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 31px;
+      height: 31px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfd;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--accent);
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    footer {
+      padding: 30px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #ffffff;
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      section {
+        padding: 23px 18px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        width: min(100% - 24px, 1120px);
+      }
+
+      .hero {
+        padding-top: 30px;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Statistics &amp; Cardinality Estimation Tutorial</p>
+        <h1>GROUP BY 结果基数估计：从 Statistics 到 Every Row Counts</h1>
+        <p class="lead">
+          这份教学笔记先把 cost、cardinality 与 statistics 放回查询优化器的完整链路，
+          再沿 <em>Every Row Counts</em> 精讲一个具体问题：
+          只维护单列摘要时，怎样估计任意多列组合会产生多少个 group。
+          主线不是“sketch 和 sample 谁更好”，而是两种不完整信息怎样互相补足。
+        </p>
+      </div>
+      <aside class="source-box">
+        <strong>三份指定材料</strong>
+        <div>
+          <a href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=135">
+            <em>Extensible Query Optimizers in Practice</em>
+          </a><br>
+          Chapter 5.1–5.3，书页 317–333 / PDF pp.135–151
+        </div>
+        <div>
+          <a href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=1">
+            Freitag &amp; Neumann, <em>Every Row Counts</em>
+          </a><br>
+          CIDR 2019，本文的精讲主线
+        </div>
+        <div>
+          <a href="block-level-sampling-sigmod2004-notes.html">
+            <em>Effective Use of Block-Level Sampling</em>
+          </a><br>
+          SIGMOD 2004，独立的物理采样专题
+        </div>
+      </aside>
+    </div>
+    <nav aria-label="页内目录">
+      <div class="wrap">
+        <a href="#scope">阅读路线</a>
+        <a href="#optimizer-loop">Optimizer 链路</a>
+        <a href="#statistics-toolbox">统计摘要</a>
+        <a href="#group-by-problem">GROUP BY 难点</a>
+        <a href="#architecture">论文总览</a>
+        <a href="#counting-hll">Counting HLL</a>
+        <a href="#sample-estimators">Sample 与频数</a>
+        <a href="#sketch-correction">BC / SCBC</a>
+        <a href="#frequency-vector">快速 Frequency Vector</a>
+        <a href="#experiments">实验</a>
+        <a href="#review">边界</a>
+        <a href="open-source-statistics-estimation.html" class="companion">开源系统调查</a>
+        <a href="block-level-sampling-sigmod2004-notes.html" class="companion">Block Sampling 深入</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="scope">
+      <h2>0. 阅读路线：三份材料各自回答什么</h2>
+      <p>
+        三份材料处在不同抽象层。先分层，再阅读，能避免把“优化时估计结果行数”、
+        “收集统计时怎样抽数据”和“用户查询里的抽样语法”混成同一件事。
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>材料</th>
+              <th>它回答的问题</th>
+              <th>本文怎样使用</th>
+              <th>不应外推成什么</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Book §5.1–5.3</td>
+              <td>Cost estimation、cardinality estimation 与 statistics 在优化器中如何协作；histogram、sketch、sample 的工程取舍。</td>
+              <td>建立共同词汇和系统背景。</td>
+              <td>它是框架综述，不是某个 GROUP BY estimator 的完整算法。</td>
+            </tr>
+            <tr>
+              <td><em>Every Row Counts</em></td>
+              <td>如何用“每个单列的全量 HLL 信息 + 一份行样本”估计任意列组合的 NDV。</td>
+              <td>作为全文算法主线，解释 GEE、BC、SCBC 与 frequency vector。</td>
+              <td>它没有直接解决 join 结果、任意 filter 后结果或 block-correlated sample。</td>
+            </tr>
+            <tr>
+              <td><em>Block-Level Sampling</em></td>
+              <td>当 I/O 迫使系统抽 block/page 而不是均匀抽 row 时，怎样构建 histogram 和估计单列 NDV。</td>
+              <td>单独成篇，解释物理 layout 为什么会破坏 row-sample 假设。</td>
+              <td>COLLAPSE 不能未经证明就当成 SCBC 的即插即用前处理。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="good">
+        <p class="callout-title">先记住一句话</p>
+        <p>
+          <em>Every Row Counts</em> 的标题指向职责分工：
+          单列 sketch 在维护期看过每一行，因此单列 NDV 很准；
+          row sample 保留多列组合，因此能观察相关性。
+          论文用单列全量信息去约束多列 sample-only estimator，而不是把几个 HLL 值直接相乘。
+        </p>
+      </div>
+    </section>
+
+    <section id="optimizer-loop">
+      <h2>1. Estimate 在优化器中的位置</h2>
+      <p>
+        Book §5.1 把 cost estimation 放在 plan search 的内循环里：搜索器产生或访问候选计划，
+        cost model 估算每个物理算子的资源消耗，而 cardinality estimation 为这些公式提供输入、输出行数。
+        统计摘要则是 cardinality estimator 观察真实数据分布的窗口。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=135">Book §5.1 · PDF 135–136</a>
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 980 410" role="img"
+               aria-labelledby="optimizer-loop-title optimizer-loop-desc">
+            <title id="optimizer-loop-title">查询优化器中的搜索、基数估计、统计信息和代价模型</title>
+            <desc id="optimizer-loop-desc">
+              搜索器请求候选逻辑表达式的基数；基数估计读取数据统计；物理算子的输入输出基数进入代价模型；
+              代价再反馈给搜索器选择计划。
+            </desc>
+            <defs>
+              <marker id="optimizer-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L9,3 L0,6 Z" fill="#607d87"></path>
+              </marker>
+            </defs>
+
+            <rect x="34" y="54" width="210" height="100" rx="10" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="139" y="88" text-anchor="middle" font-size="18" font-weight="750">Plan Search</text>
+            <text x="139" y="116" text-anchor="middle" font-size="14">枚举 / Memo / 剪枝</text>
+            <text x="139" y="138" text-anchor="middle" font-size="13" class="muted">比较同一逻辑表达式的候选计划</text>
+
+            <rect x="382" y="34" width="220" height="100" rx="10" fill="#f2f7fb" stroke="#176b87" stroke-width="2"></rect>
+            <text x="492" y="68" text-anchor="middle" font-size="18" font-weight="750">Cardinality Estimation</text>
+            <text x="492" y="96" text-anchor="middle" font-size="14">每个逻辑节点输出多少行？</text>
+            <text x="492" y="118" text-anchor="middle" font-size="13" class="muted">GROUP BY 需要估计组合 NDV</text>
+
+            <rect x="382" y="268" width="220" height="100" rx="10" fill="#fff7df" stroke="#8a5a12" stroke-width="2"></rect>
+            <text x="492" y="302" text-anchor="middle" font-size="18" font-weight="750">Data Statistics</text>
+            <text x="492" y="330" text-anchor="middle" font-size="14">Histogram / Sketch / Sample</text>
+            <text x="492" y="352" text-anchor="middle" font-size="13" class="muted">有限、会过期的数据摘要</text>
+
+            <rect x="736" y="54" width="210" height="100" rx="10" fill="#f5f1ff" stroke="#6941c6" stroke-width="2"></rect>
+            <text x="841" y="88" text-anchor="middle" font-size="18" font-weight="750">Cost Model</text>
+            <text x="841" y="116" text-anchor="middle" font-size="14">CPU / I/O / Memory / Network</text>
+            <text x="841" y="138" text-anchor="middle" font-size="13" class="muted">物理算子专属公式与参数</text>
+
+            <line x1="244" y1="85" x2="377" y2="85" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#optimizer-arrow)"></line>
+            <text x="311" y="72" text-anchor="middle" font-size="12" class="muted">逻辑表达式</text>
+
+            <line x1="602" y1="104" x2="730" y2="104" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#optimizer-arrow)"></line>
+            <text x="666" y="91" text-anchor="middle" font-size="12" class="muted">rows / width</text>
+
+            <path d="M736,135 C640,210 318,210 244,135" fill="none" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#optimizer-arrow)"></path>
+            <text x="490" y="214" text-anchor="middle" font-size="13" class="muted">estimated cost 决定保留、剪枝与最终选择</text>
+
+            <line x1="492" y1="268" x2="492" y2="140" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#optimizer-arrow)"></line>
+            <text x="510" y="210" font-size="12" class="muted">分布摘要</text>
+          </svg>
+        </div>
+        <figcaption>
+          对 Book Figure 5.1 的教学重绘。Cardinality estimator 既可被 cost model 间接使用，
+          也可能被搜索器直接用于 transformation promise、join side 选择等决策。
+        </figcaption>
+      </figure>
+
+      <h3>1.1 Cost、cardinality、statistics 不是同义词</h3>
+      <div class="grid-3">
+        <div class="card">
+          <h4>Statistics</h4>
+          <p>关于数据分布的有限摘要，例如 row count、NDV、null count、MCV、histogram 或 sample。</p>
+        </div>
+        <div class="card">
+          <h4>Cardinality estimate</h4>
+          <p>把统计摘要与算子语义结合，预测一个逻辑表达式会输出多少行。</p>
+        </div>
+        <div class="card">
+          <h4>Cost estimate</h4>
+          <p>把输入/输出 cardinality、row width、硬件参数和物理算法放进资源公式，得到可比较的分数。</p>
+        </div>
+      </div>
+
+      <h3>1.2 为什么 group 数量值得单独估</h3>
+      <p>
+        对 <code>GROUP BY A, B</code>，输出行数就是不同 \((A,B)\) 组合的数量。
+        这个数字既是聚合节点的 output cardinality，也影响 hash table 大小、是否可能 spill、
+        partial/final aggregate 的收益、shuffle 分布和上层 join 的输入。
+      </p>
+      <div class="formula">
+        <span class="label">教学用简化关系，不是指定论文中的 cost 公式</span>
+        \[
+          \operatorname{Cost}(\text{HashAggregate})
+          \approx c_{\text{consume}}\cdot N
+          + c_{\text{state}}\cdot D
+          + c_{\text{emit}}\cdot D
+        \]
+      </div>
+      <p>
+        其中 \(N\) 是输入行数，\(D\) 是 group 数。即使扫描同样的 \(N\) 行，
+        \(D=10^2\) 与 \(D=10^8\) 也可能对应完全不同的内存压力和后续计划。
+      </p>
+    </section>
+
+    <section id="statistics-toolbox">
+      <h2>2. Book §5.2–5.3：Cost Model 与 Statistics 工具箱</h2>
+
+      <h3>2.1 Cost model 先问“处理多少”，再问“每单位多贵”</h3>
+      <p>
+        Book §5.2 将物理算子成本拆成三类因素：处理的数据量、每单位数据的 CPU/I/O 成本，
+        以及并行度、可用内存、buffer pool 等运行时因素。公式和参数通常是算子专属的；
+        参数还需要通过 micro-benchmark 或执行测量校准到具体硬件。
+        书中也提醒，缓存与并发等系统级状态难以在优化时准确预测，因此模型必然是选择性抽象。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=136">Book §5.2 · PDF 136–139</a>
+      </p>
+
+      <div class="note">
+        <p class="callout-title">教学边界</p>
+        <p>
+          更复杂的 cost formula 不能补救完全错误的 group count。
+          反过来，准确的 \(D\) 也不能自动给出运行时间；它只是 cost model 的关键输入。
+        </p>
+      </div>
+
+      <h3>2.2 三类 synopsis 的能力不是一条“精度排行榜”</h3>
+      <p>
+        Book §5.3 给统计摘要列出五个评价轴：accuracy、efficiency、memory、coverage，
+        以及 creation/maintenance cost。不同摘要是在这些轴上交换能力。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=139">Book §5.3 · PDF 139–148</a>
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>摘要</th>
+              <th>擅长什么</th>
+              <th>为什么便宜</th>
+              <th>关键盲区</th>
+              <th>与本文的关系</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Histogram</strong></td>
+              <td>范围、等值、heavy value 的选择率；工程上最常见。</td>
+              <td>把域压缩成少量 bucket；equi-width、equi-depth、end-biased 等选择不同 bucket 语义。</td>
+              <td>bucket 内仍需均匀等假设；多列统计组合数大；会随数据变化过期。</td>
+              <td>给出生产系统的默认背景，但不是 CIDR 论文的主算法。</td>
+            </tr>
+            <tr>
+              <td><strong>Sketch</strong></td>
+              <td>Count-Min 估 frequency/heavy hitter；HLL 估 NDV；多数可 merge。</td>
+              <td>单遍更新固定大小 counter，状态可小到 KB 级。</td>
+              <td>普通 HLL 只能回答建 sketch 时定义的表达式；不能直接回答任意 filter 或任意列组合。</td>
+              <td>论文为每个单列维护 counting HLL，提供全表单列 NDV anchor；再结合 sample 推导 estimated corrections。</td>
+            </tr>
+            <tr>
+              <td><strong>Sample</strong></td>
+              <td>把任意可执行 predicate 直接跑在样本上，coverage 很广；天然保留样本行内的多列相关性。</td>
+              <td>只处理小部分行。</td>
+              <td>rare value / unseen group 外推困难；uniform row sample 的 I/O 可能接近全表；估计时还要扫描 sample。</td>
+              <td>论文用一份 row sample 回答任意 grouping-column subset。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.3 Statistics 还有一个生命周期问题</h3>
+      <p>
+        Book §5.3.4 指出，系统不仅要“计算一个统计值”，还要决定创建哪些单列、多列或 view statistics，
+        以及数据更新到什么程度时重建。候选统计项本身是组合爆炸的；实际系统通常优先收集查询中出现的列，
+        用 workload relevance、潜在 plan impact 和维护成本做取舍。多数商业系统在显著比例的数据被更新后重建，
+        而不是对每次写入精确维护所有 histogram。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=148">Book §5.3.4 · PDF 148–151</a>
+      </p>
+
+      <div class="purple-note">
+        <p class="callout-title">这正是 Every Row Counts 的设计约束</p>
+        <p>
+          为 \(C\) 列维护 \(C\) 个单列 sketch 是线性的；为所有非空列组合维护
+          \(2^C-1\) 个 sketch 是指数的。论文追求的不是“预先知道所有组合”，而是用线性数量的全量摘要
+          去修正一份能够临时投影到任意列组合的 sample。
+        </p>
+      </div>
+    </section>
+
+    <section id="group-by-problem">
+      <h2>3. GROUP BY NDV：单列都知道，组合仍可能完全不知道</h2>
+
+      <pre><code>SELECT A, B, SUM(C)
+FROM R
+GROUP BY A, B;</code></pre>
+
+      <p>
+        令 \(N=|R|\)，令 \(D=|\pi_{A,B}(R)|\)。优化器真正要估的是 \(D\)，
+        即不同 \((A,B)\) tuple 的数量，而不是输入行数 \(N\)。
+        对每个单列，假设已有 \(D_A\) 和 \(D_B\)，则只能得到很宽的必然边界：
+      </p>
+
+      <div class="formula">
+        \[
+          \max(D_A,D_B) \le D \le \min(N,D_A D_B)
+        \]
+      </div>
+
+      <div class="grid-2">
+        <div class="good">
+          <p class="callout-title">完全相关</p>
+          <p>
+            若每个 <code>A</code> 值总是只对应一个 <code>B</code> 值，
+            \(D_A=D_B=100\) 时，组合 NDV 可以只有 \(100\)。
+          </p>
+        </div>
+        <div class="bad">
+          <p class="callout-title">接近独立</p>
+          <p>
+            若 100 个 <code>A</code> 与 100 个 <code>B</code> 的组合几乎都出现，
+            同样的单列 NDV 会对应 \(D\approx 10\,000\)。
+          </p>
+        </div>
+      </div>
+
+      <p>
+        所以“把单列 NDV 相乘”隐含了很强的独立性假设；“取最大单列 NDV”又隐含了近乎函数依赖。
+        一份行样本至少保留了 <code>A</code> 与 <code>B</code> 同行出现的关系，但新问题随之而来：
+        没被抽到的 rare groups 到底还有多少？
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=1">CIDR §1 · PDF 1–2</a>
+      </p>
+
+      <h3>3.1 论文使用的频数语言</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>全表</th>
+              <th>样本</th>
+              <th>含义</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>\(N\)</td><td>\(n\)</td><td>总行数 / sample 行数</td></tr>
+            <tr><td>\(D\)</td><td>\(d\)</td><td>全表 / sample 中不同 grouping tuple 数</td></tr>
+            <tr><td>\(N_k\)</td><td>\(n_k\)</td><td>第 \(k\) 个不同 tuple 出现的次数</td></tr>
+            <tr><td>\(F_i\)</td><td>\(f_i\)</td><td>恰好出现 \(i\) 次的不同 tuple 有多少个</td></tr>
+            <tr><td>\(F_1\)</td><td>\(f_1\)</td><td>全表 singleton groups / sample singleton groups</td></tr>
+            <tr><td>\(D_j,F_{1,j}\)</td><td>\(d_j,f_{1,j}\)</td><td>第 \(j\) 个单列上的对应统计</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        这里的 “singleton” 是<strong>某个值或值组合只出现一次</strong>，不是 SQL 中一行是否唯一。
+        难点集中在 \(F_1\)：sample 里只出现一次的组合，有些在全表也稀有，有些只是碰巧只被抽到一次；
+        sample 完全没看见的组合更无法直接计数。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=3">CIDR §3.1 · PDF 3–4</a>
+      </p>
+    </section>
+
+    <section id="architecture">
+      <h2>4. Every Row Counts 的完整结构</h2>
+      <p>
+        论文把问题拆成三个可以独立理解的部件：单列全量摘要、样本上的 estimator，
+        以及计算 frequency vector 的快速路径。最终 estimator 不是某一个 HLL register 的读数，
+        而是把 sample-derived estimated bounds 与 per-column estimated corrections 组合起来。
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1040 510" role="img"
+               aria-labelledby="erc-architecture-title erc-architecture-desc">
+            <title id="erc-architecture-title">Every Row Counts 的 sketch 与 sample 双路径</title>
+            <desc id="erc-architecture-desc">
+              数据写入时为每个单列更新 counting HLL；系统另外需要提供满足论文假设的均匀行样本，
+              但论文没有给出该样本的动态维护算法。优化查询时，选定 group by 列，从样本递归计算
+              frequency vector，得到 BC 估计；单列 HLL 只给出 NDV，Equation 12 再结合单列 sample
+              frequency classes 得到 singleton estimated correction，最终由 SCBC 输出 group count。
+            </desc>
+            <defs>
+              <marker id="erc-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L9,3 L0,6 Z" fill="#607d87"></path>
+              </marker>
+            </defs>
+
+            <rect x="30" y="188" width="150" height="90" rx="10" fill="#eef3f5" stroke="#607d87" stroke-width="2"></rect>
+            <text x="105" y="221" text-anchor="middle" font-size="17" font-weight="750">Table R</text>
+            <text x="105" y="248" text-anchor="middle" font-size="12">insert / update / delete</text>
+
+            <rect x="260" y="52" width="230" height="120" rx="10" fill="#fff7df" stroke="#8a5a12" stroke-width="2"></rect>
+            <text x="375" y="84" text-anchor="middle" font-size="17" font-weight="750">每个单列的 Counting HLL</text>
+            <text x="375" y="112" text-anchor="middle" font-size="13" class="mono">D̂A, D̂B, ...</text>
+            <text x="375" y="136" text-anchor="middle" font-size="13">看过全表；线性数量；支持删除</text>
+            <text x="375" y="157" text-anchor="middle" font-size="12" class="muted">准，但不知道任意列之间怎样组合</text>
+
+            <rect x="260" y="318" width="230" height="120" rx="10" fill="#f2f7fb" stroke="#176b87" stroke-width="2"></rect>
+            <text x="375" y="350" text-anchor="middle" font-size="17" font-weight="750">一份 Row Sample</text>
+            <text x="375" y="378" text-anchor="middle" font-size="13">系统需提供 row-uniform sample</text>
+            <text x="375" y="402" text-anchor="middle" font-size="13">论文未给出动态维护算法</text>
+            <text x="375" y="423" text-anchor="middle" font-size="12" class="muted">保留相关性，但漏掉 rare groups</text>
+
+            <rect x="570" y="300" width="205" height="92" rx="10" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="672" y="332" text-anchor="middle" font-size="17" font-weight="750">Frequency Vector</text>
+            <text x="672" y="360" text-anchor="middle" font-size="14" class="mono">f1, f2, ... fq</text>
+            <text x="672" y="381" text-anchor="middle" font-size="12" class="muted">recursive partition refinement</text>
+
+            <rect x="570" y="152" width="205" height="92" rx="10" fill="#f5f1ff" stroke="#6941c6" stroke-width="2"></rect>
+            <text x="672" y="184" text-anchor="middle" font-size="17" font-weight="750">BC Estimated Bounds</text>
+            <text x="672" y="212" text-anchor="middle" font-size="14" class="mono">L̂BC ... ÛBC</text>
+
+            <rect x="842" y="188" width="170" height="118" rx="10" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="927" y="222" text-anchor="middle" font-size="18" font-weight="800">SCBC</text>
+            <text x="927" y="248" text-anchor="middle" font-size="13">合并 singleton</text>
+            <text x="927" y="268" text-anchor="middle" font-size="13">estimated range</text>
+            <text x="927" y="291" text-anchor="middle" font-size="13" class="muted">输出 D̂group</text>
+
+            <line x1="180" y1="215" x2="254" y2="135" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></line>
+            <line x1="180" y1="255" x2="254" y2="355" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></line>
+            <line x1="490" y1="370" x2="564" y2="350" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></line>
+            <line x1="672" y1="300" x2="672" y2="250" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></line>
+            <line x1="775" y1="198" x2="836" y2="220" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></line>
+            <path d="M490,105 C680,80 800,112 875,182" fill="none" stroke="#607d87" stroke-width="2"
+                  marker-end="url(#erc-arrow)"></path>
+
+            <text x="206" y="157" font-size="12" class="muted">每行更新</text>
+            <text x="206" y="337" font-size="12" class="muted">系统提供</text>
+            <text x="515" y="347" font-size="12" class="muted">选 A,B</text>
+            <text x="735" y="92" font-size="12" class="muted">单列 D̂j + sample classes → estimated correction</text>
+          </svg>
+        </div>
+        <figcaption>
+          论文 §2–§4 的教学总图。黄色路径提供看过全表数据流的单列 NDV estimate；
+          蓝色路径提供样本中的多列组合与单列 frequency classes；SCBC 在估计阶段合并二者。
+        </figcaption>
+      </figure>
+
+      <div class="steps">
+        <div class="step">
+          <strong>系统前提：</strong>每列随写入维护一个 counting HLL；系统还需提供一份可以投影任意列组合的
+          row-uniform sample。论文使用该 sample，但没有给出它在 DML 下的动态维护算法。
+        </div>
+        <div class="step">
+          <strong>优化期：</strong>对当前 GROUP BY 列从 sample 计算 \(f_1,\ldots,f_q\)，并计算各单列的
+          \(f_{i,j}\)，先得到 sample-only 的 BC estimated bounds。
+        </div>
+        <div class="step">
+          <strong>修正期：</strong>counting HLL 只估计 \(D_j\)；Equation 12 再把 \(\hat D_j\) 与
+          单列 sample frequency classes 合成 \(\hat F_{1,j}\)，形成 estimated corrections 并得到 SCBC。
+        </div>
+      </div>
+    </section>
+
+    <section id="counting-hll">
+      <h2>5. 第一个部件：Counting HLL 为什么“每行都算数”</h2>
+
+      <h3>5.1 传统 HLL 的直觉</h3>
+      <p>
+        对一个近似均匀的 64-bit hash，前导零至少有 \(i\) 位的概率约为 \(2^{-i}\)。
+        如果观察到很长的前导零串，通常意味着已经看过很多不同值。传统 HLL 用前 \(b\) 个 bit
+        把 hash 分到 \(m=2^b\) 个 bucket，在每个 bucket 记录剩余 bit 的最大前导零数，
+        再聚合多个 bucket 以降低单次极值的方差。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=2">CIDR §2.1 · PDF 2</a>
+      </p>
+      <div class="formula">
+        \[
+          \text{expected relative error} \approx \frac{1.04}{\sqrt{m}}
+        \]
+      </div>
+      <p>
+        论文取 \(m=64\)，传统状态只需 64 bytes，并使用 Ertl 的改进 estimator 处理低 cardinality bias。
+      </p>
+
+      <h3>5.2 删除为什么迫使状态变大</h3>
+      <p>
+        传统 bucket 只记最大前导零数。若删除的值恰好支撑当前最大值，系统不知道是否还有另一个值也支撑它，
+        因而无法判断 bucket 是否应下降。Counting HLL 为每个 bucket 的每种可能前导零数保存一个 count；
+        删除后仍能找到最高的非零 count。
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>精确计重要的小 count</h4>
+          <p>每个 1-byte counter 的前 128 次出现精确计数。最大前导零通常只由少数值支撑，这一段最重要。</p>
+        </div>
+        <div class="card">
+          <h4>概率计不重要的大 count</h4>
+          <p>超过 128 后，一个 byte 表示指数增长区间；increment/decrement 保持期望正确，而不是精确 multiplicity。</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>性质</th><th>Traditional HLL</th><th>Counting HLL（论文）</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>每个 bucket 的状态</td><td>最大前导零数</td><td>每种前导零数的 count</td></tr>
+            <tr><td>Insert</td><td>支持</td><td>支持</td></tr>
+            <tr><td>Delete</td><td>无法一般性恢复旧最大值</td><td>支持；大 count 使用概率 counter</td></tr>
+            <tr><td>论文配置下状态</td><td>64 B</td><td>论文称约 3.6 kB；\(64\times59\) B = 3776 B ≈ 3.69 KiB</td></tr>
+            <tr><td>估计阶段</td><td colspan="2">都取每个 bucket 的最高非零前导零位置，再用同一 HLL estimator</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">“支持删除”不等于精确集合</p>
+        <p>
+          论文的 probabilistic counter 对大 multiplicity 保持 expected-correct behavior。
+          它让 HLL 估计在频繁 deletion workload 下维持近似精度，不把 distinct set 变成精确 hash set。
+          <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=3">CIDR §2.2 · PDF 3</a>
+        </p>
+      </div>
+    </section>
+
+    <section id="sample-estimators">
+      <h2>6. 第二个部件：Sample、Frequency Vector 与 GEE</h2>
+
+      <p>
+        论文理论部分为与前作可比，主要讨论从 \(N\) 行中进行有放回的均匀 row sampling；
+        对无放回 sampling 另给近似下界。无论哪种，估计器的直接输入都不是 raw rows，
+        而是 sample 上的 frequency vector：
+      </p>
+      <div class="formula">
+        \[
+          f_i = \#\{\text{sample 中恰好出现 }i\text{ 次的不同 grouping tuples}\}
+        \]
+        \[
+          n=\sum_{i=1}^{q}i f_i,\qquad d=\sum_{i=1}^{q}f_i
+        \]
+      </div>
+
+      <h3>6.1 一个小 sample 怎样变成 \(f_i\)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Sample row</th><th>A</th><th>B</th><th>组合在 sample 中的最终频数</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>north</td><td>phone</td><td rowspan="3">(<code>north</code>, <code>phone</code>) → 3</td></tr>
+            <tr><td>2</td><td>north</td><td>phone</td></tr>
+            <tr><td>3</td><td>north</td><td>phone</td></tr>
+            <tr><td>4</td><td>south</td><td>book</td><td rowspan="2">(<code>south</code>, <code>book</code>) → 2</td></tr>
+            <tr><td>5</td><td>south</td><td>book</td></tr>
+            <tr><td>6</td><td>east</td><td>toy</td><td>(<code>east</code>, <code>toy</code>) → 1</td></tr>
+            <tr><td>7</td><td>west</td><td>book</td><td>(<code>west</code>, <code>book</code>) → 1</td></tr>
+            <tr><td>8</td><td>north</td><td>toy</td><td>(<code>north</code>, <code>toy</code>) → 1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        此时 \(n=8\)、\(d=5\)、\(f_1=3\)、\(f_2=1\)、\(f_3=1\)。
+        估计器不关心字符串本身，而关心“有多少 group 落在各个 frequency class”。
+      </p>
+
+      <h3>6.2 Ratio error 与“不可能免费知道 unseen groups”</h3>
+      <div class="formula">
+        \[
+          \operatorname{ratioError}(\hat D)
+          = \max\left(\frac{D}{\hat D},\frac{\hat D}{D}\right)
+        \]
+      </div>
+      <p>
+        Charikar 等人的负面结果表明，只检查 \(n\) 行的 estimator，
+        在某些输入上无法避开量级为 \(\sqrt{N/n}\) 的 ratio error。
+        GEE（Guaranteed Error Estimator）在这个最坏界意义下是基线：
+        它假设 sample 中重复出现的 groups 已大致被看见，把不确定性集中到 singleton。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=4">CIDR §3.1 · PDF 4</a>
+      </p>
+
+      <div class="formula">
+        <span class="label">GEE：singleton bounds 的几何平均 + 已观察到的 non-singleton groups</span>
+        \[
+          \hat D_{\mathrm{GEE}}
+          = \sqrt{\frac{N}{n}}\,f_1+\sum_{i=2}^{q}f_i
+        \]
+      </div>
+      <p>
+        GEE 把全表 singleton 数放在 \([f_1,\,Nf_1/n]\) 内，并取两端的几何平均。
+        当 sample fraction 是 1% 时，两端相差 100 倍，几何平均仍可能与真值相差 10 倍；
+        这就是“最坏界最优”与“工程上足够准”之间的距离。AE 会根据 sample 分布自适应修正，
+        但论文实验显示它在部分 skew 分布上仍不稳定。
+      </p>
+    </section>
+
+    <section id="sketch-correction">
+      <h2>7. 第三个部件：从 BC 到 Sketch-Corrected BC</h2>
+
+      <h3>7.1 BC 先从 sample 自己推 estimated bounds</h3>
+      <p>
+        Bound-Corrected estimator（BC）不满足于 GEE 的固定 singleton 下界。
+        论文从 sample singleton 的期望 \(\mathbb{E}[f_1]\) 和 sample distinct count 的期望
+        \(\mathbb{E}[d]\) 推导全表 \(D\) 的不等式，再把一次 sample 观察到的 \(f_1,d\)
+        代入，得到以下 estimated lower/upper bounds：
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=5">CIDR §3.2 · PDF 4–5</a>
+      </p>
+
+      <div class="formula">
+        <span class="label">Equations (5)–(6)：由 expectation inequalities 得到的 plug-in estimates</span>
+        \[
+          \hat L=
+          \begin{cases}
+            \displaystyle\frac{1}{1-(f_1/n)^{1/(n-1)}},
+              &amp; f_1\ge n(1-1/n)^{n-1},\\[8pt]
+            \displaystyle\frac{f_1}{(1-1/n)^{n-1}},
+              &amp; \text{otherwise},
+          \end{cases}
+        \]
+        \[
+          \hat U=\frac{d}{1-(1-1/N)^n}
+        \]
+      </div>
+      <div class="warning">
+        <p class="callout-title">Estimated bound 不是 confidence interval</p>
+        <p>
+          Theorem 1/2 约束的是 \(\mathbb{E}[f_1]\) 与 \(\mathbb{E}[d]\)。把一次 sample 的
+          \(f_1,d\) 代入后，\(\hat L,\hat U\) 只是 plug-in estimates，不保证每次都夹住真实 \(D\)。
+          论文还执行 hard sanity clamp：\(d\le\hat L,\hat U\le N\)。
+        </p>
+      </div>
+
+      <div class="formula">
+        <span class="label">把 D estimated bounds 转成 singleton estimated bounds</span>
+        \[
+          \hat L_{\mathrm{BC}}
+          = \max\left(f_1,\hat L-\sum_{i=2}^{q}f_i\right)
+        \]
+        \[
+          \hat U_{\mathrm{BC}}
+          = \min\left(\frac{Nf_1}{n},\hat U-\sum_{i=2}^{q}f_i\right)
+        \]
+        \[
+          \hat D_{\mathrm{BC}}
+          = \sqrt{\hat L_{\mathrm{BC}}\hat U_{\mathrm{BC}}}
+            +\sum_{i=2}^{q}f_i
+        \]
+      </div>
+
+      <h3>7.2 单列 sketch 怎样约束多列 group</h3>
+      <p>
+        令 \(\hat D_j\) 是第 \(j\) 列 counting HLL 给出的全表 NDV。
+        论文继续沿用“sample 中 non-singletons 大致已被看见”的假设，
+        把该 HLL estimate 与单列 sample frequency classes 组合，估计全表单列 singleton 数：
+      </p>
+      <div class="formula purple">
+        \[
+          \hat F_{1,j}=\hat D_j-\sum_{i=2}^{q_j}f_{i,j}
+        \]
+      </div>
+      <p>
+        因此 \(\hat F_{1,j}\) 不是 HLL register 的直接读数，也不是真实 \(F_{1,j}\) 的保证下界；
+        它是由 HLL 与 sample 共同得到的 estimated correction。
+      </p>
+      <p>
+        对真实值而言，任一列上的 singleton value 一旦与其他列拼成 tuple，仍只能出现在那一行，因此
+        多列 singleton 数至少是各单列 singleton 数的最大值；多列组合数也不会超过各单列 NDV 的笛卡尔积：
+      </p>
+      <div class="formula purple">
+        \[
+          \max_j(F_{1,j})\le F_1\le\prod_jD_j,
+          \qquad
+          \max_j(D_j)\le D\le\prod_jD_j
+        \]
+      </div>
+      <p>
+        上式对真实 \(D_j,F_{1,j}\) 是 exact structural bounds；把它们替换为
+        \(\hat D_j,\hat F_{1,j}\) 后，SCBC 使用的是 estimated corrections，而不是新的确定性保证。
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 980 340" role="img"
+               aria-labelledby="bounds-title bounds-desc">
+            <title id="bounds-title">BC 与 HLL-plus-sample corrections 共同收紧 singleton estimated bounds</title>
+            <desc id="bounds-desc">
+              从零到 N 的数轴上，GEE 给出宽区间，BC 从 sample 期望得到 estimated interval，
+              per-column HLL 与 sample classes 再提供 estimated corrections；SCBC 组合这些信息并取几何平均。
+            </desc>
+            <line x1="90" y1="255" x2="900" y2="255" stroke="#607d87" stroke-width="3"></line>
+            <line x1="90" y1="244" x2="90" y2="266" stroke="#607d87" stroke-width="3"></line>
+            <line x1="900" y1="244" x2="900" y2="266" stroke="#607d87" stroke-width="3"></line>
+            <text x="90" y="292" text-anchor="middle" font-size="14">0</text>
+            <text x="900" y="292" text-anchor="middle" font-size="14">N</text>
+
+            <line x1="150" y1="76" x2="850" y2="76" stroke="#d97706" stroke-width="12" stroke-linecap="round"></line>
+            <text x="104" y="81" text-anchor="end" font-size="14" font-weight="700">GEE</text>
+            <text x="500" y="58" text-anchor="middle" font-size="13" class="muted">[f₁, Nf₁/n]</text>
+
+            <line x1="300" y1="140" x2="730" y2="140" stroke="#6941c6" stroke-width="12" stroke-linecap="round"></line>
+            <text x="254" y="145" text-anchor="end" font-size="14" font-weight="700">BC</text>
+            <text x="515" y="122" text-anchor="middle" font-size="13" class="muted">sample-derived estimated [L̂BC, ÛBC]</text>
+
+            <line x1="390" y1="204" x2="640" y2="204" stroke="#176b87" stroke-width="12" stroke-linecap="round"></line>
+            <text x="344" y="209" text-anchor="end" font-size="14" font-weight="700">SCBC</text>
+            <text x="515" y="186" text-anchor="middle" font-size="13" class="muted">再合并单列 estimated corrections</text>
+
+            <circle cx="500" cy="204" r="9" fill="#4f6f52"></circle>
+            <line x1="500" y1="213" x2="500" y2="245" stroke="#4f6f52" stroke-width="2"></line>
+            <text x="500" y="326" text-anchor="middle" font-size="13">几何平均放在 multiplicative scale 的中点</text>
+          </svg>
+        </div>
+        <figcaption>
+          estimated interval 关系的概念图，不按具体数据比例绘制。SCBC 的关键动作是收紧估计范围，
+          不是给 BC 结果乘一个固定校正系数。
+        </figcaption>
+      </figure>
+
+      <div class="formula purple">
+        \[
+          \hat L_{\mathrm{SCBC}}
+          =\max\left(\hat L_{\mathrm{BC}},\max_j\hat F_{1,j}\right)
+        \]
+        \[
+          \hat U_{\mathrm{SCBC}}
+          =\min\left(\hat U_{\mathrm{BC}},\prod_j\hat D_j\right)
+        \]
+        \[
+          \hat D_{\mathrm{SCBC}}
+          =\sqrt{\hat L_{\mathrm{SCBC}}\hat U_{\mathrm{SCBC}}}
+           +\sum_{i=2}^{q}f_i
+        \]
+      </div>
+      <p>
+        论文还要求所有 sketch-corrected point estimates 使用 Inequality 11 做 final NDV sanity clamp。
+        同时加入必然的 \(D\le N\) 后，可写为：
+      </p>
+      <div class="formula purple">
+        \[
+          \hat D_{\mathrm{final}}
+          =\operatorname{clamp}\!\left(
+            \hat D_{\mathrm{SCBC}},
+            \max_j\hat D_j,
+            \min\!\left(N,\prod_j\hat D_j\right)
+          \right)
+        \]
+        <span class="label">\(\operatorname{clamp}(x,\ell,u)=\min(u,\max(\ell,x))\)；端点本身仍是 estimates</span>
+      </div>
+
+      <h3>7.3 用原文 Figure 5 的数字走一次 correction</h3>
+      <p>
+        原文构造一个 \(N=100\,000\)、\(n=1\,000\) 的双列表。
+        全表有 \(D=75\,000\) 个不同 tuple，其中 \(F_1=50\,000\)；
+        sample 中 \(d=1\,000\)、\(f_1=750\)。
+        两个单列的全表 NDV 分别为 \(50\,000\) 与 \(30\,000\)，单列 singleton 数为
+        \(25\,000\) 与 \(15\,000\)。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=6">CIDR Figure 5 · PDF 6</a>
+      </p>
+      <div class="steps">
+        <div class="step">
+          sample 中已观察到的 non-singleton identities 为
+          \(\sum_{i=2}^{q}f_i=d-f_1=250\)。GEE 估 singleton 为
+          \(\sqrt{N/n}\,f_1=\sqrt{100}\cdot750=7\,500\)，所以 total estimate 是
+          \(7\,500+250=7\,750\)。
+        </div>
+        <div class="step">
+          由 Equations (5)–(6) 得 \(\hat L\approx3\,473.08\)、raw
+          \(\hat U\approx100\,500.33\)；将 \(\hat U\) clamp 到 \(N\) 后为 \(100\,000\)。
+          因而 \(\hat L_{\mathrm{BC}}\approx3\,223.08\)、
+          \(\hat U_{\mathrm{BC}}=75\,000\)。
+        </div>
+        <div class="step">
+          BC 的 singleton estimate 为
+          \(\sqrt{3\,223.08\cdot75\,000}\approx15\,548\)，即原文所说的约 \(16\,000\)；
+          加回 250 个 observed non-singleton identities，raw total estimate 约为 \(15\,798\)。
+        </div>
+        <div class="step">
+          Figure 5 为解释 correction 直接给出真实单列 singleton 数 \(25\,000\) 与 \(15\,000\)；
+          实际算法中对应的是由 Equation 12 得到的 \(\hat F_{1,j}\)，并非 HLL 单独输出。
+          沿原文示例把它们作为 estimated correction values，SCBC lower endpoint 变为
+          \(\max(3\,223.08,25\,000)=25\,000\)。
+        </div>
+        <div class="step">
+          单列 NDV 乘积 \(50\,000\times30\,000=1.5\times10^9\) 不能收紧
+          \(75\,000\) 的 BC upper endpoint。因此 SCBC singleton estimate 为
+          \(\sqrt{25\,000\cdot75\,000}\approx43\,301\)，加回 250 后 raw total estimate 约为 \(43\,551\)。
+        </div>
+        <div class="step">
+          最后应用 total-NDV sanity clamp：下端为
+          \(\max(D_1,D_2)=50\,000\)，上端为 \(\min(N,D_1D_2)=100\,000\)，
+          所以该例最终 point estimate 为 \(50\,000\)。真实 \(D=75\,000\)；该 clamp 仍不是置信保证。
+        </div>
+      </div>
+      <div class="note">
+        <p class="callout-title">为什么这个例子值得保留</p>
+        <p>
+          它同时展示了 sketch 的能力和局限：由 HLL 与 sample 合成的 singleton estimated lower endpoint 很有用；
+          但 \(D_1D_2=1.5\times10^9\) 大于 \(N\)，乘积上界在高 NDV 场景几乎没有信息。
+          论文实验也观察到 sketch correction 对较小 cardinality 更有效，而 BC 的新 estimated bounds
+          主要改善较大的 cardinality。
+        </p>
+      </div>
+    </section>
+
+    <section id="frequency-vector">
+      <h2>8. 第四个部件：不用整行 Hash Table 也能算 Frequency Vector</h2>
+
+      <p>
+        所有 sample estimator 都需要 \(f_i\)。最直接的办法是把选定 grouping columns 拼成宽 tuple，
+        插入 hash table 后统计 multiplicity；但宽行 hash/compare、容量预估和随机访存的常数都不小。
+        论文 §4 改用 string partition refinement：把每行看成由多列字符组成的字符串，
+        按列逐层把 row-index partition 细分。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=7">CIDR §4 · PDF 7</a>
+      </p>
+
+      <figure>
+        <div class="diagram-scroll">
+          <svg class="diagram" viewBox="0 0 1020 490" role="img"
+               aria-labelledby="partition-title partition-desc">
+            <title id="partition-title">按列递归细分 sample rows 以计算 frequency vector</title>
+            <desc id="partition-desc">
+              八行样本先按 A 列分区，再只在含多行的分区内按 B 列细分。
+              单行分区立即计入 f1；最终大小为二和三的分区分别计入 f2 与 f3。
+            </desc>
+            <defs>
+              <marker id="partition-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3"
+                      orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L9,3 L0,6 Z" fill="#607d87"></path>
+              </marker>
+            </defs>
+
+            <rect x="38" y="178" width="180" height="120" rx="10" fill="#f2f7fb" stroke="#176b87" stroke-width="2"></rect>
+            <text x="128" y="211" text-anchor="middle" font-size="17" font-weight="750">P = rows 1…8</text>
+            <text x="128" y="240" text-anchor="middle" font-size="13">先看高 NDV 的列 A</text>
+            <text x="128" y="268" text-anchor="middle" font-size="13" class="muted">未读取完整 tuple hash</text>
+
+            <rect x="325" y="36" width="170" height="78" rx="9" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="410" y="67" text-anchor="middle" font-size="15" font-weight="750">A = east</text>
+            <text x="410" y="91" text-anchor="middle" font-size="13">|P|=1 → f₁ += 1</text>
+
+            <rect x="325" y="144" width="170" height="100" rx="9" fill="#fff7df" stroke="#8a5a12" stroke-width="2"></rect>
+            <text x="410" y="175" text-anchor="middle" font-size="15" font-weight="750">A = north</text>
+            <text x="410" y="199" text-anchor="middle" font-size="13">rows 1,2,3,8</text>
+            <text x="410" y="225" text-anchor="middle" font-size="12" class="muted">继续按 B refine</text>
+
+            <rect x="325" y="274" width="170" height="100" rx="9" fill="#fff7df" stroke="#8a5a12" stroke-width="2"></rect>
+            <text x="410" y="305" text-anchor="middle" font-size="15" font-weight="750">A = south</text>
+            <text x="410" y="329" text-anchor="middle" font-size="13">rows 4,5</text>
+            <text x="410" y="355" text-anchor="middle" font-size="12" class="muted">继续按 B refine</text>
+
+            <rect x="325" y="404" width="170" height="62" rx="9" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="410" y="432" text-anchor="middle" font-size="15" font-weight="750">A = west</text>
+            <text x="410" y="454" text-anchor="middle" font-size="13">|P|=1 → f₁ += 1</text>
+
+            <rect x="616" y="125" width="170" height="78" rx="9" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="701" y="156" text-anchor="middle" font-size="15" font-weight="750">B = phone</text>
+            <text x="701" y="180" text-anchor="middle" font-size="13">|P|=3 → f₃ += 1</text>
+
+            <rect x="616" y="220" width="170" height="78" rx="9" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="701" y="251" text-anchor="middle" font-size="15" font-weight="750">B = toy</text>
+            <text x="701" y="275" text-anchor="middle" font-size="13">|P|=1 → f₁ += 1</text>
+
+            <rect x="616" y="326" width="170" height="78" rx="9" fill="#eef8f2" stroke="#4f6f52" stroke-width="2"></rect>
+            <text x="701" y="357" text-anchor="middle" font-size="15" font-weight="750">B = book</text>
+            <text x="701" y="381" text-anchor="middle" font-size="13">|P|=2 → f₂ += 1</text>
+
+            <rect x="842" y="177" width="145" height="130" rx="10" fill="#f5f1ff" stroke="#6941c6" stroke-width="2"></rect>
+            <text x="914" y="210" text-anchor="middle" font-size="16" font-weight="800">输出</text>
+            <text x="914" y="242" text-anchor="middle" font-size="15" class="mono">f₁ = 3</text>
+            <text x="914" y="268" text-anchor="middle" font-size="15" class="mono">f₂ = 1</text>
+            <text x="914" y="294" text-anchor="middle" font-size="15" class="mono">f₃ = 1</text>
+
+            <line x1="218" y1="218" x2="319" y2="78" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="218" y1="228" x2="319" y2="194" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="218" y1="246" x2="319" y2="324" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="218" y1="262" x2="319" y2="430" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="495" y1="181" x2="610" y2="166" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="495" y1="208" x2="610" y2="253" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="495" y1="324" x2="610" y2="365" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+            <line x1="786" y1="243" x2="836" y2="243" stroke="#607d87" stroke-width="2" marker-end="url(#partition-arrow)"></line>
+          </svg>
+        </div>
+        <figcaption>
+          对 Algorithm 3 的小例子推演。递归状态只需要 row-index partition 和当前列；
+          只要 partition 已是 singleton，就无需再读剩余列。
+        </figcaption>
+      </figure>
+
+      <h3>8.1 论文实现上的三个加速点</h3>
+      <ul>
+        <li><strong>先剪 singleton rows：</strong>某行在任一选定列上出现 singleton value，则它的完整组合必为 singleton。</li>
+        <li><strong>dictionary encode + bit packing：</strong>sample 的列值编码到最多 \(\lceil\log_2n\rceil\) bits，把多个列值装进 machine word 一起 partition。</li>
+        <li><strong>高 NDV 列优先：</strong>越早把 partition 切小，越多分支能提前到达 \(|P|=1\) 的 base case。</li>
+      </ul>
+      <p>
+        原文最终选择在 partition 内原地 sort，再线性扫描边界；各 partition 不重叠，
+        整个递归可以复用一份 row-index auxiliary array。这里的贡献是优化常数和宽表访问形状，
+        不是改变 \(D\) 的统计推导。
+      </p>
+    </section>
+
+    <section id="experiments">
+      <h2>9. 实验怎么读：精度、维护成本与估计延迟要分开</h2>
+
+      <h3>9.1 Counting HLL：状态更大，但 deletion workload 下保持 HLL 级精度</h3>
+      <div class="metric-grid">
+        <div class="metric"><strong>1.13</strong><span>counting HLL mean ratio error</span></div>
+        <div class="metric"><strong>1.34</strong><span>counting HLL 99th percentile</span></div>
+        <div class="metric"><strong>3776 B</strong><span>≈3.69 KiB；论文称约 3.6 kB</span></div>
+        <div class="metric"><strong>2.58× / 3.33×</strong><span>column-wise / row-wise CPU ratio</span></div>
+      </div>
+      <p>
+        论文在插入并周期性删除随机值的 workload 上，counting 与 traditional HLL 的 mean/99th
+        ratio error 都为 1.13/1.34。对 1000 万行、10 列的表，traditional HLL 的 column-wise
+        构建为 132ms，counting HLL 为 340ms，比例约 2.58×；row-wise 则为 111ms 与 370ms，
+        比例约 3.33×。因此论文正文的概括性“约 2.5×”不能代表两种 layout。
+        论文还报告 TPC-H bulk load 同时维护所有列 sketch 的时间增加约 5%。这些数字来自 2019 年论文硬件，
+        只能说明 feasibility，不能当作现代系统 SLA。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=8">CIDR §5.1 · PDF 8–9</a>
+      </p>
+
+      <h3>9.2 Multi-column：同时看 mean 与 99th percentile</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>数据 / sample fraction</th>
+              <th class="number">GEE mean / p99</th>
+              <th class="number">BC mean / p99</th>
+              <th class="number">SCBC mean / p99</th>
+              <th>读法</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Synthetic / 0.01%</td>
+              <td class="number">16.3 / 100.4</td>
+              <td class="number">6.2 / 46.1</td>
+              <td class="number">3.1 / 17.5</td>
+              <td>极小 sample 下仍有长尾；correction 改善但不消灭不确定性。</td>
+            </tr>
+            <tr>
+              <td>Synthetic / 0.10%</td>
+              <td class="number">6.2 / 31.6</td>
+              <td class="number">2.7 / 10.3</td>
+              <td class="number">2.0 / 8.1</td>
+              <td>BC 与 sketch correction 的收益可分开观察。</td>
+            </tr>
+            <tr>
+              <td>Real-world / 0.01%</td>
+              <td class="number">72.9 / 110.3</td>
+              <td class="number">5.9 / 63.5</td>
+              <td class="number">2.9 / 23.6</td>
+              <td>mean 改善很大，但 p99 仍提醒优化器不能把点估计当确定真值。</td>
+            </tr>
+            <tr>
+              <td>Real-world / 0.10%</td>
+              <td class="number">21.6 / 31.9</td>
+              <td class="number">1.8 / 8.4</td>
+              <td class="number">1.6 / 4.8</td>
+              <td>表格中 SCBC 在该配置下最佳。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        评测包括 4,455 个双列 synthetic data sets（改变 domain、skew 与 correlation），以及 Census、
+        Forest Cover Type、Poker Hand、El Niño 和 IMDb。每个数据集/采样率抽 10 份 sample，
+        对所有含两列及以上的组合计算 ratio error。SCBC 在所有 sampling rate 上取得最低 mean；
+        p99 只有一个例外：synthetic / 0.01% 下 SCGEE 为 17.0，略低于 SCBC 的 17.5。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=9">CIDR §5.2 · PDF 9–11</a>
+      </p>
+
+      <div class="warning">
+        <p class="callout-title">原文内部数字冲突：以 Table 4/5 为准</p>
+        <p>
+          PDF p.10 正文称 BC 的 mean ratio error 低于 2.0 时，只需 0.05% synthetic sample
+          与 0.01% real-world sample；但同页 Table 4/5 中 BC 在这两行分别是 3.3 和 5.9。
+          表格实际首次低于 2.0 的对应行是 0.5%（synthetic，1.8）与 0.1%（real-world，1.8）。
+          本文采用可逐格核对的表格数值，不复述正文中的十倍采样率偏差。
+        </p>
+      </div>
+
+      <div class="warning">
+        <p class="callout-title">原文交叉引用错误：SCGEE 下界来自 Inequality 10</p>
+        <p>
+          PDF p.6 的 SCGEE 段落说 singleton lower bound 使用 Inequality 11；
+          实际的 \(\max_j F_{1,j}\le F_1\) 是 Inequality 10，Inequality 11 约束的是 total NDV
+          \(\max_j D_j\le D\le\prod_j D_j\)。本文按公式含义引用，不沿用该编号误植。
+        </p>
+      </div>
+
+      <h3>9.3 Frequency computation：不要只看夸张的最大 speedup</h3>
+      <p>
+        与预分配好的 hash-table baseline 相比，递归实现的 median speedup 是 9.3×，
+        但跨配置的 speedup 分布很宽；99th percentile 约 8,700× 主要反映不同数据形状和早停机会，
+        不代表固定加速比。更可迁移的证据是绝对延迟：论文配置中 proposed 方法 mean 0.38ms、
+        p99 2.81ms；在 32,768 行、1,024 列的极端 synthetic sample 上，单次 frequency vector
+        计算至多 3.4ms，给定 vector 后 estimator 通常少于 5µs。
+        <a class="source-ref" href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=11">CIDR §5.3 · PDF 11–12</a>
+      </p>
+    </section>
+
+    <section id="review">
+      <h2>10. Review：论文证明了什么，没有证明什么</h2>
+
+      <div class="grid-2">
+        <div class="good">
+          <p class="callout-title">材料支持的结论</p>
+          <ul>
+            <li>对单列，full-information HLL 比小 sample 的 NDV 外推更稳定。</li>
+            <li>对任意列组合，一份 row sample 可以复用；论文实验表明，HLL 与 sample 共同形成的 estimated corrections 整体改善了 sample estimator。</li>
+            <li>BC 与 sketch correction 在算法上是两个可分别观察的改进，SCBC 在论文评测中整体最好。</li>
+            <li>frequency vector 不一定需要宽 tuple hash table，partition refinement 对宽 sample 有实际价值。</li>
+          </ul>
+        </div>
+        <div class="bad">
+          <p class="callout-title">材料没有证明的结论</p>
+          <ul>
+            <li>没有证明 SCBC 在所有分布、所有 sample fraction 上都有小误差。</li>
+            <li>没有直接覆盖 join result 或任意 filter 后的 GROUP BY；普通单列 sketch 也不支持任意 predicate conditioning。</li>
+            <li>没有证明一个 2019 prototype 的维护成本适合所有并发、持久化与事务设计。</li>
+            <li>没有把更准的 \(D\) 转化成 end-to-end plan/runtime 改善实验。</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>10.1 最容易忽略的四个实现边界</h3>
+      <ol>
+        <li>
+          <strong>Sample 至少要有最小行数。</strong>
+          论文 real-world 实验在 0.01% 时某些 sample 只有 4 行；作者也建议实践中设置 minimum sample size。
+        </li>
+        <li>
+          <strong>Row-uniform 假设不是免费获得的。</strong>
+          如果底层实际抽的是 tablet/page/block，layout correlation 会改变 frequency classes。
+          这正是 <a href="block-level-sampling-sigmod2004-notes.html">SIGMOD 2004 专题</a> 要解决的另一层问题。
+        </li>
+        <li>
+          <strong>Sketch product bound 可能极松。</strong>
+          高 NDV 列相乘很快超过 \(N\)；此时主要依靠 BC，而不是 sketch upper bound。
+        </li>
+        <li>
+          <strong>Correlation 不等于只看 Pearson \(\rho\)。</strong>
+          论文 synthetic 实验在其生成模型中观察到不同 correlation 下精度相近，
+          不能外推成任意真实相关结构都不影响 estimator。
+        </li>
+      </ol>
+
+      <div class="note">
+        <p class="callout-title">与 SIGMOD 2004 的正确连接方式</p>
+        <p>
+          Book §5.3.3 已经指出：均匀 row sample 往往需要触达大量页面，所以系统会抽 page/block；
+          但同页数据相关会让 sample 不再 row-uniform。
+          SIGMOD 2004 为 histogram 提出 2PHASE，为单列 NDV 提出 COLLAPSE。
+          它与 CIDR 2019 是相邻问题，不是同一个算法的前后两章。
+          <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=147">Book §5.3.3 · PDF 147–148</a>
+        </p>
+      </div>
+    </section>
+
+    <section id="systems">
+      <h2>11. 从论文回到开源系统：先区分四条路径</h2>
+      <p>
+        生产系统中至少有四件常被统称为 “sampling / estimates” 的事：
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h4>① Statistics collection</h4>
+          <p><code>ANALYZE</code> 如何选择 table/tablet/page/row，计算 NDV、null count、min/max、histogram。</p>
+        </div>
+        <div class="card">
+          <h4>② Statistics storage</h4>
+          <p>落盘或缓存的是 numeric NDV、HLL state、MCV、histogram，还是扩展多列统计。</p>
+        </div>
+        <div class="card">
+          <h4>③ Optimizer estimation</h4>
+          <p>逻辑 Aggregate 如何把一个或多个 grouping expression 的统计传播成 output row count。</p>
+        </div>
+        <div class="card">
+          <h4>④ Query-facing sampling</h4>
+          <p><code>TABLESAMPLE</code> / <code>SAMPLE</code> 是用户查询算子；它不自动等于 ANALYZE 的内部采样。</p>
+        </div>
+      </div>
+
+      <div class="purple-note">
+        <p class="callout-title">Doris 的关键对照点</p>
+        <p>
+          当前 Doris Nereids 的 GROUP BY row-count 路径读取各 grouping expression 的单列 NDV，
+          按 NDV 降序后用固定 correlation coefficient 逐列衰减乘积，并把结果 clamp 到 child row count；
+          若统计未知则回退到 child rows 的固定比例。统计收集侧会在 OLAP tablet sample 上计算/外推单列 NDV。
+          这两段已经构成一条完整的工程链，但不是 CIDR 论文的 counting-HLL + row-sample + SCBC。
+          具体类、公式、版本快照和 PostgreSQL/DuckDB/ClickHouse 对照见
+          <a href="open-source-statistics-estimation.html"><strong>开源数据库 Statistics / Estimates / Sampling 调查</strong></a>。
+        </p>
+      </div>
+    </section>
+
+    <section id="summary">
+      <h2>12. 一页总结与继续阅读</h2>
+
+      <div class="pill-row" aria-label="术语链">
+        <span class="pill">Data Statistics</span>
+        <span class="pill">Cardinality Estimate</span>
+        <span class="pill">Cost Model</span>
+        <span class="pill">Group NDV</span>
+        <span class="pill">Frequency Vector</span>
+        <span class="pill">Counting HLL</span>
+        <span class="pill">BC</span>
+        <span class="pill">SCBC</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>读者问题</th><th>答案</th><th>回看位置</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Cost model 和 cardinality estimator 谁依赖谁？</td>
+              <td>Cardinality 为物理 cost 公式提供 rows/width；statistics 为 cardinality 提供分布摘要。</td>
+              <td><a href="#optimizer-loop">§1</a></td>
+            </tr>
+            <tr>
+              <td>为什么不能把两个单列 NDV 直接相乘？</td>
+              <td>相同边际 NDV 可以对应完全相关或近乎独立的组合分布，结果相差几个数量级。</td>
+              <td><a href="#group-by-problem">§3</a></td>
+            </tr>
+            <tr>
+              <td>为什么同时需要 sketch 与 sample？</td>
+              <td>Sketch 看全表流但只估预定义单列 NDV；sample 漏行但保留任意列组合及单列 frequency classes。SCBC 用两者形成 estimated corrections。</td>
+              <td><a href="#architecture">§4</a>、<a href="#sketch-correction">§7</a></td>
+            </tr>
+            <tr>
+              <td>论文最核心的估计动作是什么？</td>
+              <td>从 frequency vector 得到 sample-derived estimates，再把 HLL NDV 与单列 sample classes 合成为 singleton estimated corrections，最后取几何平均并做 NDV sanity clamp。</td>
+              <td><a href="#sample-estimators">§6</a>、<a href="#sketch-correction">§7</a></td>
+            </tr>
+            <tr>
+              <td>Block sampling 能直接喂给 SCBC 吗？</td>
+              <td>不能默认。CIDR 的 row-sample 假设与物理 block correlation 是不同问题，需要单独核验。</td>
+              <td><a href="#review">§10</a>、<a href="block-level-sampling-sigmod2004-notes.html">专题页</a></td>
+            </tr>
+            <tr>
+              <td>现实系统已经实现 SCBC 了吗？</td>
+              <td>本次调查未把相似术语当实现证据；Doris 等系统的实际链路与差距在独立调查页逐项说明。</td>
+              <td><a href="open-source-statistics-estimation.html">系统调查</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>参考与本地材料</h3>
+      <ol>
+        <li>
+          Bailu Ding, Vivek Narasayya, Surajit Chaudhuri:
+          <a href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=135">
+            <em>Extensible Query Optimizers in Practice</em>, Chapter 5.1–5.3
+          </a>，书页 317–333 / PDF pp.135–151。
+        </li>
+        <li>
+          Michael Freitag, Thomas Neumann:
+          <a href="../paper/sampling%20for%20group%20by-CIDR%202019.pdf#page=1">
+            <em>Every Row Counts: Combining Sketches and Sampling for Accurate Group-By Result Estimates</em>
+          </a>，CIDR 2019。
+        </li>
+        <li>
+          Surajit Chaudhuri, Gautam Das, Utkarsh Srivastava:
+          <a href="../paper/Block%20level%20Sampling-SIGMOD2004.pdf#page=1">
+            <em>Effective Use of Block-Level Sampling in Statistics Estimation</em>
+          </a>，SIGMOD 2004；另见
+          <a href="block-level-sampling-sigmod2004-notes.html">独立教学笔记</a>。
+        </li>
+        <li>
+          <a href="open-source-statistics-estimation.html">
+            开源数据库 Statistics / Estimates / Sampling 调查
+          </a>，以 2026-08-03 的官方源码与文档为快照，Doris 为重点。
+        </li>
+      </ol>
+
+      <div class="good">
+        <p class="callout-title">最后的心智模型</p>
+        <p>
+          Histogram、sketch、sample 都不是“真实数据的廉价副本”，而是有明确可见范围的观测器。
+          好的 estimator 不会假装某一种观测器知道一切；它会把每条信息能证明的上下界写清楚，
+          在组合时保留不确定性，并让 optimizer 知道这个点估计来自什么假设。
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>
+        文档日期：2026-08-03。正文为中文教学重述与 review，不是原文逐句翻译；
+        图示均为依据指定材料重新设计的教学图。论文公式、表格数字和页码以仓库内 PDF 为准。
+      </p>
+      <p>
+        继续阅读：
+        <a href="block-level-sampling-sigmod2004-notes.html">Block-Level Sampling 专题</a> ·
+        <a href="open-source-statistics-estimation.html">开源系统调查（Doris 精讲）</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

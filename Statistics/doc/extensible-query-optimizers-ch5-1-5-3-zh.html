@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="《Extensible Query Optimizers in Practice》第 5.1-5.3 节中文翻译：代价估算、代价模型与统计信息。">
+  <title>查询优化器的代价估算与统计信息：第 5.1-5.3 节中文翻译</title>
+  <style>
+    :root {
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d7dce2;
+      --paper: #f5f8fa;
+      --panel: #ffffff;
+      --accent: #176b87;
+      --accent-dark: #0f5167;
+      --orange: #8a5a12;
+      --green: #4f6f52;
+      --purple: #6941c6;
+      --code: #263238;
+      --code-bg: #eef3f5;
+      --note-bg: #f2f7fb;
+      --warn-bg: #fff7df;
+      --good-bg: #eef8f2;
+      --purple-bg: #f5f1ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans SC", "PingFang SC", sans-serif;
+      line-height: 1.74;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a:focus-visible, summary:focus-visible {
+      outline: 3px solid #72b7cf;
+      outline-offset: 3px;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    header {
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero {
+      padding: 48px 0 32px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 38px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4.5vw, 52px);
+      line-height: 1.1;
+      letter-spacing: -.025em;
+    }
+
+    .lead {
+      max-width: 790px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .source-box {
+      border: 1px solid var(--line);
+      background: #f6fbfd;
+      padding: 17px;
+      border-radius: 9px;
+      font-size: 14px;
+    }
+
+    .source-box strong { display: block; margin-bottom: 8px; }
+    .source-box div + div {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid #dde9ee;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding: 12px 0;
+      border-top: 1px solid #eef1f4;
+      background: rgba(255, 255, 255, .97);
+    }
+
+    nav .wrap {
+      display: flex;
+      gap: 9px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: #fff;
+      font-size: 14px;
+    }
+
+    nav a.companion {
+      border-color: #b9a8e8;
+      color: var(--purple);
+      background: var(--purple-bg);
+    }
+
+    main { padding: 34px 0 62px; }
+
+    section {
+      scroll-margin-top: 82px;
+      margin: 0 0 38px;
+      padding: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 29px;
+      line-height: 1.24;
+      letter-spacing: -.012em;
+    }
+
+    h3 {
+      scroll-margin-top: 90px;
+      margin: 32px 0 11px;
+      font-size: 22px;
+      line-height: 1.32;
+    }
+
+    h4 {
+      scroll-margin-top: 90px;
+      margin: 24px 0 9px;
+      color: var(--accent-dark);
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    p { margin: 0 0 14px; }
+    ul, ol { margin: 0 0 16px 22px; padding: 0; }
+    li { margin: 6px 0; }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      color: var(--code);
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: .92em;
+    }
+
+    pre {
+      margin: 14px 0 18px;
+      overflow: auto;
+      background: #111827;
+      color: #e7edf5;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    pre code { color: inherit; background: transparent; padding: 0; font-size: inherit; }
+
+    .source-ref {
+      display: inline-block;
+      margin-left: 4px;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .note, .warning, .good, .purple-note {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .note { background: var(--note-bg); border-color: #c8dce7; }
+    .warning { background: var(--warn-bg); border-color: #eed58d; }
+    .good { background: var(--good-bg); border-color: #b8dfc4; }
+    .purple-note { background: var(--purple-bg); border-color: #cabcf0; }
+    .callout-title { margin: 0 0 6px; font-weight: 800; }
+
+    .formula {
+      display: block;
+      margin: 14px 0;
+      padding: 14px 17px;
+      overflow-x: auto;
+      border-left: 4px solid var(--accent);
+      background: #f3f7f8;
+    }
+
+    .grid-2, .grid-3 { display: grid; gap: 18px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .card {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+
+    .card h3, .card h4 { margin-top: 0; }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f5; }
+    td.number, th.number {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .figure-body { padding: 20px; overflow-x: auto; background: #fbfcfd; }
+    figcaption {
+      padding: 12px 16px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #fff;
+      font-size: 14px;
+    }
+
+    .optimizer-map {
+      min-width: 760px;
+      display: grid;
+      grid-template-columns: 1fr auto 1.25fr auto 1fr;
+      grid-template-areas:
+        "search a cardinality b cost"
+        ". . stats . .";
+      gap: 16px;
+      align-items: center;
+    }
+
+    .flow-node {
+      min-height: 112px;
+      display: grid;
+      place-content: center;
+      padding: 16px;
+      text-align: center;
+      border: 2px solid var(--accent);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .flow-node strong { display: block; margin-bottom: 7px; font-size: 18px; }
+    .flow-node span { color: var(--muted); font-size: 14px; }
+    .flow-search { grid-area: search; border-color: var(--green); }
+    .flow-cardinality { grid-area: cardinality; }
+    .flow-cost { grid-area: cost; border-color: var(--purple); }
+    .flow-stats { grid-area: stats; border-color: var(--orange); margin-top: 12px; }
+    .flow-arrow { color: var(--muted); font-size: 28px; font-weight: 800; }
+    .flow-arrow.a { grid-area: a; }
+    .flow-arrow.b { grid-area: b; }
+    .stats-arrow {
+      grid-column: 3;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .plan {
+      min-width: 680px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .plan-tree { text-align: center; }
+    .plan-node {
+      width: max-content;
+      max-width: 100%;
+      margin: 0 auto 14px;
+      padding: 8px 14px;
+      border: 2px solid var(--accent);
+      border-radius: 7px;
+      background: #fff;
+      font-weight: 750;
+    }
+
+    .plan-node small { display: block; color: var(--muted); font-weight: 500; }
+    .plan-children { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .plan-leaf { border-color: var(--green); }
+
+    .matrix th, .matrix td { text-align: center; min-width: 52px; }
+    .matrix .hit { color: #fff; background: var(--accent); font-weight: 800; }
+
+    .footnotes {
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    sup a { font-weight: 750; }
+
+    footer {
+      padding: 30px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: #fff;
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .hero, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      section { padding: 23px 18px; }
+    }
+
+    @media (max-width: 560px) {
+      .wrap { width: min(100% - 24px, 1120px); }
+      .hero { padding-top: 30px; }
+      table { font-size: 13px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Extensible Query Optimizers in Practice · Chapter 5</p>
+        <h1>代价估算、代价模型与统计信息</h1>
+        <p class="lead">
+          《Extensible Query Optimizers in Practice》第 5.1-5.3 节中文翻译。
+          译文保留原有章节层级、公式、SQL、图号、脚注与参考文献编号，
+          并将图 5.1-5.5 重排为适合网页阅读的中文结构。
+        </p>
+      </div>
+      <aside class="source-box">
+        <strong>原文与范围</strong>
+        <div>
+          <a href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=135">
+            <em>Extensible Query Optimizers in Practice</em>
+          </a>
+        </div>
+        <div>书页 317-333 / PDF 第 135-151 页</div>
+        <div>止于第 333 页的 5.4 节标题之前</div>
+      </aside>
+    </div>
+    <nav aria-label="页内目录">
+      <div class="wrap">
+        <a href="#cost-overview">5.1 代价估算</a>
+        <a href="#cost-model">5.2 代价模型</a>
+        <a href="#calibration">5.2.1 模型校准</a>
+        <a href="#statistics">5.3 统计信息</a>
+        <a href="#histograms">5.3.1 直方图</a>
+        <a href="#sketches">5.3.2 草图</a>
+        <a href="#sampling">5.3.3 采样</a>
+        <a href="#management">5.3.4 管理</a>
+        <a class="companion" href="group-by-cardinality-estimation-tutorial.html">相关教学笔记</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="cost-overview">
+      <h2>5.1 代价估算概述</h2>
+      <p>
+        优化器的搜索算法使用代价估算来评估给定物理计划的执行效率，并以此将该计划与同一逻辑表达式的其他候选计划进行比较。
+        图 5.1 展示了查询优化器中的搜索模块与代价估算模块，以及二者之间的交互。在为一个逻辑表达式搜索最佳计划的过程中，
+        优化器利用代价估算模块推导各计划的代价，并从中选出最佳计划。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=135">原文 PDF 135</a>
+      </p>
+
+      <p>
+        一个计划的代价通过合并计划中各个算子的代价来估算。算子的代价使用代价模型估算。
+        针对某个算子（例如哈希连接）的代价模型使用公式来估算该算子消耗的资源（例如 CPU、I/O 和内存）。
+        代价模型因算子而异。例如，哈希连接的代价模型必须刻画：（1）构建哈希表的代价；（2）探测哈希表的代价；
+        以及（3）为匹配行构造连接结果的代价。
+      </p>
+
+      <p>
+        算子代价模型最重要的参数包括输入关系和输出关系的行数，即它们的基数。请注意，一个算子输入关系的行数也就是其子算子输出的行数。
+        因此，准确估计各算子输出行数的能力，即<strong>基数估计</strong>，对于保证代价估算的准确性至关重要。
+      </p>
+
+      <p>
+        基数估计以逻辑查询表达式为输入，并使用该逻辑表达式所引用关系的数据统计概要。例如，表达式
+        <code>Join(Join(R, S), T)</code> 的连接条件为 <code>R.a = S.b</code> 和 <code>R.d = T.c</code>，
+        它引用了三个关系；列 <code>R.a</code>、<code>S.b</code>、<code>R.d</code> 和 <code>T.c</code> 中值的分布信息有助于估计该表达式的基数。
+        因此，数据库系统必须在数据库的整个生命周期内收集并维护这些统计信息（见图 5.1 中的“数据统计信息”模块）。
+        为基数估计提出的主要统计概要（也称 synopsis）包括<sup><a href="#fn-1" id="fnref-1">1</a></sup>直方图 [111]、草图 [192] 和样本。
+      </p>
+
+      <figure>
+        <div class="figure-body">
+          <div class="optimizer-map" role="img" aria-label="查询优化器中的搜索、基数估计、代价模型和数据统计信息">
+            <div class="flow-node flow-search">
+              <strong>搜索</strong>
+              <span>Memo · 候选计划枚举与比较</span>
+            </div>
+            <div class="flow-arrow a" aria-hidden="true">⇄</div>
+            <div class="flow-node flow-cardinality">
+              <strong>基数估计</strong>
+              <span>估计逻辑表达式的输出行数</span>
+            </div>
+            <div class="flow-arrow b" aria-hidden="true">⇄</div>
+            <div class="flow-node flow-cost">
+              <strong>代价模型</strong>
+              <span>推导物理表达式的执行代价</span>
+            </div>
+            <div class="stats-arrow" aria-hidden="true">数据分布摘要 ↑</div>
+            <div class="flow-node flow-stats">
+              <strong>数据统计信息</strong>
+              <span>直方图 · 不同值个数</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          图 5.1：查询优化器中的搜索模块与代价估算模块。代价估算使用代价模型，而代价模型又使用基数估计模块。
+        </figcaption>
+      </figure>
+
+      <p>
+        最后需要指出，如图 5.1 所示，搜索算法也可以直接调用基数估计模块，对某个逻辑查询表达式进行估计，从而在计划搜索期间做出决策。
+        例如，在 Volcano/Cascades 中，连接变换的 <em>promise</em> 值（见第 2.2.3 节）可以取决于外侧的估计基数大于还是小于内侧。
+      </p>
+
+      <aside class="footnotes" aria-label="第 5.1 节脚注">
+        <p id="fn-1"><sup>1</sup> 小波 [131] 也曾被考虑用于基数估计，但数据库系统在实践中并未采用它。 <a href="#fnref-1" aria-label="返回脚注引用">↩</a></p>
+      </aside>
+    </section>
+
+    <section id="cost-model">
+      <h2>5.2 代价模型</h2>
+      <p>
+        代价模型先估算计划中每个物理算子的代价，再合并所有算子的代价，得到计划的总代价。
+        执行某个算子的代价由若干因素决定：
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=136">原文 PDF 136-139</a>
+      </p>
+      <ol>
+        <li>算子处理的数据量，即从算子的各个输入中读取的数据量。</li>
+        <li>算子处理每个数据单位并生成输出时产生的代价。</li>
+        <li>可能影响算子执行代价的运行时因素。</li>
+      </ol>
+
+      <p>
+        算子处理的数据量取决于其输入行数（即基数）以及这些行的大小。处理一个数据单位的代价包括 I/O 代价和 CPU 代价。
+        运行时因素可能包括并行度（即用于执行该算子的并发线程数）、哈希连接或排序等算子可用的内存量，以及缓冲池中的内容。
+      </p>
+
+      <p>
+        图 5.2 给出了一个查询及其计划，并采用简化的代价模型。计划中的每个算子都标注了中间结果的大小（即基数）及其代价。
+        以哈希连接算子为例：它基于 <code>store</code> 表上的表扫描算子所输出的 100 行构建哈希表，
+        然后用 <code>store_sales</code> 表上的索引扫描算子所输出的 1,000 行探测哈希表。
+        它输出 250 行，供其父算子哈希聚合使用。在这个简化的代价模型中，向哈希表插入一行的代价为 3，
+        探测哈希表的代价为 1，生成一行输出的代价为 1。因此，哈希连接算子的估计代价为 1,550。
+      </p>
+
+      <figure>
+        <div class="figure-body">
+          <div class="plan">
+            <pre><code>SELECT s_city, COUNT(*)
+FROM store, store_sales
+WHERE s_store_sk = ss_store_sk
+  AND s_state = 'CA'
+  AND ss_year = 2000
+  AND ss_sales_price &gt; 10
+GROUP BY s_city;</code></pre>
+            <div class="plan-tree" aria-label="查询计划树">
+              <div class="plan-node">哈希聚合<small>基数：100 · 代价：300</small></div>
+              <div class="plan-node">哈希连接<small>基数：250 · 代价：1550</small></div>
+              <div class="plan-children">
+                <div class="plan-node plan-leaf">表扫描<small>store<br>基数：100 · 代价：500</small></div>
+                <div class="plan-node plan-leaf">索引扫描<small>store_sales<br>基数：1000 · 代价：1000</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>图 5.2：带有基数与代价估计的查询计划。</figcaption>
+      </figure>
+
+      <p>
+        最后需要说明，影响算子代价的因素可能十分复杂。例如，缓存会显著影响表扫描、索引扫描等扫描算子的 CPU 时间，
+        因为当全部或部分数据已经缓存在缓冲池内存中时，扫描速度会快于从存储子系统读取全部数据。
+        [55] 提出了一种刻画缓存对索引扫描代价影响的技术：为每张表维护一个行的随机样本，
+        并在查询优化期间利用该样本获得满足表上选择条件的行记录 ID（RID）列表；随后在查询执行时，用这些 RID 探测索引，
+        以估计数据中已被缓存的比例。
+      </p>
+
+      <p>
+        尽管对缓存影响进行建模可以提高扫描算子 CPU 时间估计的准确性，但数据库系统通常不会实现这类模型，原因有三。
+        第一，当数据库系统中并发运行多个查询时，缓冲池内容很难预测。第二，查询优化时估计的缓冲池内容可能不同于查询执行时的实际内容。
+        最后，上述估算的开销不可忽略，还可能增加优化时间。因此，对缓存等系统级影响进行建模仍是代价估算中的开放问题，
+        大多数 DBMS 都不会刻画缓存的影响。
+      </p>
+
+      <h3 id="calibration">5.2.1 代价模型校准</h3>
+      <p>
+        一个物理算子的代价既取决于算子的统计量，例如输入关系与输出的行数和行大小，也取决于带有代价参数的代价公式，即代价模型。
+        例如，在估算表扫描算子的 CPU 时间时，需要考虑算子执行的顺序 I/O 次数、每次顺序 I/O 的 CPU 时间代价，
+        以及算子的其他开销（例如启动代价）。一个简单的代价模型可以写成：
+      </p>
+
+      <div class="formula" aria-label="表扫描的简化 CPU 代价模型">
+        \[
+          C_{CPU}=C_{IO}\cdot N_{IO}+C_0
+        \]
+      </div>
+
+      <p>
+        其中，\(C_{IO}\) 和 \(C_0\) 是代价参数，\(N_{IO}\) 是顺序 I/O 的次数。
+        算子的统计量取决于该算子的逻辑属性和物理属性，而代价模型则可以推广到具体算子之外。
+        对于某一类物理算子，代价公式本身通常是固定的；例如，表扫描采用 \(C_{CPU}=C_{IO}\cdot N_{IO}+C_0\)。
+        但代价参数会随具体硬件而变化，例如机械硬盘与 SSD 的参数不同。因此，必须恰当地校准代价参数，
+        才能准确刻画数据库系统实际运行的硬件。
+      </p>
+
+      <p>
+        System R [178] 所采用的一种代价模型参数校准方法，是在特定硬件上执行一组手工设计的合成查询，并测量计划中各算子消耗的资源。
+        假设我们希望校准这个用于估算顺序 I/O 的 CPU 时间的简单模型，即 \(C_{CPU}=C_{IO}\cdot N_{IO}+C_0\)。
+        可以执行若干表扫描算子（这些算子可能作用于大小不同的表），并测量它们的实际执行统计量，
+        即执行的顺序 I/O 次数 \(N_{IO}\) 和 CPU 时间 \(C_{CPU}\)，由此推导代价参数 \(C_{IO}\) 和 \(C_0\)。
+        由于代价参数与硬件相关，一些商业数据库系统在运行机器的规格不同于最初校准参数所用机器时，会重新校准这些代价参数。
+      </p>
+
+      <p>
+        最后，多年来，关于代价模型设计和校准的研究非常丰富。这些方法包括：开发粒度更细的代价模型 [125]；
+        使用合成生成的数据库和查询来提高校准准确性 [60]；自动设计用于校准模型参数的实验 [197]；
+        以及使用机器学习校准代价模型 [199]。
+      </p>
+    </section>
+
+    <section id="statistics">
+      <h2>5.3 统计信息</h2>
+      <p>
+        为基数估计（CE）提出的主要统计概要（也称 synopsis）包括直方图 [111]、草图 [192] 和样本。
+        将这些统计概要用于 CE 时，关键要求包括：（1）准确性；（2）效率；（3）内存消耗；
+        （4）覆盖范围，即是否适用于不同类型的查询表达式；以及（5）创建和维护的代价。
+        关于这些技术，以及它们在上述要求之间所作权衡的详细综述，请参阅 [46]。
+        <a class="source-ref" href="../../book/Extensible-Query-Optimizers-in-Practice.pdf#page=139">原文 PDF 139-151</a>
+      </p>
+
+      <p>
+        在实践中，商业 DBMS 对选择和连接进行 CE 时，使用最广泛的技术是直方图，第 5.3.1 节将对其进行更详细的介绍。
+        在不同值个数估计方面，HyperLogLog 草图技术 [64, 92] 正在实践中得到越来越多的应用。
+        一些 DBMS 也使用采样进行基数估计，但与直方图相比，其应用要有限得多。
+        [90] 对不同值个数的各种估计技术进行了综述和实证比较。
+      </p>
+
+      <h3 id="histograms">5.3.1 直方图</h3>
+      <p>
+        尽管直方图很容易产生误差，但由于简单且高效，它仍是实践中使用最广泛的基数估计技术 [101]。
+        直方图定义在一个列集合上。其基本思想是设置若干桶，并在每个桶中保存落入该桶的列集合数据行的聚合概要。
+        随后，系统使用这些聚合值估计涉及该列集合的谓词基数。直方图使用的桶数是构建直方图时的输入参数。
+        根据桶的定义方式以及每个桶中保存的聚合概要不同，可以构造出不同类型的直方图。
+        下面通过一个示例说明三种常用直方图。
+      </p>
+
+      <p>假设某列的数据分布如图 5.3(a) 所示。对于每种直方图，我们都将桶数限制为 5。</p>
+
+      <figure>
+        <div class="figure-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>子图</th>
+                  <th>横轴取值或桶</th>
+                  <th>对应频数 / 计数</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>(a) 数据分布</td>
+                  <td><code>0, 1, 2, 3, 4, 5, 6, 7, 8, 9</code></td>
+                  <td><code>5, 0, 0, 10, 3, 0, 14, 6, 13, 0</code></td>
+                </tr>
+                <tr>
+                  <td>(b) 等宽直方图</td>
+                  <td><code>[0,2), [2,4), [4,6), [6,8), [8,10)</code></td>
+                  <td><code>5, 10, 3, 20, 13</code></td>
+                </tr>
+                <tr>
+                  <td>(c) 等深直方图</td>
+                  <td><code>[0,3), [3,6), [6,7), [7,8), [8,10)</code></td>
+                  <td><code>5, 13, 14, 6, 13</code></td>
+                </tr>
+                <tr>
+                  <td>(d) 端偏直方图</td>
+                  <td><code>6, 8, 3, 7, R</code></td>
+                  <td><code>14, 13, 10, 6, 1.33</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <figcaption>图 5.3：数据分布与直方图。表格完整转写了原图的横轴标签和柱高。</figcaption>
+      </figure>
+
+      <h4>等宽直方图</h4>
+      <p>
+        图 5.3(b) 给出了等宽直方图的示例。每个桶表示一个由连续值组成且宽度相等的区间；
+        桶中保存的聚合概要，是值落在该区间内的行数。这种直方图可用于估计表上范围过滤条件和等值过滤条件的选择率。
+        例如，使用图 5.3(b) 中的直方图，并作均匀性假设（见第 5.4.2 节），可以估计值为 1 的行数为 \(5/2=2.5\)。
+        等宽直方图虽然简单，但当不同值上的数据分布不均匀时，其选择率估计可能很不准确；
+        例如，同一桶内各个值对应的行数差别很大，从而偏离均匀性假设 [164]。
+      </p>
+
+      <h4>等深直方图</h4>
+      <p>
+        图 5.3(c) 展示了同一数据分布的等深直方图（也称等高直方图）。它试图使每个桶的高度，
+        即落入该桶的行数，保持一致。在这个示例中，共有 51 行和 5 个桶，因此桶边界的选择目标是使每个桶大约包含 10 行。
+        由此，桶边界可以看作该分布的分位数。与等宽直方图相比，等深直方图的选择率估计最坏情况误差要小得多 [164]。
+        例如，使用图 5.3(b) 中的等宽直方图估计值 6 的基数时，误差为 4；
+        而使用图 5.3(c) 中的等深直方图时，误差为 0。
+      </p>
+
+      <div class="warning">
+        <p class="callout-title">译注：原文算式疑有排版错误</p>
+        <p>
+          原文写作 \((20-14)/2=4\)。按图中数据，其意图应为 \(|20/2-14|=4\)。
+          本译文保留原文结论，并明确标出这一处算式问题。
+        </p>
+      </div>
+
+      <h4>端偏直方图</h4>
+      <p>
+        对于具有 \(N\) 个桶的端偏直方图，其中 \(N-1\) 个桶用来保存出现频率最高的那些值的频率，
+        剩余的一个桶则保存其他所有值的平均频率 [103]。在估计等值谓词的选择率时，
+        如果谓词所引用的值属于频率最高的 \(N-1\) 个值之一，估计就是准确的；对于其他值，则必须采用均匀性假设。
+      </p>
+
+      <p>
+        端偏直方图在估计等值连接的选择率时也很有效，因为连接大小通常由参与连接的一个或两个关系中的高频值主导。
+        图 5.3(d) 给出了本例数据分布的端偏直方图：频率最高的 4 个值保存在前 4 个桶中；
+        图中标记为 <code>R</code> 的第 5 个桶保存其余所有值的平均频率。
+        可以看到，等宽和等深直方图中的桶按照列值域的排序顺序保存值区间，
+        而端偏直方图中相邻桶的列值顺序取决于相应值的频率。
+      </p>
+
+      <p>
+        研究表明，当数据分布倾斜时，例如只有少量高频值而低频值很多，端偏直方图表现良好 [103]。
+        在本例中，对于每个值的基数估计，端偏直方图在三种直方图中的总误差最低。
+        等深直方图和端偏直方图已被 Oracle [159]、IBM DB2 [99]、Microsoft SQL Server 7.0 [34]
+        和 PostgreSQL [170] 等商业 DBMS 采用。较新版本的 Microsoft SQL Server 使用 Max-Diff 直方图，
+        第 5.5.2 节将对此进行介绍。
+      </p>
+
+      <p>
+        最后，已有大量研究探讨用于基数估计的直方图 [101]。[168] 提出了一套直方图分类法，
+        用于刻画不同类型直方图的性质。
+      </p>
+
+      <h4>视图上的统计信息</h4>
+      <p>
+        传统上，优化器将直方图等统计信息限制在基表上，并以自底向上的方式推导表达式（例如包含连接的表达式）的基数。
+        然而，当表达式更加复杂，例如包含多个连接时，这种估计造成的误差可能很大。
+        视图统计信息（statistics on views，SOV）允许用户或 DBA 在关系表达式的结果上创建直方图 [21, 71]。
+        当存在 SOV 时，优化器不再只能依靠基表上的直方图估计基数，还可以利用查询中间关系上已经准确推导出的统计信息，
+        从而显著提高 CE 的准确性。优化器在估计某个特定逻辑表达式的基数时，
+        需要使用视图匹配技术（第 4.6.4 节有简要介绍）识别相关的 SOV。
+      </p>
+
+      <h3 id="sketches">5.3.2 草图</h3>
+      <p>
+        草图 [46] 是对某个关系中各行的概要。关系中的值属于域 \(D=\{1,2,\ldots,M\}\)，
+        概要则保存为一个小得多的域 \(S=\{1,2,\ldots,w\}\) 中的一组值，这些值称为<strong>草图计数器</strong>。
+        草图通常只需单遍处理流式数据，也就是说，每一行只需检查一次。因此，数据库也可以逐行流式读取已存储关系
+        （或中间关系）中的数据，并在其上使用草图。
+      </p>
+
+      <p>
+        草图可用于估计输入关系的数据分布性质，例如：（a）任意给定项的频率；
+        （b）高频项，即给定参数 \(k\)，找出所有至少出现 \(N/k\) 次的项，其中 \(N\) 是总行数；
+        或者（c）关系中的不同值个数。例如，Count-Min 草图 [47] 可用于（a）和（b），
+        HyperLogLog 草图 [64] 可用于（c）。
+      </p>
+
+      <p>
+        草图可以高效估计值的频率和不同值个数，因此与基数估计密切相关。
+        具体来说，草图支持高效完成构造直方图所需的操作，例如计算某一范围内值的频率、
+        计算某一数据分布中的不同值个数，或者识别高频项，所以可以用来构造直方图。
+        草图也已用于涉及连接的基数估计（例如 [104]）。
+      </p>
+
+      <p>
+        草图的一项突出性质是：即使要汇总很大的关系，也可以将其配置为只使用少量内存（例如几 KB），
+        同时仍保持良好的准确性。构建草图时，对每一行应用哈希函数，再用相应的哈希值更新一个或多个草图计数器。
+        通过使用多个彼此独立的哈希函数重复上述步骤，可以增加计数器的数量，从而提高估计准确性。
+        估计目标性质（例如某个项的频率或不同值个数）时，只需对草图执行简单的算术运算。
+        更新与估计的代价通常至多与所用草图计数器的数量成线性关系。
+      </p>
+
+      <p>
+        大多数草图的另一项突出性质是<strong>可合并性</strong>：对于包含多个分区的数据集，
+        可以分别为每个分区独立构建草图，再将得到的各个草图合并；
+        与在整个数据集上直接构建同等大小的草图相比，这种做法不会损失准确性 [3]。
+        这一性质使并行和分布式草图计算切实可行。因此，草图非常适合数据分析场景，
+        因为在这类场景中，数据分区是实现可扩展性的关键。
+      </p>
+
+      <p>
+        例如，数据分析中的一个常见场景是：一批新数据先被加载到一个新分区中，再将该分区加入表。
+        在这种情况下，只需为新分区中的数据计算草图，便可节省大量计算和 I/O，
+        因为无需访问已有分区中的数据。
+      </p>
+
+      <p>下面简要介绍数据库系统中广泛使用的 Count-Min 草图和 HyperLogLog 草图。</p>
+
+      <h4 id="count-min">Count-Min 草图</h4>
+      <p>
+        Count-Min 草图是一种空间效率很高的数据结构，用于估计关系中某个给定项（即值）的频率 [47]。
+        它有两个参数 \((\epsilon,\delta)\)。算法对估计准确性给出的保证是：
+        以 \((1-\delta)\) 的概率，将误差控制在因子 \(\epsilon\) 之内。算法使用这两个参数设置：
+      </p>
+
+      <div class="formula" aria-label="Count-Min 草图的宽度和深度参数">
+        \[
+          w=\left\lceil\frac{e}{\epsilon}\right\rceil,
+          \qquad
+          d=\left\lceil\ln\frac{1}{\delta}\right\rceil
+        \]
+      </div>
+
+      <p>
+        其中，\(d\) 是算法使用的相互独立的哈希函数个数，每个哈希函数均为：
+      </p>
+
+      <div class="formula" aria-label="Count-Min 哈希函数定义">
+        \[
+          h_j:\{1,\ldots,n\}\rightarrow\{1,\ldots,w\}
+        \]
+      </div>
+
+      <p>
+        Count-Min 草图使用的数据结构是图 5.4 所示的二维数组 \(C\)。
+        算法在每个单元格中保存一个计数器，初始值为 0。
+      </p>
+
+      <figure>
+        <div class="figure-body">
+          <div class="table-wrap">
+            <table class="matrix" aria-label="Count-Min 草图计数器矩阵示意">
+              <thead>
+                <tr>
+                  <th>哈希函数</th>
+                  <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>…</th><th>\(w\)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>\(h_1(x)=2\)</th>
+                  <td></td><td class="hit">+1</td><td></td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+                <tr>
+                  <th>\(h_2(x)=5\)</th>
+                  <td></td><td></td><td></td><td></td><td class="hit">+1</td><td></td><td></td><td></td>
+                </tr>
+                <tr>
+                  <th>…</th>
+                  <td></td><td></td><td class="hit">+1</td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+                <tr>
+                  <th>\(h_d(x)=6\)</th>
+                  <td></td><td></td><td></td><td></td><td></td><td class="hit">+1</td><td></td><td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <figcaption>
+          图 5.4：Count-Min 草图。每个项都会被映射到二维计数器数组中的一个单元格。
+          数组有 \(d\) 行，每个哈希函数 \(h_j\)（\(1\leq j\leq d\)）对应一行；数组有 \(w\) 列。
+        </figcaption>
+      </figure>
+
+      <p>
+        该草图支持两个方法：<code>increment(x)</code> 和 <code>estimate(x)</code>。
+        在基于某一列构建草图时，若一行中该列的项为 \(x\)，便调用 <code>increment(x)</code>；
+        <code>estimate(x)</code> 则估计项 \(x\) 的频率。在 <code>increment</code> 方法中，
+        对于所有 \(j\in[1..d]\)，算法都将数组项 \(C[j,h_j(x)]\) 加一。
+      </p>
+
+      <p>为求元素 \(x\) 的估计频率，算法返回：</p>
+
+      <div class="formula" aria-label="Count-Min 的频率估计">
+        \[
+          \hat f_x=\min_{j\in[1..d]} C[j,h_j(x)]
+        \]
+      </div>
+
+      <p>
+        使用最小值（即 <code>min</code>）作为频率估计的直觉是：
+        这个值受到数据中其他项发生哈希碰撞所造成的“噪声”最少。
+        因此，它在所有计数器中的误差最小。Count-Min 草图准确性的形式化分析见 [48]。
+      </p>
+
+      <h4 id="hyperloglog">HyperLogLog</h4>
+      <p>
+        HyperLogLog（HLL）草图用于估计关系中的不同值个数 [64]。HLL 使用一个哈希函数，
+        将域 \(D\) 中的值映射到二进制域：
+      </p>
+
+      <div class="formula" aria-label="HyperLogLog 哈希函数定义">
+        \[
+          h:D\rightarrow\{0,1\}^{L}
+        \]
+      </div>
+
+      <p>
+        其中，\(L\) 是位数。HLL 背后的直觉是：如果在某个哈希值的开头观察到位模式 \(0^{\rho}1\)，
+        并假设哈希函数产生均匀分布的哈希值，那么不同值个数的一个合理估计就是 \(2^{\rho}\)。
+        这是因为，当各个位均匀随机生成时，一个数以 <code>0</code> 开头的概率是 \(1/2\)，
+        以 <code>00</code> 开头的概率是 \(1/4\)，依此类推。因此，如果遇到一个以 \(\rho\) 个
+        <code>0</code> 开头的值，那么 \(2^{\rho}\) 就是数据流中已出现不同值个数的一个合理估计。
+      </p>
+
+      <p>
+        不过，这个估计的方差很大，因为只要偶然出现一个带有大量前导零的值，就可能导致错误的估计。
+      </p>
+
+      <p>
+        为降低单次估计的高方差，HLL 使用一种称为<strong>随机平均</strong>（stochastic averaging）[65] 的技术。
+        具体来说，利用哈希值的前 \(p\) 位，将输入行在逻辑上划分成 \(m\) 个大小大致相等的分区，其中 \(m=2^p\)。
+        在每个分区中，独立测量用于确定分区的前 \(p\) 位之后所出现的最大前导零个数。
+        这些数保存在数组 \(M\) 中，其中 \(M[i]\) 保存第 \(i\) 个分区的最大前导零个数加一。
+        上述方法模拟了 \(m\) 次实验的效果，因而能够显著提高准确性；同时，它只使用一个哈希函数，
+        所以不会增加哈希计算的代价。
+      </p>
+
+      <p>
+        算法（见图 5.5）将 \(m\) 个计数器 \(M[1],\ldots,M[m]\) 初始化为 \(-\infty\)。
+        当关系中的数据以流的形式经过时，对于每个值 \(x\)，算法计算 \(y=h(x)\)。
+        图左侧给出了四个不同的 \(h(x)\) 值，它们的前 \(p\) 位分别采用不同的组合。
+        哈希值的前 \(p\) 位（在本例中 \(p=2\)，记为 \(j\)）用作数组 \(M\) 的索引。
+        对于其余位（记为 \(k\)），算法计算 \(\rho(k)\)，即 \(k\) 中最左侧 <code>1</code> 位的位置。然后更新：
+      </p>
+
+      <div class="formula" aria-label="HyperLogLog 计数器更新">
+        \[
+          M[j]=\max(M[j],\rho(k))
+        \]
+      </div>
+
+      <figure>
+        <div class="figure-body">
+          <div class="table-wrap">
+            <table aria-label="HyperLogLog 的四个分区和计数器">
+              <thead>
+                <tr>
+                  <th>8 位哈希值 \(h(x)\)</th>
+                  <th>前 \(p=2\) 位</th>
+                  <th>其余 6 位</th>
+                  <th>数组索引</th>
+                  <th>计数器 \(M[j]\)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>00 001011</code></td><td><code>00</code></td><td><code>001011</code></td><td>0</td><td class="number">2</td></tr>
+                <tr><td><code>01 011100</code></td><td><code>01</code></td><td><code>011100</code></td><td>1</td><td class="number">1</td></tr>
+                <tr><td><code>10 100100</code></td><td><code>10</code></td><td><code>100100</code></td><td>2</td><td class="number">0</td></tr>
+                <tr><td><code>11 000110</code></td><td><code>11</code></td><td><code>000110</code></td><td>3</td><td class="number">3</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <figcaption>
+          图 5.5：HyperLogLog 算法示意图。\(h(x)\) 生成一个 8 位值；前 \(p=2\) 位用于确定要更新哪个计数器。
+          计数器记录其余 6 位中的最大前导零个数，计数器总数为 \(m=2^p=4\)。
+        </figcaption>
+      </figure>
+
+      <p>为了估计不同值个数，算法对各分区的 \(m\) 个估计值取调和平均：</p>
+
+      <div class="formula" aria-label="HyperLogLog 不同值个数估计">
+        \[
+          \frac{\alpha_m m^2}{\displaystyle\sum_{j=1}^{m}2^{-M[j]}}
+        \]
+      </div>
+
+      <p>
+        其中，\(\alpha_m\) 用于校正估计中存在的偏差。算法细节及其性质分析见 [64]。
+      </p>
+
+      <p>
+        如前所述，只要所有草图使用相同的哈希函数，大多数草图都可以合并。
+        对于 Count-Min 草图，合并后草图的每个单元格 \(C[j,h_j(x)]\)，
+        都被设置为参与合并的各草图对应单元格计数器之和。
+        对于合并后的 HLL 草图，其 \(M[j]\) 被设置为各个草图对应 \(M[j]\) 计数器的最大值。
+      </p>
+
+      <p>
+        上述 Count-Min 和 HLL 等草图可以分别估计整个输入上的值频率和不同值个数。
+        但是，它们无法给出以同一输入上的任意选择谓词（即过滤条件）为条件的估计。
+        开发能够支持选择操作的草图仍是一个活跃的研究领域，例如 [67]。
+      </p>
+
+      <p>
+        最后，在数据库系统中，草图也用于查询执行。例如，DBMS 最近增加了一些新的内置聚合函数，
+        用于返回某个表达式的近似不同值计数；这些函数就是使用 HLL 实现的，例如 [6, 143]。
+      </p>
+
+      <h3 id="sampling">5.3.3 采样</h3>
+      <p>
+        查询优化以两种方式使用样本。第一，样本用于基数估计；第二，样本用于构造直方图。
+        下面分别介绍这两种用途。
+      </p>
+
+      <h4>使用采样进行 CE</h4>
+      <p>
+        与直方图、小波和草图等统计概要不同，使用表的样本进行 CE 的一个关键优势是：
+        它对多种谓词具有很广的覆盖范围。事实上，只要对样本中的每一行计算谓词，
+        再将得到的合格行数乘以采样比例的倒数，就可以使用样本推导任意谓词的基数估计。
+        因此，对于那些使用直方图和草图难以甚至无法估计的谓词，例如 <code>LIKE</code> 谓词、
+        涉及用户定义函数（UDF）的谓词和不等式谓词，都可以使用采样来估计其基数。
+      </p>
+
+      <p>
+        一些 DBMS 支持把采样用作 CE 方法。不过，采样也带来了显著挑战。
+        第一，对于大表，样本消耗的内存可能明显多于直方图。
+        第二，如 [35] 所示，使用基表的均匀随机样本估计连接大小可能产生很大的误差。
+        直观地说，当某些值在一个关系中非常常见、在另一个关系中却并不常见时，就会出现这个问题。
+        因此，如果不了解另一个关系中的值频率分布，仅对一个关系采样可能产生很大的误差。
+        生成连接结果的随机样本可能代价高昂；相关技术及其局限见 [35, 155]。
+      </p>
+
+      <p>
+        最后，与直方图相比，使用样本进行 CE 的延迟较高，因为必须对样本中的每一行计算谓词。
+        基于这些原因，一些商业 DBMS 只在有限情况下提供使用基表样本进行 CE 的选项，而且默认并不启用。
+        例如，当查询引用的表没有统计信息时，Oracle 的 Dynamic Sampling 功能 [156] 会使用采样估计基数。
+        SAP HANA [176] 支持由用户指定提示（见第 6.3 节），指示优化器使用采样进行 CE。
+      </p>
+
+      <h4>使用采样构造直方图</h4>
+      <p>
+        当今所有商业 DBMS 都支持使用采样构造直方图。只使用表中部分行的样本，
+        可以大幅降低构造直方图的代价，但准确性也会随之下降。
+      </p>
+
+      <p>
+        使用采样时的一项挑战是：要从表中获得行的均匀随机样本，必须完整扫描表中所有行；
+        对于大表，这会产生很高的 I/O 代价。因此，大多数 DBMS 会从存储子系统中随机抽取表的数据块（即页），
+        并将抽中页内的所有行都纳入样本。这样做虽然显著降低了采样的 I/O 代价，
+        但块采样无法得到表中各行的均匀随机样本，因为同一页内的行可能彼此相关。
+        例如，由于数据是批量插入表中的，某个页内的所有行可能都属于同一个州。
+        [30, 34] 提出了在保留块采样大部分效率的同时缓解准确性损失的技术。
+      </p>
+
+      <p>
+        最后，[74] 介绍了当数据因更新而发生变化时，高效增量维护表中各行均匀随机样本的技术。
+      </p>
+
+      <h3 id="management">5.3.4 统计信息管理</h3>
+      <p>
+        到目前为止，我们已经介绍了表和视图上的统计信息，并讨论了如何使用它们估计查询的基数。
+        在数据库的整个生命周期内管理统计信息时，会遇到两项主要挑战。
+        第一，DBMS 需要决定创建哪些统计信息。第二，当数据发生变化时，需要维护（即更新）统计信息，避免 CE 的准确性下降。
+        因此，为了将创建和维护统计信息的代价控制在可接受范围内，必须审慎决定要创建哪些统计信息。
+      </p>
+
+      <h4>决定创建哪些统计信息</h4>
+      <p>
+        对于给定数据库，可能相关的单列和多列统计信息空间十分庞大。
+        创建并维护所有可能相关的统计信息，其代价可能高得令人无法承受。
+        默认情况下，大多数商业 DBMS 会在查询中选择谓词、连接谓词、<code>GROUP BY</code> 子句、
+        <code>ORDER BY</code> 子句等位置引用的每一列上创建单列统计信息。
+        此外，为提高创建效率，特别是在大表上，它们会利用表中行的样本创建统计信息
+        （例如 Microsoft [146] 和 Oracle [160]）。
+      </p>
+
+      <p>
+        这种方法虽然高效，但一个关键局限是没有考虑多列统计信息和视图统计信息（见第 5.3.1 节）的空间。
+        下面简要介绍研究文献提出的两种技术，它们用于在存在多列统计信息和视图统计信息时决定应该创建哪些统计信息。
+        直观地说，并非所有统计信息对查询都同样有用，这些技术利用这一事实，
+        从庞大的潜在相关统计信息空间中识别出不重要的统计信息。考虑查询 29：
+      </p>
+
+      <div class="note">
+        <p class="callout-title">查询 29</p>
+        <pre><code>SELECT i_color, COUNT(*)
+FROM item
+WHERE i_category = 'Dress'
+GROUP BY i_color;</code></pre>
+      </div>
+
+      <p>
+        首先，可以将统计信息的创建范围限制在查询所引用的列上。在这个示例查询中，
+        只有 <code>item</code> 表上涉及 <code>i_category</code> 和 <code>i_color</code> 列的统计信息能够用于 CE，进而影响计划代价。
+      </p>
+
+      <p>
+        其次，相对于某个查询而言，一些统计信息彼此等价。例如，假设我们创建了 <code>i_category</code> 上的单列统计信息，
+        同时又创建了 <code>(i_category, i_color)</code> 上的多列统计信息。
+        由于二者在 <code>i_category</code> 上的直方图相同，这两项统计信息会为 <code>item</code> 表上的
+        <code>i_category = 'Dress'</code> 推导出相同的选择率。<sup><a href="#fn-2" id="fnref-2">2</a></sup>
+        因此，对于这个查询，同时创建这两项统计信息是冗余的。
+      </p>
+
+      <p>
+        最后，一些统计信息虽然在语法上与查询相关，但对该查询计划质量的影响可能很有限。
+        本例查询先访问 <code>item</code> 表，再执行分组聚合。如果访问 <code>item</code> 表的代价在查询计划总代价中占据主导地位，
+        那么即使基于不同值个数估计为分组表达式选择不同的物理算子，对计划代价的影响也很有限。
+      </p>
+
+      <p>
+        Chaudhuri 等人先前的工作 [36] 对工作负载的统计信息选择问题进行了形式化，
+        并提出了识别<strong>必要统计信息集合</strong>的技术；该集合中的统计信息会显著影响工作负载的计划质量。
+        这里的挑战是：在尚未创建某项统计信息时，如何量化它对计划代价的影响。
+      </p>
+
+      <p>
+        这项工作包含两个关键思想。第一，优先考虑那些会在语法上影响查询计划中高代价算子的统计信息。
+        第二，提出一种称为<strong>魔数敏感性分析</strong>（Magic Number Sensitivity Analysis，MNSA）的技术，
+        用于在不实际创建统计信息的前提下，量化该统计信息对计划代价的影响。
+        具体来说，MNSA 为使用候选统计信息的谓词注入接近 0 和 1 的极端选择率值，再比较优化器由此生成的两个计划。
+        如果两个计划相同，就认为该统计信息不重要，可以不创建它。
+        例如，在上述查询中，如果为谓词 <code>i_category = 'Dress'</code> 注入极端选择率值不会影响优化器选择的计划，
+        那么可以跳过 <code>i_category</code> 列统计信息的创建。
+      </p>
+
+      <p>
+        Bruno 等人的工作 [21] 研究了应该创建哪些视图统计信息（见第 5.3 节）的问题。
+        他们对 MNSA 技术进行了一个并不简单的推广：识别在应用选择操作后，
+        表中连接列的哪些分布会导致“极端”（即最小或最大）的连接大小。考虑查询 30：
+      </p>
+
+      <div class="note">
+        <p class="callout-title">查询 30</p>
+        <pre><code>SELECT *
+FROM store, store_sales
+WHERE s_store_sk = ss_store_sk
+  AND ss_price &lt; 100;</code></pre>
+      </div>
+
+      <p>
+        默认情况下，优化器在估计上述查询的基数时会采用独立性假设，
+        并根据谓词 <code>ss_price &lt; 100</code> 的选择率，等比例缩减 <code>ss_store_sk</code> 列直方图中每个桶的频数。
+        随后，优化器将修改后的直方图与 <code>s_store_sk</code> 列上的直方图结合起来，
+        按照第 5.4.2 节所述方法估计连接大小。
+      </p>
+
+      <p>
+        上述技术并非均匀降低 <code>ss_store_sk</code> 直方图中所有元组的频数，
+        而是调整每个桶内的行数，使连接大小达到包含性假设下可能的最小值或最大值（见第 5.4.2 节）。
+        这些极端基数之间的代价差异，构成了为某项视图统计信息的重要性评分的基础；
+        系统利用该评分对候选视图统计信息进行排序，从中决定要创建哪些统计信息。
+      </p>
+
+      <h4>维护统计信息</h4>
+      <p>
+        统计信息管理的另一项挑战，是如何维护已有统计信息。当表被更新时，底层数据分布可能发生变化，
+        统计信息也会逐渐过时。尽管已有研究探讨如何随数据更新维护直方图 [75]，
+        但在大多数商业数据库系统中，当某列自上次创建统计信息以来已有相当比例的行被更新时，
+        系统会重新构造该列的统计信息。
+      </p>
+
+      <p>
+        这些系统为每一列维护计数器，累计该列已更新的行数。为了降低这类计数造成的 I/O 开销，
+        大多数 DBMS 会在内存中累积计数器，只在数据库执行检查点时才将其持久化。
+      </p>
+
+      <aside class="footnotes" aria-label="第 5.3 节脚注">
+        <p id="fn-2"><sup>2</sup> 前提是使用全量数据扫描创建这些统计信息。 <a href="#fnref-2" aria-label="返回脚注引用">↩</a></p>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>中文翻译范围：Book §5.1-5.3，书页 317-333 / PDF 第 135-151 页。文档日期：2026-08-03。</p>
+      <p>
+        继续阅读：<a href="group-by-cardinality-estimation-tutorial.html">GROUP BY 结果基数估计教学笔记</a> ·
+        <a href="block-level-sampling-sigmod2004-notes.html">Block-Level Sampling 专题</a> ·
+        <a href="open-source-statistics-estimation.html">开源系统调查</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

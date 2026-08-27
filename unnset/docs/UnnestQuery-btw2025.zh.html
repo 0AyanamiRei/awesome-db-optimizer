@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>《改进复杂查询的去嵌套》重点中译与导读</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #eef2f1;
+      --paper: #fffefa;
+      --ink: #202724;
+      --muted: #65706b;
+      --line: #d3ddd8;
+      --accent: #176b62;
+      --accent-soft: #e8f3f0;
+      --summary: #725a24;
+      --summary-soft: #f7f0dc;
+      --code: #eef1ee;
+      --shadow: rgb(26 55 48 / 12%);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+      font-size: 17px;
+      line-height: 1.82;
+    }
+
+    article {
+      width: min(1080px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: clamp(28px, 6vw, 72px);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 14px 48px var(--shadow);
+    }
+
+    h1, h2, h3, h4 {
+      line-height: 1.3;
+      text-wrap: balance;
+    }
+
+    h1 { margin: 0 0 .8rem; font-size: clamp(2rem, 5.5vw, 3.2rem); }
+    h2 { margin: 3rem 0 1rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+    h3 { margin: 2.35rem 0 .8rem; font-size: 1.4rem; }
+    h4 { margin: 1.7rem 0 .6rem; font-size: 1.08rem; }
+    p { margin: 1rem 0; }
+    a { color: var(--accent); }
+    var { font-family: "STIX Two Math", "Cambria Math", serif; }
+
+    .metadata { margin: .4rem 0 1.2rem; padding-left: 1.3rem; color: var(--muted); }
+
+    .lede, .callout {
+      margin: 1.2rem 0;
+      padding: .9rem 1.1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .callout.warning {
+      border-left-color: var(--summary);
+      background: var(--summary-soft);
+    }
+
+    .tag {
+      display: inline-block;
+      margin-right: .45rem;
+      padding: .12rem .55rem;
+      border-radius: 999px;
+      font: 700 .78rem/1.5 system-ui, sans-serif;
+      vertical-align: .12em;
+    }
+
+    .tag.focus { color: #fff; background: var(--accent); }
+    .tag.summary { color: var(--summary); background: var(--summary-soft); border: 1px solid #d9c88f; }
+
+    nav {
+      margin: 1.5rem 0;
+      padding: 1rem 1.2rem;
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    nav ol { margin: .35rem 0; padding-left: 1.4rem; columns: 2; column-gap: 2rem; }
+    nav li { break-inside: avoid; }
+
+    table {
+      width: 100%;
+      margin: 1.2rem 0;
+      border-collapse: collapse;
+      font-size: .94em;
+    }
+
+    th, td {
+      padding: .7rem .75rem;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--code); }
+
+    pre {
+      overflow-x: auto;
+      margin: 1.25rem 0;
+      padding: 1rem 1.15rem;
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 2;
+    }
+
+    code {
+      padding: .08em .3em;
+      background: var(--code);
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+
+    pre code { padding: 0; background: transparent; }
+
+    .formula {
+      overflow-x: auto;
+      margin: 1.3rem 0;
+      padding: 1rem;
+      text-align: center;
+      white-space: nowrap;
+      background: var(--code);
+      border-radius: 7px;
+      font-family: "STIX Two Math", "Cambria Math", serif;
+      font-size: 1.14em;
+    }
+
+    figure {
+      margin: 1.8rem 0;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+
+    figure img {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      max-height: 1050px;
+      margin: 0 auto;
+    }
+
+    figcaption {
+      margin-top: .8rem;
+      color: #535c58;
+      text-align: center;
+      font-size: .92em;
+    }
+
+    .figure-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin: 1.6rem 0;
+    }
+
+    .figure-grid figure { margin: 0; }
+
+    .steps {
+      counter-reset: step;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .steps > li {
+      position: relative;
+      margin: .85rem 0;
+      padding-left: 2.45rem;
+    }
+
+    .steps > li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: .15rem;
+      width: 1.65rem;
+      height: 1.65rem;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 50%;
+      font: 700 .85rem/1.65rem system-ui, sans-serif;
+      text-align: center;
+    }
+
+    .small { color: var(--muted); font-size: .9em; }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #151917;
+        --paper: #1e2421;
+        --ink: #e9eee9;
+        --muted: #adb9b3;
+        --line: #3e4b45;
+        --accent: #70c7ba;
+        --accent-soft: #203b36;
+        --summary: #e0c77f;
+        --summary-soft: #3b3420;
+        --code: #29302c;
+        --shadow: rgb(0 0 0 / 30%);
+      }
+    }
+
+    @media (max-width: 760px) {
+      body { font-size: 16px; }
+      article { width: 100%; margin: 0; border: 0; box-shadow: none; }
+      nav ol { columns: 1; }
+      .figure-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <article>
+    <header>
+      <h1>《改进复杂查询的去嵌套》</h1>
+      <p><cite>Improving Unnesting of Complex Queries</cite></p>
+      <ul class="metadata">
+        <li>作者：Thomas Neumann</li>
+        <li>年份：2025</li>
+        <li>原文：<a href="../paper/UnnestQuery-btw2025.pdf">UnnestQuery-btw2025.pdf</a></li>
+        <li>前置阅读：<a href="UnnestQuery-btw2015.zh.html">2015 版中译</a></li>
+      </ul>
+      <p class="lede"><strong>阅读策略：</strong>读者已经通读 2015 版，因此本文档完整保留 2025 版真正新增的 2.3、第 3–5 节；第 1、2.1–2.2、6–7 节只做压缩导读。公式和伪代码直接用 HTML 排版，不依赖 LaTeX 插件。</p>
+    </header>
+
+    <nav aria-label="目录">
+      <strong>目录</strong>
+      <ol>
+        <li><a href="#abstract">摘要</a></li>
+        <li><a href="#intro">1 引言（摘要）</a></li>
+        <li><a href="#background">2 背景</a></li>
+        <li><a href="#limitations">2.3 旧算法的局限</a></li>
+        <li><a href="#holistic">3 整体式查询去嵌套</a></li>
+        <li><a href="#complex-sql">4 复杂 SQL 构造</a></li>
+        <li><a href="#evaluation">5 评估</a></li>
+        <li><a href="#related">6–7 相关工作与结论</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="abstract">
+        <h2><span class="tag focus">完整翻译</span>摘要</h2>
+        <p>SQL 允许非常灵活的查询嵌套方式，其中也包括访问查询外层属性的子查询。这类相关子查询能够简化查询表述，但执行效率很低，会导致 <var>O(n²)</var> 的运行时间复杂度；对于大型数据库，这种代价可能高到无法接受。</p>
+        <p>因此，查询优化器会尝试对依赖查询进行去嵌套，也就是去相关。然而，现有去相关技术要么适用范围有限，要么会在相关查询反复嵌套时产生次优执行计划。本文提出一种广义的去嵌套方法：它能够处理深层嵌套的相关子查询，并可推广到包括递归 SQL 在内的复杂查询构造。该方法改善了受影响查询的渐近复杂度，因此可能带来极其显著的性能提升。</p>
+        <p class="small">关键词：查询优化、查询去嵌套。</p>
+      </section>
+
+      <section id="intro">
+        <h2><span class="tag summary">压缩导读</span>1 引言</h2>
+        <p>论文从 SQL 的声明式承诺讲起：用户只应描述想要什么，数据库负责选择执行方式；但复杂相关子查询经常让这种承诺失效。图 1 的查询要找出汽车市场中拥有超过 5 个、且收入超过 30 万的订单的客户。查询含两层相关子查询，规范翻译会产生嵌套依赖连接。</p>
+
+        <figure>
+          <img src="assets/paper2025-fig1-query-plan-crop-p1.png" alt="论文图 1：两层相关子查询及其依赖连接计划" />
+          <figcaption>图 1：两层相关子查询及其代数计划，颜色在原论文中标出跨层相关引用。</figcaption>
+        </figure>
+
+        <p>依赖连接右侧必须针对左侧每个元组重新求值，复杂度为 <var>Θ(|L||R|)</var>。论文报告，该查询在 PostgreSQL 16、TPC-H SF1 上需要 25 分钟以上；人工把子查询解耦后则能很快完成，但这种改写理应由 DBMS 自动完成。</p>
+        <p>作者随后回顾 2015 版方法：它不匹配 SQL 文本模式，而是在代数层构造无重复绑定域 <var>D</var>，再把由 <var>D</var> 驱动的依赖连接向下推。该方法已被多个系统采用，但实践暴露出两个缺口：</p>
+        <ol>
+          <li>递归 SQL、复杂 <code>ORDER BY</code>/<code>GROUP BY</code> 等高级构造没有被完整覆盖。</li>
+          <li>多个依赖连接层层嵌套时，自底向上逐个消除会扩大早先步骤的工作量；嵌套越深，问题越严重。</li>
+        </ol>
+        <p>2025 版对应提出两项改进：用整体式、自顶向下的算法联合处理嵌套依赖连接；并补齐递归 SQL、共享 CTE、全外连接谓词和逐绑定 Top-N 等构造。</p>
+      </section>
+
+      <section id="background">
+        <h2>2 背景</h2>
+
+        <h3><span class="tag summary">摘要</span>2.1 问题定义</h3>
+        <p>本节沿用 2015 版符号：依赖连接让左侧属性在右侧可见；<var>𝒜(T)</var> 表示表达式 <var>T</var> 产生的属性，<var>ℱ(T)</var> 表示其中尚未绑定的自由变量。若 <var>ℱ(T)</var> 非空，表达式不能独立求值。</p>
+        <div class="formula"><var>L</var> ⧑ <var>R</var> ≡ <var>L</var> ⋈ <var>R</var>　当　<var>𝒜(L)</var> ∩ <var>ℱ(R)</var> = ∅</div>
+        <p>去嵌套问题因此表述为：给定含依赖连接的关系代数表达式，把它改写成语义等价且不含依赖连接的表达式。</p>
+
+        <h3><span class="tag summary">摘要</span>2.2 自底向上去嵌套</h3>
+        <p>这部分是对 2015 算法的重述：</p>
+        <ol>
+          <li>先尝试简单去嵌套，把只是语法位置造成的相关谓词移动到连接条件。</li>
+          <li>若仍有依赖，从外侧投影自由变量的不同绑定，形成无重复域 <var>D</var>。</li>
+          <li>把由 <var>D</var> 驱动的依赖连接穿过选择、连接、分组等算子，直到它变成普通连接。</li>
+          <li>如果等值条件提供了替代列，可选地用 map 算子消除 <var>D</var>；是否这样做由连接选择性决定。</li>
+        </ol>
+        <div class="formula">
+          <var>L</var> ⧑ <var>R</var> ≡ <var>L</var> ⋈<sub>natural D</sub> (<var>D</var> ⧑ <var>R</var>)，　
+          <var>D</var> := Π<sub>𝒜(L) ∩ ℱ(R)</sub>(<var>L</var>)
+        </div>
+        <p>这个过程概念上能够消除任意依赖连接，但“每次从最深处开始、一次只处理一个连接”的调度策略存在病理情况。</p>
+      </section>
+
+      <section id="limitations">
+        <h2><span class="tag focus">重点翻译</span>2.3 自底向上方法的局限</h2>
+        <p>自底向上方法对大多数查询都工作良好，但会在某些边界情况下退化。最初向作者报告这个问题的是 Sam Arch；他把复杂 UDF 翻译成纯 SQL，在这类查询中，依赖子查询可能像图 1 那样相互嵌套。论文用下面这个缩小后的变体说明问题。为了在小例子中触发缺陷，作者额外加入了相关条件 <code>T3.a = T1.a</code>。</p>
+
+        <div class="figure-grid">
+          <figure>
+            <img src="assets/paper2025-sec23-original-nested-p6.png" alt="原始嵌套依赖连接计划" />
+            <figcaption>原始计划：两个依赖连接嵌套。</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/paper2025-sec23-after-lower-unnest-p6.png" alt="先消除下层依赖连接后的计划" />
+            <figcaption>先消除下层依赖连接。</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/paper2025-sec23-after-top-unnest-p7.png" alt="继续消除顶层依赖连接后的过大计划" />
+            <figcaption>再消除顶层连接后，绑定域发生无谓扩张。</figcaption>
+          </figure>
+        </div>
+
+        <p>算法首先消除较低的依赖连接。优化器很可能保留下面这个绑定域，而不是做列替换，因为过滤条件 <code>T2.a = T1.a</code> 可能具有较高选择性：</p>
+        <div class="formula">Π<sub>T2.b</sub>(σ<sub>T2.a = T1.a</sub>(<var>T2</var>))</div>
+        <p>问题出现在第二次运行算法、继续消除最上层依赖连接时。此时，较低连接右侧在概念上会针对 <code>T1.a</code> 域与 <code>T2.b</code> 域的完整笛卡尔积求值，而不是只针对 <var>T1</var> 与 <var>T2</var> 实际连接结果中出现的绑定组合求值。</p>
+        <p>最终结果仍然正确，因为更高处的连接条件会过滤掉不满足 <code>T2.a = T1.a</code> 的 <code>T1.a</code> 组合；但过滤发生得太晚，分组算子已经处理了大量根本不可能进入结果的值。</p>
+        <p>嵌套越深，这个问题越严重。Sam Arch 提供的真实查询名为 <code>crash.sql</code>，其中包含六层嵌套连接。旧策略产生多个巨大的中间笛卡尔积；这些组合随后虽然都会被过滤掉，却已经消耗了内存和 CPU。这个案例促使作者开发一种同时考虑全部依赖连接的整体式方法，从根源上避免无效域的交叉相乘。</p>
+      </section>
+
+      <section id="holistic">
+        <h2><span class="tag focus">重点翻译</span>3 整体式查询去嵌套</h2>
+        <p>新算法在一次过程中联合处理嵌套依赖连接。它可以看成 2015 方法的自顶向下版本：仍然使用自由变量绑定域 <var>D</var>，但不再把显式的 <var>D</var> 连接逐层穿过代数树，而是在遍历状态中记录“这里最终需要加入哪个 <var>D</var>”，并持续改写算子，直到 <var>D</var> 不再需要或能够安全加入。</p>
+        <p>算法分为三个部分：</p>
+        <ol>
+          <li>预处理：识别所有非平凡依赖连接，并记录主算法所需的访问点。</li>
+          <li>主过程：按从上到下的顺序消除非平凡依赖连接。</li>
+          <li>算子规则：定义选择、映射、分组、窗口、连接等算子如何响应去嵌套状态。</li>
+        </ol>
+        <p class="callout warning">会议论文因篇幅没有给出完整形式化定义和正确性证明，而是将其放在技术报告 <cite>A Formalization of Top-Down Unnesting</cite> 中。因此，本节是算法说明与伪代码，不应误读成论文内已经完成的形式化证明。</p>
+
+        <h3>3.1 识别非平凡依赖连接</h3>
+        <p>首先要找出右侧确实访问左侧属性的依赖连接。最直接的实现使用 indexed algebra：对每一次列访问，分别找到访问该列的算子 <var>o₁</var> 和产生该列的算子 <var>o₂</var>，然后计算两者的最低公共祖先（LCA）。如果 LCA 不是 <var>o₁</var> 自身，那么这个祖先必然是负责提供该绑定的依赖连接；算法把 <var>o₁</var> 记录到该连接的 <code>accessing</code> 集合中。</p>
+
+        <figure>
+          <img src="assets/paper2025-annotations-crop-p8.png" alt="论文图 2：为嵌套依赖连接标注访问算子" />
+          <figcaption>图 2：外层连接的访问点为 σ6、σ9；内层连接的访问点为 σ9。</figcaption>
+        </figure>
+
+        <p>没有访问算子的依赖连接是平凡的，可以直接改成普通连接。Indexed algebra 能在不增加额外数据结构的情况下，以 <var>O(log n)</var> 完成一次 LCA 查询；不支持该能力的系统也能通过维护各子树可用列集合得到相同信息，只是渐近复杂度更差。</p>
+
+        <h3>3.2 消除依赖连接</h3>
+        <p>识别完成后，算法按从根到叶的顺序处理依赖连接。如果某个依赖连接嵌套在另一个连接之中，通常会在消除祖先连接时一并消除；如果祖先过程提前停止，也可能稍后单独处理。关键约束是：<strong>绝不把两个不同的绑定域 <var>D</var> 穿过彼此的依赖连接</strong>，从而避免 2.3 节的域笛卡尔积问题。</p>
+
+        <h4>第一步：广义简单消除</h4>
+        <pre><code>函数 simpleDJoinElimination(join):
+  对 accessing(join) 中的每个算子 op：
+    如果 op 到 join 的路径是线性的：
+      如果 op 是可合并进 join 的选择：
+        把选择合并进 join，并从 accessing(join) 删除 op
+      否则，如果 op 是能够移到 join 上方的 map：
+        把 map 移到 join 上方，并从 accessing(join) 删除 op
+
+  如果 accessing(join) 为空：
+    把 join 转成普通连接
+
+  返回是否成功转换</code></pre>
+        <p>这里的“线性”是指算子允许按输入分区处理。选择可以在条件允许时并入连接；map（有些系统称为 projection）不能简单删除，但可以尝试移到连接上方。如果所有访问点都被移除，依赖连接就变成普通连接。2.2 节的 <code>EXISTS</code> 示例只需要这一步；本文的嵌套示例则不行。</p>
+        <figure>
+          <img src="assets/paper2025-fig3-simple-djoin-elimination-p9.png" alt="论文图 3：简单依赖连接消除伪代码" />
+          <figcaption>图 3：论文原始的简单依赖连接消除伪代码。</figcaption>
+        </figure>
+
+        <h4>第二步：维护整体式状态</h4>
+        <p>如果简单消除不足，就启动完整算法。状态分为全局不变部分和随当前查询片段变化的部分：</p>
+        <pre><code>UnnestingInfo:
+  join       当前要消除的 L ⧑ R
+  outerRefs  右侧读取的左侧列，即 𝒜(L) ∩ ℱ(R)
+  D          Π_outerRefs(L)
+  parent     外层去嵌套状态（若存在）
+
+Unnesting:
+  info       指向共享的 UnnestingInfo
+  cclasses   用 union-find 保存列等价类
+  repr       outerRefs 到替代列的映射</code></pre>
+        <figure>
+          <img src="assets/paper2025-fig4-unnesting-state-p9.png" alt="论文图 4：去嵌套状态" />
+          <figcaption>图 4：去嵌套过程中维护的状态。</figcaption>
+        </figure>
+        <p><code>parent</code> 用于识别当前过程内部遇到的嵌套依赖连接。<code>cclasses</code> 支持传递等价推理：如果已有 <code>a=b</code> 和 <code>b=c</code>，外层引用 <code>c</code> 就可能用当前可见的 <code>a</code> 替换。实际采用的替代关系记录在 <code>repr</code> 中。</p>
+        <pre><code>函数 rewriteColumns(op, unnesting):
+  对 op 中的每一个列引用 c：
+    如果 repr 中存在 c：
+      用 repr[c] 替换 c</code></pre>
+        <figure>
+          <img src="assets/paper2025-fig5-rewrite-columns-p10.png" alt="论文图 5：重写外层列引用" />
+          <figcaption>图 5：统一重写外层列引用的辅助函数。</figcaption>
+        </figure>
+
+        <h4>第三步：主消除过程</h4>
+        <pre><code>函数 dJoinElimination(join, parentState, parentAccessing):
+  如果简单消除成功：
+    若存在父状态：
+      按父状态重写被移动的 map
+      继续用父状态 unnest 当前连接
+    返回
+
+  如果这是嵌套情形：
+    取出位于 join.left 中的父访问点
+    先用父状态 unnest(join.left)
+    重写当前连接条件及被移动的 map
+
+  为当前 join 创建 UnnestingInfo 和局部 Unnesting
+  若存在父状态，把位于 join.right 的父访问点并入当前访问集
+
+  把 join.condition 提供的等价关系加入 cclasses
+  unnest(join.right, 当前状态, 合并后的访问集)
+
+  对每个外层引用 c：
+    向 join.condition 加入
+    c IS NOT DISTINCT FROM repr[c]</code></pre>
+        <p>这个过程首先处理嵌套连接的左侧，再建立当前连接自己的状态，并把仍然落在右侧的父访问点合并进来。最后加入空值安全的相等条件，使改写后的列仍按 SQL 的 <code>NULL</code> 语义与原外层绑定对应。</p>
+        <p class="callout warning"><strong>伪代码译注：</strong>Figure 6 原稿有几处明显排印错误：第 19 行缺少函数参数之间的分隔；第 36 行按上下文应传入新建的局部 <code>Unnesting</code> 状态而不是 <code>UnnestingInfo</code>；第 39 行的 <code>repr</code> 也属于局部状态。上面的中文伪代码按作者在正文中描述的意图进行了规范化。</p>
+        <figure>
+          <img src="assets/paper2025-fig6-djoin-elimination-p11.png" alt="论文图 6：依赖连接消除主过程" />
+          <figcaption>图 6：论文给出的完整主过程伪代码。</figcaption>
+        </figure>
+
+        <h4>完整运行示例</h4>
+        <ol class="steps">
+          <li>从最外层依赖连接开始，初始化 <code>outerRefs={T1.a}</code>、空的 <code>cclasses</code> 和 <code>repr</code>，并调用 <code>unnest(Γ4, {σ6, σ9})</code>。</li>
+          <li>处理 Γ4 时先递归处理输入，返回时再把外层引用加入分组键。随后遇到另一个非平凡依赖连接。</li>
+          <li>先处理内层连接的左输入。选择 σ6 提供等价关系 <code>T2.a=T1.a</code>，因此把两列加入同一个等价类，并从访问列表删除 σ6。</li>
+          <li>访问列表清空时有两个选择：加入显式域 <code>D:=Π[a:=T1.a](σ[f=123](T1))</code>，或者用等价列 <code>T2.a</code> 替换 <code>T1.a</code>。论文假设 σ2 具有选择性，因此示例选择保留显式域连接。</li>
+          <li>随后把父级和当前层需要的外部引用合并为 <code>{T1.a,T2.b}</code>，处理另一侧的 Γ8、σ9 和 T3。为同时展示另一条分支，示例假设优化器这次选择替换，记录 <code>T1.a→T3.a</code>、<code>T2.b→T3.b</code>。</li>
+          <li>沿递归栈返回时统一重写列、扩充分组键，并在连接条件中补上空值安全的等值关系。整个过程始终没有构造 <code>domain(T1.a) × domain(T2.b)</code>。</li>
+        </ol>
+
+        <figure>
+          <img src="assets/paper2025-holistic-run-start-p12.png" alt="整体式算法运行开始" />
+          <figcaption>运行开始：从最外层连接和 Γ4 向下处理。</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/paper2025-holistic-run-left-p13.png" alt="处理嵌套连接左侧并选择显式域" />
+          <figcaption>处理嵌套连接左侧：建立等价类，并在显式域与列替换之间做代价选择。</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/paper2025-holistic-run-final-p14.png" alt="整体式去嵌套的最终计划" />
+          <figcaption>最终计划：嵌套依赖已被联合消除，没有产生独立绑定域的全组合。</figcaption>
+        </figure>
+
+        <h3>3.3 各类算子的去嵌套规则</h3>
+        <p>所有算子共享两条通用逻辑：</p>
+        <ol>
+          <li>若调用 <code>unnest(op, state, accessing)</code> 时访问集已经为空，遍历就停止；优化器要么在这里加入 <code>state.D ⋈ op</code>，要么根据 <code>cclasses</code> 用等价列替换全部外层引用。</li>
+          <li>递归进入输入时，如果当前算子本身是访问点，就把它从访问集中删除。</li>
+        </ol>
+
+        <h4>选择与 map</h4>
+        <pre><code>unnest(selection):
+  把选择谓词中的等价关系加入 cclasses
+  unnest(selection.input)
+  按 repr 重写选择条件
+
+unnest(map):
+  unnest(map.input)
+  按 repr 重写 map 的计算表达式</code></pre>
+
+        <h4>分组与窗口</h4>
+        <pre><code>unnest(groupby):
+  static := 分组键为空，或 grouping sets 包含空集合
+  unnest(groupby.input)
+  重写 groupby 中的列
+  把每个 outerRef 的替代列加入分组键
+  如果 static：
+    用 D LEFT JOIN groupby 包装结果，
+    按映射后的 outerRefs 连接
+
+unnest(window):
+  unnest(window.input)
+  重写窗口表达式中的列
+  把每个 outerRef 的替代列加入 PARTITION BY</code></pre>
+        <p>静态聚合是没有普通分组键的聚合。即使输入为空，它也必须产生一行，因此需要左外连接（或系统支持时使用 group join）保留每个外层绑定。窗口函数同样必须按外层绑定分别计算，所以外层引用要进入 <code>PARTITION BY</code>。</p>
+        <p class="small">原文 group-by 伪代码中的 <code>groupy</code> 是 <code>groupby</code> 的排印错误，本文已按正确名称处理。</p>
+
+        <h4>连接</h4>
+        <pre><code>unnest(join):
+  把访问点分成左侧访问和右侧访问
+
+  如果 join 本身是另一个非平凡依赖连接：
+    调用 dJoinElimination，把父子过程合并
+    返回
+
+  如果只有左侧访问外层列，且连接不需保留右侧未匹配行：
+    只 unnest 左侧，并重写连接条件
+    返回
+
+  如果只有右侧访问外层列，且连接不需保留左侧未匹配行：
+    只 unnest 右侧，并重写连接条件
+    返回
+
+  否则：
+    分别创建左右状态并 unnest 两侧
+    按连接类型重写连接条件
+    对每个 outerRef 加入
+      left.repr[c] IS NOT DISTINCT FROM right.repr[c]
+    合并左右两侧的 cclasses 和 repr</code></pre>
+        <p>连接的列替换必须考虑连接类型：左外连接用左侧代表列，右外连接用右侧；全外连接要逐行判断哪一侧存在，可使用 <code>COALESCE(left.repr[c], right.repr[c])</code>。这也是新算法不能只做机械列改名的原因。</p>
+      </section>
+
+      <section id="complex-sql">
+        <h2><span class="tag focus">重点翻译</span>4 处理复杂 SQL 构造</h2>
+        <p>第 3 节规则足以处理大多数查询，但全外连接条件中的相关子查询、<code>WITH RECURSIVE</code>、共享 CTE 和 <code>ORDER BY ... LIMIT</code> 都需要额外处理。它们构成 2025 版相对于 2015 版的第二项主要贡献。</p>
+
+        <h3>4.1 全外连接条件中的相关子查询</h3>
+        <p>SQL 允许连接条件访问连接两侧的列，也允许在任意表达式中放置子查询。因此，连接条件中的子查询可能同时引用左右输入。对于内连接或左外连接，可以把子查询 cross apply 到右输入后正常去嵌套；右外连接可以交换两侧。全外连接更复杂，因为输入随外层绑定变化时，“未匹配元组”应如何计算并不直接明确。</p>
+        <p>论文的变换分别构造左右输入所需的绑定域 <var>D<sub>R</sub></var> 和 <var>D<sub>S</sub></var>：</p>
+        <ol>
+          <li>针对 <var>D<sub>R</sub> × D<sub>S</sub></var> 的每一种可能绑定计算一次子查询谓词，并把结果保存为布尔列 <var>m</var>。</li>
+          <li>先用左外连接把 <var>S</var> 接回谓词结果，确保来自 <var>S</var> 的未匹配元组总共只产生一次，而匹配元组按 <var>R</var> 的外层绑定产生。</li>
+          <li>再用全外连接接回 <var>R</var>，得到最终匹配行与未匹配行。</li>
+        </ol>
+        <p>实现时不必真的构造整个 <var>D<sub>R</sub> × D<sub>S</sub></var> 子计划再重新去嵌套；可以直接对原子查询调用 <code>unnest</code>，使用稍作修改的 <code>UnnestingInfo</code> 表示组合域，并向两层连接补充对应的 <code>IS NOT DISTINCT FROM</code> 条件。</p>
+
+        <figure>
+          <img src="assets/paper2025-fulljoin-recursive-crop-p17.png" alt="全外连接相关谓词变换以及递归 CTE 的代数表示" />
+          <figcaption>原论文第 17 页：全外连接相关谓词的变换，以及递归 CTE 的 iterate/iterationscan 表示。</figcaption>
+        </figure>
+
+        <h3>4.2 去嵌套 WITH RECURSIVE</h3>
+        <p>论文假定递归 CTE 被翻译成 <code>iterate</code> 算子以及读取上一轮结果的 <code>iterationscan</code>：<code>iterate</code> 左侧计算种子，右侧重复执行直到为空。</p>
+        <p>去嵌套时，递归过程必须针对每一种外层绑定分别执行。为此，把外层引用加入递归 CTE 的列，相当于让递归按这些绑定值分区。算法还把当前递归的全部 <code>iterationscan</code> 加入访问列表，以确保遍历一定抵达这些扫描并给它们补上绑定列。</p>
+        <pre><code>unnest(iteration):
+  把访问点分到种子侧和递归侧
+  把当前 iteration 的所有 iterationscan 标为递归侧访问点
+
+  先 unnest 种子侧：
+    重写种子输出列
+    把 outerRefs 的替代列加入 iteration.leftColumns
+
+  再 unnest 递归侧：
+    把 outerRefs 的替代列加入 iteration.rightColumns
+
+unnest(iterationscan):
+  对每个 outerRef：
+    找到种子输入中对应的绑定列
+    把它作为 iterationscan 的新输出列
+    更新 repr</code></pre>
+        <p>先处理种子侧很重要，因为递归侧需要知道新增列及其映射。最终，每个外层绑定都拥有自己独立推进的递归状态。</p>
+
+        <h3>4.3 去嵌套共享 CTE</h3>
+        <p>共享 CTE 会把代数结构从树变成 DAG。同一个相关选择可能从连接左右两条路径抵达，于是访问列表无法简单地分到左右两侧；若直接按树算法执行，还可能把共享子计划去嵌套两次，重复插入域扫描。</p>
+        <p>解决办法是把 DAG 切成一组树，使每个共享算子成为独立子树的根，共享读取成为相邻树的叶子。收集访问点时：</p>
+        <ul>
+          <li>如果访问算子和依赖连接在同一棵树中，按普通规则记录。</li>
+          <li>如果跨越共享边界，就把所有共享读取视为访问点，并继续递归分析共享定义。</li>
+          <li>指定一个共享读取负责在遍历到达时触发共享定义的去嵌套，其余读取只消费改写结果。</li>
+        </ul>
+        <p>这样，共享部分只改写一次，也只加入一次绑定域。</p>
+        <figure>
+          <img src="assets/paper2025-cte-dag-crop-p19.png" alt="共享 CTE 形成的 DAG 及去嵌套结果" />
+          <figcaption>原论文第 19 页：共享 CTE 的 DAG 结构与去嵌套结果。</figcaption>
+        </figure>
+
+        <h3>4.4 去嵌套 ORDER BY LIMIT</h3>
+        <p>相关子查询中的 <code>LIMIT</code> 或 <code>OFFSET</code> 必须针对每一种外层绑定分别执行，不能在去嵌套后变成一次全局限制。Umbra 的排序算子原生支持分区 Top-N；其他系统可以把子查询：</p>
+        <pre><code>SELECT *
+FROM S
+ORDER BY x
+LIMIT l OFFSET o</code></pre>
+        <p>改写为窗口查询：</p>
+        <pre><code>SELECT *
+FROM (
+  SELECT *,
+         ROW_NUMBER() OVER (
+           PARTITION BY 外层绑定列
+           ORDER BY x
+         ) AS rn
+  FROM S
+) q
+WHERE rn BETWEEN o + 1 AND o + l</code></pre>
+        <p>之后只需由窗口算子规则把外层引用加入 <code>PARTITION BY</code>，就能保证每个绑定拥有自己的排序、偏移和限制。</p>
+      </section>
+
+      <section id="evaluation">
+        <h2><span class="tag focus">重点翻译</span>5 评估</h2>
+        <p>查询去嵌套通过消除依赖连接的二次复杂度改善渐近性能。作者指出，只要不断扩大数据集，就很容易制造任意大的加速比，因此传统性能实验的解释价值有限；本节主要展示新算法是否能够避开旧算法的灾难性计划。</p>
+        <table>
+          <thead>
+            <tr><th>场景</th><th>旧方案</th><th>新方案</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>图 1 查询，PostgreSQL 16，TPC-H SF1</td>
+              <td>超过 26 分钟</td>
+              <td>先应用本文算法改写后由 PostgreSQL 执行：1.3 秒，论文称超过 1000 倍</td>
+            </tr>
+            <tr>
+              <td>给图 1 增加跨层相关条件的病理查询，Umbra</td>
+              <td>2015 自底向上算法耗尽 120 GB 内存并被终止</td>
+              <td>自顶向下算法：33 毫秒</td>
+            </tr>
+            <tr>
+              <td>Apfel 生成的 procbench UDF Query 18，TPC-DS SF1</td>
+              <td>2015 算法内存耗尽</td>
+              <td>Umbra：251 毫秒</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>实验机器为 Ryzen 9 7950X3D、128 GB 内存。第一项并不表示 PostgreSQL 已实现本文算法，而是查询先按算法完成改写，再交由 PostgreSQL 执行。</p>
+        <p class="callout warning"><strong>证据边界：</strong>评估只有三个专门选择的案例，规模均为 SF1；没有工作负载整体结果、扩展性曲线、优化时间、计划大小或复杂 SQL 构造的独立实验。两项旧方案以 OOM 结束，也无法计算严格的时间加速比。因此这些数字有力证明了病理问题和新算法的必要性，但不是全面的系统性能评测。</p>
+      </section>
+
+      <section id="related">
+        <h2><span class="tag summary">压缩导读</span>6 相关工作</h2>
+        <p>早期方法直接在 SQL 表示上匹配特定模式，易于理解和集成，却无法覆盖所有情况。Kim 的早期规则还存在著名的 count bug：空输入上的聚合可能得到错误结果，后来由 Kiessling 修正。此后虽然不断增加特例规则，仍没有形成完整覆盖。</p>
+        <p>Magic Sets 通过外层绑定域和半连接减少依赖执行工作量，与本文的 <var>D</var> 很相似，但没有给出彻底消除依赖连接的机制；后续方法能消除某些含聚合的依赖连接。作者把 2015 版定位为第一套概念上完整的通用方案，而 2025 版负责修复嵌套连接的计划爆炸，并补齐复杂 SQL 构造。</p>
+        <p>论文还强调了一个新的现实动机：越来越多 SQL 由程序自动生成。例如 Apfel 可以把过程或 UDF 编译为纯 SQL；这种路线能避免专用过程语言实现，甚至可能更快，但前提是数据库能够可靠地消除生成查询中的深层相关性。</p>
+
+        <h2><span class="tag summary">摘要</span>7 结论</h2>
+        <p>2025 版把先前的自底向上去相关扩展为整体式、自顶向下的方法，能够正确联合处理嵌套依赖连接，并覆盖更广的 SQL 构造。该方法已经集成到 Umbra。作者希望 DuckDB、PostgreSQL 等系统后续采用。</p>
+
+        <h2>与 2015 版的关系</h2>
+        <table>
+          <thead>
+            <tr><th>问题</th><th>2015 版</th><th>2025 版</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>基本机制</td><td>无重复绑定域 <var>D</var> 与依赖连接下推</td><td>继承，不是新贡献</td></tr>
+            <tr><td>处理顺序</td><td>自底向上，一次消除一个依赖连接</td><td>自顶向下，父子状态联合处理</td></tr>
+            <tr><td>深层嵌套</td><td>可能产生多个绑定域的巨大笛卡尔积</td><td>不让不同 <var>D</var> 穿过依赖连接，避免域爆炸</td></tr>
+            <tr><td>状态</td><td>显式下推 <var>D</var></td><td><code>accessing</code>、<code>outerRefs</code>、<code>cclasses</code>、<code>repr</code></td></tr>
+            <tr><td>SQL 覆盖</td><td>原则上完整，但未说明若干复杂构造</td><td>全外连接谓词、递归、共享 CTE、逐绑定 Top-N</td></tr>
+          </tbody>
+        </table>
+        <p class="lede"><strong>一句话定位：</strong>2015 版解决“任意相关查询原则上如何去嵌套”；2025 版解决“深层嵌套时如何避免灾难性计划，以及如何把方法落实到现代 SQL 的复杂构造”。</p>
+        <p class="small">参考文献不再翻译，请直接查阅原论文第 21–23 页。</p>
+      </section>
+    </main>
+  </article>
+</body>
+</html>

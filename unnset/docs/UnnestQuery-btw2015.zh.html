@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>《任意查询的去嵌套》摘要及第 1–3 节中译</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #25231f;
+      --muted: #676158;
+      --line: #ddd5c8;
+      --accent: #235f85;
+      --code: #f1ede4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+      font-size: 18px;
+      line-height: 1.85;
+    }
+
+    article {
+      width: min(960px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: clamp(28px, 6vw, 72px);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 40px rgb(60 48 32 / 10%);
+    }
+
+    h1, h2, h3 {
+      line-height: 1.3;
+      text-wrap: balance;
+    }
+
+    h1 { margin: 0 0 1rem; font-size: clamp(2rem, 6vw, 3.2rem); }
+    h2 { margin: 2.7rem 0 1rem; padding-top: .4rem; border-top: 1px solid var(--line); }
+    h3 { margin: 2.2rem 0 .8rem; font-size: 1.35rem; }
+    p { margin: 1rem 0; }
+    a { color: var(--accent); }
+    var { font-family: "STIX Two Math", "Cambria Math", serif; }
+
+    .metadata, .scope, .notation, .notes {
+      color: var(--muted);
+    }
+
+    .metadata { margin: 0; padding-left: 1.25rem; }
+    .scope, .notation { padding: .8rem 1rem; border-left: 4px solid var(--accent); }
+
+    pre {
+      overflow-x: auto;
+      margin: 1.3rem 0;
+      padding: 1rem 1.2rem;
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: 15px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    code {
+      padding: .08em .3em;
+      background: var(--code);
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+
+    pre code { padding: 0; background: transparent; }
+
+    .formula {
+      overflow-x: auto;
+      margin: 1.4rem 0;
+      padding: 1rem;
+      text-align: center;
+      background: color-mix(in srgb, var(--code) 55%, transparent);
+      border-radius: 6px;
+    }
+
+    math {
+      font-family: "STIX Two Math", "Cambria Math", serif;
+      font-size: 1.18em;
+    }
+
+    .operator-list {
+      text-align: center;
+      font-family: "STIX Two Math", "Cambria Math", serif;
+      font-size: 1.15em;
+    }
+
+    figure {
+      margin: 1.8rem 0;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    figure img {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      max-height: 900px;
+      margin: 0 auto;
+    }
+
+    figcaption {
+      margin-top: .8rem;
+      color: #514b43;
+      text-align: center;
+      font-size: .92em;
+    }
+
+    .notes { padding-left: 1.5rem; }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #171614;
+        --paper: #211f1b;
+        --ink: #eee8dd;
+        --muted: #bcb3a5;
+        --line: #494238;
+        --accent: #79b7dc;
+        --code: #2d2923;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body { font-size: 16px; }
+      article { width: 100%; margin: 0; border: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <article>
+    <header>
+      <h1>《任意查询的去嵌套》</h1>
+      <ul class="metadata">
+        <li>原题：<cite>Unnesting Arbitrary Queries</cite></li>
+        <li>作者：Thomas Neumann、Alfons Kemper</li>
+        <li>单位：慕尼黑工业大学，德国慕尼黑</li>
+        <li>原文：<a href="../paper/UnnestQuery-btw2015.pdf">UnnestQuery-btw2015.pdf</a></li>
+      </ul>
+      <p class="scope">翻译范围：摘要以及第 1–3 节（PDF 物理页 1–14，印刷页 383–396）。</p>
+      <p class="notation">术语约定：<code>unnesting</code> 译为“去嵌套”，<code>de-correlation</code> 译为“去相关”，<code>dependent join</code> 译为“依赖连接”。普通内连接写作 <code>⋈</code>；论文中的依赖连接是左半边为实心的蝴蝶结，本文用与原字形对应的字符 <code>⧑</code> 表示。</p>
+    </header>
+
+    <main>
+      <h2>摘要</h2>
+      <p>SQL-99 允许在查询内部几乎任何位置使用嵌套子查询。从用户的角度看，嵌套查询可以大大简化复杂查询的表述。然而，与外层查询相关的嵌套查询往往会产生依赖连接，需要采用嵌套循环方式求值，因而性能不佳。</p>
+      <p>因此，现有系统会采用若干启发式方法对这些查询进行去嵌套，也就是对它们去相关。这些去嵌套技术可以大幅加快查询处理，但通常仅适用于某些类别的查询。据作者所知，当时还没有任何现有系统能够在一般情形下对查询去相关。本文提出了一种能够对任意查询进行去嵌套的通用方法。由此得到的去相关查询可以采用简单得多、也高效得多的求值方式。</p>
+
+      <h2>1 引言</h2>
+      <p>SQL 查询经常使用子查询来简化查询表述。先来看贯穿全文的示例所采用的模式：</p>
+      <ul>
+        <li><code>students: {[id, name, major, year, ...]}</code></li>
+        <li><code>exams: {[sid, course, curriculum, date, ...]}</code></li>
+      </ul>
+      <p>下面这个嵌套查询用于找出每名学生成绩最好的考试（按照德国的评分制度，数值越低，成绩越好）：</p>
+
+      <pre><code>Q1: select s.name,e.course
+    from   students s,exams e
+    where  s.id=e.sid and
+           e.grade=(select min(e2.grade)
+                    from exams e2
+                    where s.id=e2.sid)</code></pre>
+
+      <p>从概念上讲，对于每一个学生—考试对 <var>(s,e)</var>，该查询都会在子查询中判断，这场考试 <var>e</var> 是否是该学生 <var>s</var> 所参加的全部考试中成绩最好的一场。</p>
+      <p>从性能角度看，这个查询就不那么理想了，因为必须针对每一个学生—考试对重新计算一次子查询。从技术角度看，该查询包含一个依赖连接（dependent join），也就是一种嵌套循环连接，其右侧的求值依赖于左侧的当前值。这类连接效率极低，会导致至少为二次方量级的执行时间。</p>
+      <p>因此，数据库管理系统（DBMS）会在内部重写该查询，以消除相关性。用 SQL 表示，这种重写大致如下：</p>
+
+      <pre><code>Q1': select s.name,e.course
+     from   students s,exams e,
+            (select e2.sid as id, min(e2.grade) as best
+             from exams e2
+             group by e2.sid) m
+     where  s.id=e.sid and m.id=s.id and
+            e.grade=m.best</code></pre>
+
+      <p>此时，子查询的求值不再依赖 <code>s</code> 的值，因此可以使用普通连接。要获得良好的查询性能，这类去嵌套至关重要；但现有技术无法处理任意查询。例如，下面这个 SQL 查询就很难去相关。它找出 CS 或 Games Engineering 专业的学生今后应该重考的考试，因为这些考试的成绩比该生本人或其高年级同学所参加考试的平均成绩更差：</p>
+
+      <pre><code>Q2:
+select s.name, e.course
+from   students s, exams e
+where  s.id=e.sid and
+  (s.major = 'CS' or s.major = 'Games Eng') and
+  e.grade&gt;=(select avg(e2.grade)+1 -- 比平均成绩差一个等级
+            from exams e2          -- 该平均成绩来自
+            where s.id=e2.sid or   -- 本人参加过的考试，
+                  (e2.curriculum=s.major and -- 或者
+                   s.year&gt;e2.date))           -- 高年级同学参加过的考试</code></pre>
+
+      <p>据作者所知，当时没有任何现有系统能够对这样的查询去嵌套。事实上，对这个查询去嵌套确实很困难：标准的去嵌套技术依赖这样一个事实，即查询内部已有的属性可以用来替换由外层查询确定的自由变量。但这里并不满足这一条件，例如 <code>s.year</code> 就无法被替换。</p>
+      <p>显然，这种复杂相关查询的求值成本会高于较简单的子查询。然而，正如后文将要展示的，即便是这个查询也确实可以去嵌套。我们必须付出额外工作来推导 <code>s.year</code> 和 <code>s.major</code> 的值，但可以在不使用依赖连接的情况下做到这一点；而且这些额外工作的成本以依赖连接本身的成本为上界。大多数查询在去相关之后都会高效得多；在最坏情况下，我们也只需付出相同的连接工作量。也就是说，我们的去嵌套方法绝不会比直接采用嵌套循环求值产生更高的成本；而在绝大多数情况下，它都能显著提升性能，提升幅度往往达到若干数量级。此外，即便在最坏情况下，它也很可能仍然有利，因为消除依赖连接之后便可以采用效率更高的连接实现。因此，与迄今为止已经发表和实现的各种特例处理方法不同，我们的贡献可以视为一种普遍适用于任何嵌套子查询的去嵌套技术。这项通用去嵌套技术已经完整实现于我们的内存数据库系统 HyPer [KN11] 中，读者还可以通过能够可视化最终查询计划的 Web 界面 <code>hyper-db.de</code> 实际体验它。</p>
+      <p>查询去嵌套通常能够带来极大的性能收益。视具体查询而定，它可以把一个 <var>O(n²)</var> 的算法（嵌套循环连接）替换为一个 <var>O(n)</var> 的算法（在连接键上执行的哈希连接）。此外，在嵌套求值中，依赖侧要针对每个外层元组执行一次；去嵌套后，它只需执行一次。在大型数据集上，通过去嵌套获得 10 倍乃至 100 倍的性能提升并不困难，因此去嵌套是查询编译中的一项关键技术。确实也存在少数更适合嵌套求值的情形，尤其是外侧非常小、内侧又可以通过索引查找进行求值时；但是否这样执行，应该由查询优化器有意识地作出决定，而不应取决于查询采用了何种写法。默认情况下，应当对查询进行彻底的去嵌套。</p>
+      <p>本文其余部分的结构如下：第 2 节首先定义本文使用的记号；第 3 节给出代数层面的去嵌套变换；第 4 节介绍适用于特殊情形的进一步优化规则，例如能够推断出函数依赖时可采用的规则；第 5 节进行一次“粗略的”性能评估，把若干其他知名 DBMS 与已经集成本文去嵌套技术的 HyPer 系统进行比较。最后，本文回顾相关工作并给出结论。</p>
+
+      <h2>2 预备知识</h2>
+      <p>在考察去嵌套技术之前，我们先简要回顾关系代数中的若干定义，因为除了基本算子之外，相关记号并未标准化。</p>
+      <p>首先是普通（内）连接。它可以简单地定义为先做笛卡尔积，再做选择：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="T one inner join p T two is defined as sigma p of T one cross T two">
+          <msub><mi>T</mi><mn>1</mn></msub>
+          <msub><mo>⋈</mo><mi>p</mi></msub>
+          <msub><mi>T</mi><mn>2</mn></msub>
+          <mo>:=</mo>
+          <msub><mi>σ</mi><mi>p</mi></msub>
+          <mo>(</mo><msub><mi>T</mi><mn>1</mn></msub><mo>×</mo><msub><mi>T</mi><mn>2</mn></msub><mo>)</mo><mo>.</mo>
+        </math>
+      </div>
+
+      <p>它计算 <var>T₁</var> 与 <var>T₂</var> 中所有相匹配条目的组合。大多数 SQL 查询都会使用它，但在存在相关子查询时，这一定义并不足够。对于外层查询的每个元组，都必须重新计算子查询，因此我们把依赖连接定义为：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="dependent join definition">
+          <msub><mi>T</mi><mn>1</mn></msub>
+          <msub><mo>⧑</mo><mi>p</mi></msub>
+          <msub><mi>T</mi><mn>2</mn></msub>
+          <mo>:=</mo><mo>{</mo>
+          <msub><mi>t</mi><mn>1</mn></msub><mo>∘</mo><msub><mi>t</mi><mn>2</mn></msub>
+          <mo>|</mo>
+          <msub><mi>t</mi><mn>1</mn></msub><mo>∈</mo><msub><mi>T</mi><mn>1</mn></msub><mo>∧</mo>
+          <msub><mi>t</mi><mn>2</mn></msub><mo>∈</mo><msub><mi>T</mi><mn>2</mn></msub><mo>(</mo><msub><mi>t</mi><mn>1</mn></msub><mo>)</mo><mo>∧</mo>
+          <mi>p</mi><mo>(</mo><msub><mi>t</mi><mn>1</mn></msub><mo>∘</mo><msub><mi>t</mi><mn>2</mn></msub><mo>)</mo>
+          <mo>}</mo><mo>.</mo>
+        </math>
+      </div>
+
+      <p>这里，左侧的每个元组都会触发一次右侧求值。我们用 <var>𝒜(T)</var> 表示表达式 <var>T</var> 产生的属性，用 <var>ℱ(T)</var> 表示表达式 <var>T</var> 中出现的自由变量。要对依赖连接求值，必须满足：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="free variables of T two are a subset of attributes of T one">
+          <mi>ℱ</mi><mo>(</mo><msub><mi>T</mi><mn>2</mn></msub><mo>)</mo>
+          <mo>⊆</mo>
+          <mi>𝒜</mi><mo>(</mo><msub><mi>T</mi><mn>1</mn></msub><mo>)</mo><mo>,</mo>
+        </math>
+      </div>
+
+      <p>也就是说，<var>T₂</var> 所需的属性必须由 <var>T₁</var> 产生。</p>
+      <p>需要注意的是，为了简化记号，本文有时会在连接谓词中显式写出自然连接。我们假定查询中出现的所有关系实例都有唯一的属性名，即便它们引用的是同一张物理表；因此：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="A join B is equivalent to A cross B">
+          <mi>A</mi><mo>⋈</mo><mi>B</mi><mo>≡</mo><mi>A</mi><mo>×</mo><mi>B</mi><mo>.</mo>
+        </math>
+      </div>
+
+      <p>不过，如果我们两次显式引用同一个关系名，并且要求进行自然连接，那么就要比较名称相同的属性列，并投影掉重复列。例如：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="natural join example">
+          <mo>(</mo><mi>A</mi><mo>⋈</mo><mi>C</mi><mo>)</mo>
+          <msub><mo>⋈</mo><mrow><mi>p</mi><mo>∧</mo><mtext>natural join</mtext><mo> </mo><mi>C</mi></mrow></msub>
+          <mo>(</mo><mi>B</mi><mo>⋈</mo><mi>C</mi><mo>)</mo><mo>.</mo>
+        </math>
+      </div>
+
+      <p>这里，最上层的连接既检查谓词 <var>p</var>，也比较来自左右两侧的 <var>C</var> 的各列，并删除两份 <var>C</var> 列中的一份。</p>
+      <p>对于半连接（<code>⋉</code>）、反连接（<code>▷</code>）以及外连接（左外连接 <code>⟕</code>、全外连接 <code>⟗</code>），我们相应地定义它们的依赖版本；同样，左侧的每个元组都会触发一次右侧求值。原论文使用自定义字体表示这些依赖版本：其共同特征是将普通算子代表依赖侧的左半部填黑。为了避免用不准确的 Unicode 字符替代，本文不另造这些四个字形。</p>
+      <p>除了连接算子之外，另一个重要算子是分组算子：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="group by operator definition">
+          <msub><mi>Γ</mi><mrow><mi>A</mi><mo>;</mo><mi>a</mi><mo>:</mo><mi>f</mi></mrow></msub><mo>(</mo><mi>e</mi><mo>)</mo>
+          <mo>:=</mo><mo>{</mo><mi>x</mi><mo>∘</mo><mo>(</mo><mi>a</mi><mo>:</mo><mi>f</mi><mo>(</mo><mi>y</mi><mo>)</mo><mo>)</mo>
+          <mo>|</mo><mi>x</mi><mo>∈</mo><msub><mi>Π</mi><mi>A</mi></msub><mo>(</mo><mi>e</mi><mo>)</mo><mo>∧</mo>
+          <mi>y</mi><mo>=</mo><mo>{</mo><mi>z</mi><mo>|</mo><mi>z</mi><mo>∈</mo><mi>e</mi><mo>∧</mo>
+          <mo>∀</mo><mi>a</mi><mo>∈</mo><mi>A</mi><mo>:</mo><mi>x</mi><mo>.</mo><mi>a</mi><mo>=</mo><mi>z</mi><mo>.</mo><mi>a</mi><mo>}</mo><mo>}</mo><mo>.</mo>
+        </math>
+      </div>
+
+      <p>它按照 <var>A</var> 对输入 <var>e</var> 进行分组；<var>e</var> 可以是一张基表，也可以是由另一个代数表达式计算得到的关系。随后，它计算一个或多个以逗号分隔的聚合函数，从而产生聚合属性。如果 <var>A</var> 为空，就只产生一个聚合元组，这与 SQL 中省略 <code>GROUP BY</code> 子句时的情形相同。</p>
+      <p>通过映射算子，可以计算函数，并由此构造新的属性：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="map operator definition">
+          <msub><mi>χ</mi><mrow><mi>a</mi><mo>:</mo><mi>f</mi></mrow></msub><mo>(</mo><mi>e</mi><mo>)</mo>
+          <mo>:=</mo><mo>{</mo><mi>x</mi><mo>∘</mo><mo>(</mo><mi>a</mi><mo>:</mo><mi>f</mi><mo>(</mo><mi>x</mi><mo>)</mo><mo>)</mo>
+          <mo>|</mo><mi>x</mi><mo>∈</mo><mi>e</mi><mo>}</mo><mo>.</mo>
+        </math>
+      </div>
+
+      <p>除此之外，我们还需要常规的关系代数算子：</p>
+      <p class="operator-list">(σ, ×, Π, ρ, ∪, ∩, \)</p>
+      <p>使用这些算子，就可以把 SQL 查询翻译成关系代数。</p>
+      <p>下文经常需要比较属性集合。作为简写，我们把属性比较算子 <var>=<sub>A</sub></var> 定义为：</p>
+
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block" aria-label="attribute comparison operator definition">
+          <msub><mi>t</mi><mn>1</mn></msub><msub><mo>=</mo><mi>A</mi></msub><msub><mi>t</mi><mn>2</mn></msub>
+          <mo>:=</mo><munder><mo>∀</mo><mrow><mi>a</mi><mo>∈</mo><mi>A</mi></mrow></munder><mo>:</mo>
+          <msub><mi>t</mi><mn>1</mn></msub><mo>.</mo><mi>a</mi><mo>=</mo><msub><mi>t</mi><mn>2</mn></msub><mo>.</mo><mi>a</mi><mo>.</mo>
+        </math>
+      </div>
+
+      <p>除非另有说明，该算子采用 <code>IS</code> 语义，也就是说，它把两个 <code>NULL</code> 值视为相等。</p>
+
+      <h2>3 去嵌套</h2>
+      <p>含有相关子查询的查询，在最初转换成代数表示时会产生依赖连接，也就是形如下面的表达式：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub></mrow></math>
+      </div>
+      <p>如前所述，从性能角度看，依赖连接非常不利，因此我们希望消除它们。从根本上说，我们会不断改写代数表达式，直到右侧不再依赖左侧；此时就可以把依赖连接变成普通连接。为此，本文采用下面将要讨论的两种技术。首先尝试简单去嵌套，用来处理仅仅由语法形式造成依赖的情形。如果它不足以消除查询中的嵌套，就使用能够处理任意复杂查询的通用去嵌套框架。</p>
+
+      <h3>3.1 简单去嵌套</h3>
+      <p>有时，查询之所以包含相关子查询，只是因为用这种方式写 SQL 更简单。TPC-H Query 21 就是一个例子，其中包含类似下面的片段：</p>
+      <pre><code>select ...
+from   lineitem l1 ...
+where  exists (select *
+               from lineitem l2
+               where l2.l_orderkey = l1.l_orderkey)
+...</code></pre>
+      <p>它会被翻译成如下代数表达式。由于论文的依赖半连接使用自定义字形，本文将它转写成 <code>⋉ᵈ</code>：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mrow><mi mathvariant="normal">l</mi><mn>1</mn></mrow><msup><mo lspace="0.22em" rspace="0.22em"><mrow><mo>&#x022C9;</mo></mrow></mo><mrow><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">p</mi></mrow></mrow></msup><mo stretchy="false">&#x00028;</mo><msub><mi>&#x003C3;</mi><mrow><mrow><mi mathvariant="normal">l</mi><mn>1</mn><mo>&#x0002E;</mo><mi mathvariant="normal">o</mi><mi mathvariant="normal">k</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">y</mi><mo>&#x0003D;</mo><mi mathvariant="normal">l</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">o</mi><mi mathvariant="normal">k</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">y</mi></mrow></mrow></msub><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">l</mi><mn>2</mn></mrow><mo stretchy="false">&#x00029;</mo><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>很容易看出，只要把依赖谓词沿代数树上移，就能对这一片段去嵌套，并把依赖半连接转换成普通半连接：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mrow><mi mathvariant="normal">l</mi><mn>1</mn></mrow><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mo>&#x022C9;</mo></mrow></mo><mrow><mrow><mi mathvariant="normal">l</mi><mn>1</mn><mo>&#x0002E;</mo><mi mathvariant="normal">o</mi><mi mathvariant="normal">k</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">y</mi><mo>&#x0003D;</mo><mi mathvariant="normal">l</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">o</mi><mi mathvariant="normal">k</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">y</mi></mrow></mrow></msub><mrow><mi mathvariant="normal">l</mi><mn>2</mn></mrow></mrow></math>
+      </div>
+      <p>一般而言，简单去嵌套阶段会尽可能地把所有依赖谓词沿代数树向上移动。这个过程可能跨过连接、选择、分组等算子，直到到达一个其输入已经能够提供谓词所需全部属性的位置。如果能够到达这样的位置，就可以利用上面的等价关系把依赖连接转换成普通连接。需要注意的是，这次谓词上提纯粹是为了去相关。后续优化仍可能把谓词或其中一部分重新下推，以尽早过滤元组。</p>
+
+      <h3>3.2 通用去嵌套</h3>
+      <p>谓词移动很容易实现，而且已经足以处理经常出现的简单嵌套查询。因此我们会首先尝试这种方法；但在一般情形下，还需要一种更复杂的方法：第一步，把原依赖连接变成一个“更容易处理”的依赖连接；第二步，把这个新的依赖连接不断下推到查询内部，直到它能够转换成普通连接。</p>
+      <p>第一步使用如下等价关系：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo>&#x02261;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo>&#x022C8;</mo><mrow><mi>p</mi><mo>&#x02227;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo>&#x0003D;</mo><mrow><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo></mrow></msub><mi>D</mi></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mi>:</mi><mo>&#x0003D;</mo><msub><mi>&#x003A0;</mi><mrow><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></msub><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>乍看之下，这个变换似乎没有明显改善查询计划，因为它只是把一个依赖连接换成了一个普通连接加另一个依赖连接。但再看一步，就会发现这个变换非常有用：在原表达式中，可能必须针对 <var>T₁</var> 的每一个元组计算一次 <var>T₂</var>，调用次数可能达到数百万。第二个表达式则先计算由所有变量绑定组成的域 <var>D</var>，针对每一种不同的变量绑定只计算一次 <var>T₂</var>，然后通过普通连接把结果匹配回 <var>T₁</var> 的原始元组。如果重复绑定很多，仅此一步就能大幅减少 <var>T₂</var> 的调用次数。</p>
+      <p>可以用第一个示例查询说明这一收益。该查询要找出每名学生成绩最好的考试。直接求值会为该生参加过的每一场考试重复计算一次该生的最好成绩：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><msub><mi>&#x003C3;</mi><mrow><mrow><mi mathvariant="normal">e</mi><mo>&#x0002E;</mo><mi mathvariant="normal">g</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi></mrow><mo>&#x0003D;</mo><mi>m</mi></mrow></msub><mrow><mo stretchy="true" fence="true" form="prefix">&#x00028;</mo><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">s</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>s</mi><msub><mo>&#x022C8;</mo><mrow><mrow><mi mathvariant="normal">s</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mo>&#x0003D;</mo><mi mathvariant="normal">e</mi><mo>&#x0002E;</mo><mi mathvariant="normal">s</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi></mrow></mrow></msub><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">x</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>e</mi><mo stretchy="false">&#x00029;</mo><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>&#x00393;</mi><mrow><mo>&#x02205;</mo><mi>;</mi><mi>m</mi><mi>:</mi><mo>min</mo><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">e</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">g</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi></mrow><mo stretchy="false">&#x00029;</mo></mrow></msub><mo stretchy="false">&#x00028;</mo><msub><mi>&#x003C3;</mi><mrow><mrow><mi mathvariant="normal">s</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mo>&#x0003D;</mo><mi mathvariant="normal">e</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">s</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi></mrow></mrow></msub><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">x</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>e</mi><mn>2</mn><mo stretchy="false">&#x00029;</mo><mo stretchy="false">&#x00029;</mo><mo stretchy="true" fence="true" form="postfix">&#x00029;</mo></mrow></mrow></math>
+      </div>
+      <p>上述等价规则使最好成绩的计算可以限制为“每名学生一次”，不再针对每一个“学生—考试”对重复计算。也就是说，依赖连接只需在学生编号的投影上执行：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>&#x02026;</mi><mtext>&#x000A0;</mtext><msub><mi>&#x003A0;</mi><mrow><mrow><mi mathvariant="normal">d</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">:</mi><mi mathvariant="normal">s</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi></mrow></mrow></msub><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">s</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>s</mi><msub><mo>&#x022C8;</mo><mrow><mrow><mi mathvariant="normal">s</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mo>&#x0003D;</mo><mi mathvariant="normal">e</mi><mo>&#x0002E;</mo><mi mathvariant="normal">s</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi></mrow></mrow></msub><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">x</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>e</mi><mo stretchy="false">&#x00029;</mo><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>&#x00393;</mi><mrow><mo>&#x02205;</mo><mi>;</mi><mi>m</mi><mi>:</mi><mo>min</mo><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">e</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">g</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">e</mi></mrow><mo stretchy="false">&#x00029;</mo></mrow></msub><mo stretchy="false">&#x00028;</mo><msub><mi>&#x003C3;</mi><mrow><mrow><mi mathvariant="normal">d</mi><mo>&#x0002E;</mo><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi><mo>&#x0003D;</mo><mi mathvariant="normal">e</mi><mn>2</mn><mo>&#x0002E;</mo><mi mathvariant="normal">s</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">d</mi></mrow></mrow></msub><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">x</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">m</mi><mi mathvariant="normal">s</mi></mrow><mtext>&#x000A0;</mtext><mi>e</mi><mn>2</mn><mo stretchy="false">&#x00029;</mo><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+
+      <figure>
+        <img src="assets/paper2015-fig1-pushdown-crop-p7.png" alt="依赖连接下推在示例查询中的应用" />
+        <figcaption>图 1：依赖连接“下推”在示例查询中的应用。</figcaption>
+      </figure>
+
+      <p>图中完整展示了该规则如何作用于查询计划。从某种角度看，这是把信息从连接的外层（左侧）参数横向传递到内层（右侧）参数，从而消除重复求值。因此，这里的投影必须采用真正会消除重复项的集合语义，而不能使用 SQL 那种保留重复项的多重集语义。</p>
+      <p>更重要的是，我们已经把一个一般的依赖连接变成了一个以集合为左侧输入的依赖连接；这里的集合是指不含重复项的关系。知道 <var>D</var> 不含重复项，有助于继续把依赖连接向查询深处移动。下文假定所有名为 <var>D</var> 的关系都不含重复项，并且后续等价规则只讨论左侧为集合的依赖连接。</p>
+      <p>不过需要强调的是，这种嵌套查询优化技术仍然保留 SQL 的多重集语义。无论重复项来自基表，还是由查询计算产生，它们都会在优化后的计划中保留下来；只有用于约束嵌套子查询求值工作量的集合 <var>D</var> 不含重复项。如果查询本来就需要消除重复项，例如使用了 <code>DISTINCT</code>，还可以进一步利用这一点，把重复项消除操作向查询计划下推。</p>
+      <p>依赖连接下推的最终目标，是让右侧不再依赖左侧：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mi>T</mi><mo>&#x02261;</mo><mi>D</mi><mo>&#x022C8;</mo><mi>T</mi><mspace width="1em" /><mtext>当</mtext><mspace width="1em" /><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><mi>T</mi><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mrow></math>
+      </div>
+      <p>在这种情况下仍然要执行一次连接，但至少可以用普通连接替换效率很低的依赖连接。正如下文将展示的，我们总能到达这一状态。更理想的目标，是利用已有属性替换这个普通连接，从而彻底消除连接；第 4 节将讨论这种优化。</p>
+      <p>明确了依赖连接下推的起点和目标之后，下面逐一考察各类算子。对选择算子而言，下推非常简单：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>&#x003C3;</mi><mi>p</mi></msub><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><msub><mi>&#x003C3;</mi><mi>p</mi></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>这个变换看起来可能有些反常，因为通常我们希望下推的是选择算子。但去嵌套变换的关注点并不在此：首先尽可能向下推依赖连接，直到它能通过替换被彻底消除，或者能够转换成普通连接。消除全部依赖连接之后，才重新使用选择下推、连接重排等常规技术优化变换后的查询。</p>
+      <p>把依赖连接下推穿过另一个连接会复杂一些，因为连接的两侧都有可能依赖 <var>D</var>：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo>&#x022C8;</mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mrow><mo stretchy="true" fence="true" form="prefix">&#x0007B;</mo><mtable><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo>&#x022C8;</mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub></mtd><mtd columnalign="left"><mi>:</mi><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mtd></mtr><mtr><mtd columnalign="left"><msub><mi>T</mi><mn>1</mn></msub><msub><mo>&#x022C8;</mo><mi>p</mi></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mtd><mtd columnalign="left"><mi>:</mi><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mtd></mtr><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo>&#x022C8;</mo><mrow><mi>p</mi><mo>&#x02227;</mo><mo /><msub><mrow><mi>n</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mtext>&#x000A0;</mtext><mi>j</mi><mi>o</mi><mi>i</mi><mi>n</mi></mrow><mi>D</mi></msub></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mtd><mtd columnalign="left"><mi>:</mi><mtext>其他情况</mtext></mtd></mtr></mtable></mrow></mrow></math>
+      </div>
+      <p>如果依赖连接提供的值只在其中一侧需要，就把它下推到相应一侧；否则必须在左右两侧各复制一份。这个规则比较保守；连接下方的表达式经常还可以进一步简化，第 4 节会讨论这一点，此处暂时只使用基本下推规则。如果把依赖连接下推到两侧，就必须扩充连接谓词，让左右两侧也按照 <var>D</var> 的值相匹配。相对于原表达式，这种复制不会带来额外的性能损失：两种写法都要分别计算 <var>T₁</var> 和 <var>T₂</var> 共 <var>|D|</var> 次。</p>
+      <p>对于外连接，如果内侧依赖 <var>D</var>，就必须复制依赖连接，否则无法跟踪外侧未匹配的元组。左外连接的规则为：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>⟕</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mrow><mo stretchy="true" fence="true" form="prefix">&#x0007B;</mo><mtable><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>⟕</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub></mtd><mtd columnalign="left"><mi>:</mi><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mtd></mtr><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>⟕</mi></mrow></mo><mrow><mi>p</mi><mo>&#x02227;</mo><mo /><msub><mrow><mi>n</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mtext>&#x000A0;</mtext><mi>j</mi><mi>o</mi><mi>i</mi><mi>n</mi></mrow><mi>D</mi></msub></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mtd><mtd columnalign="left"><mi>:</mi><mtext>其他情况</mtext></mtd></mtr></mtable></mrow></mrow></math>
+      </div>
+      <p>全外连接必须始终在两侧复制：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>⟗</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>⟗</mi></mrow></mo><mrow><mi>p</mi><mo>&#x02227;</mo><mo /><msub><mrow><mi>n</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mtext>&#x000A0;</mtext><mi>j</mi><mi>o</mi><mi>i</mi><mi>n</mi></mrow><mi>D</mi></msub></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>半连接与反连接也采用类似规则：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mo>&#x022C9;</mo></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mrow><mo stretchy="true" fence="true" form="prefix">&#x0007B;</mo><mtable><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mo>&#x022C9;</mo></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub></mtd><mtd columnalign="left"><mi>:</mi><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mtd></mtr><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mo>&#x022C9;</mo></mrow></mo><mrow><mi>p</mi><mo>&#x02227;</mo><mo /><msub><mrow><mi>n</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mtext>&#x000A0;</mtext><mi>j</mi><mi>o</mi><mi>i</mi><mi>n</mi></mrow><mi>D</mi></msub></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mtd><mtd columnalign="left"><mi>:</mi><mtext>其他情况</mtext></mtd></mtr></mtable></mrow></mrow></math>
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x025B7;</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mrow><mo stretchy="true" fence="true" form="prefix">&#x0007B;</mo><mtable><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x025B7;</mi></mrow></mo><mi>p</mi></msub><msub><mi>T</mi><mn>2</mn></msub></mtd><mtd columnalign="left"><mi>:</mi><mi mathvariant="script">F</mi><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><mo>&#x02205;</mo></mtd></mtr><mtr><mtd columnalign="left"><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x025B7;</mi></mrow></mo><mrow><mi>p</mi><mo>&#x02227;</mo><mo /><msub><mrow><mi>n</mi><mi>a</mi><mi>t</mi><mi>u</mi><mi>r</mi><mi>a</mi><mi>l</mi><mtext>&#x000A0;</mtext><mi>j</mi><mi>o</mi><mi>i</mi><mi>n</mi></mrow><mi>D</mi></msub></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mtd><mtd columnalign="left"><mi>:</mi><mtext>其他情况</mtext></mtd></mtr></mtable></mrow></mrow></math>
+      </div>
+      <p>把依赖连接下推穿过分组算子时，分组算子必须保留依赖连接产生的全部属性：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>&#x00393;</mi><mrow><mi>A</mi><mi>;</mi><mi>a</mi><mi>:</mi><mi>f</mi></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>T</mi><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><msub><mi>&#x00393;</mi><mrow><mi>A</mi><mo>&#x0222A;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo><mi>;</mi><mi>a</mi><mi>:</mi><mi>f</mi></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mi>T</mi><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>这一规则再次利用了 <var>D</var> 是集合这一事实。投影算子的行为与分组算子类似：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>&#x003A0;</mi><mi>A</mi></msub><mo stretchy="false">&#x00028;</mo><mi>T</mi><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><msub><mi>&#x003A0;</mi><mrow><mi>A</mi><mo>&#x0222A;</mo><mi mathvariant="script">A</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo stretchy="false">&#x00029;</mo></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mi>T</mi><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>最后还剩下集合运算：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mo>&#x0222A;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x0222A;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mo>&#x02229;</mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02229;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><mo stretchy="false">&#x00028;</mo><msub><mi>T</mi><mn>1</mn></msub><mi>&#x0005C;</mi><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo><mo>&#x02261;</mo><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>1</mn></msub><mo stretchy="false">&#x00029;</mo><mi>&#x0005C;</mi><mo stretchy="false">&#x00028;</mo><mi>D</mi><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x29D1;</mi></mrow></mo><msub><mi>T</mi><mn>2</mn></msub><mo stretchy="false">&#x00029;</mo></mrow></math>
+      </div>
+      <p>借助这些变换，每个依赖连接最终要么通过替换被消除，要么被推到某个基关系之前；在后一种情况下，它可以转换成非依赖连接。因此，任意查询中的依赖连接都可以被消除。</p>
+      <p>这种方法可能引起的一个担忧是：<var>D</var> 由嵌套子查询的全部变量绑定组成，会不会变得非常大？幸运的是并不会。如果原来的嵌套连接是 <code>T₁ ⧑ T₂</code>，那么 <code>|D| ≤ |T₁|</code>。因此，如果对子查询去相关之后，最上层连接是一个把 <var>T₁</var> 存入哈希表的哈希连接，那么计算 <var>D</var> 最多只会使这个连接的内存用量翻倍；这已经是绝对的最坏情形。如果知道 <var>T₁</var> 的值没有重复，例如其中包含键，那么甚至可以不物化 <var>D</var>，直接读取该连接的哈希表，从而消除这部分额外开销。作为回报，我们把一个 <var>O(n²)</var> 操作变成了理想情况下的 <var>O(n)</var> 操作，这样的收益完全值得付出上述内存开销。</p>
+
+      <h3>3.3 示例查询 Q1 的优化</h3>
+      <p>以图 2 中 Query Q1 的代数翻译为例。该计划使用依赖连接计算嵌套子查询，随后用它产生的属性 <var>m</var> 检查过滤条件。</p>
+      <pre class="algebra"><code>图 2：Query Q1 的原始计划
+
+σ[e.grade=m]
+└─ ⧑
+   ├─ students s ⋈[s.id=e.sid] exams e
+   └─ Γ[∅;m:min(e2.grade)]
+      └─ σ[s.id=e2.sid](exams e2)</code></pre>
+      <p>图 3 至图 7 展示了后续变换。首先，把最上层依赖连接改写成一个普通连接，再加一个由自由变量域驱动的依赖连接。接下来，把依赖连接下推穿过分组算子，并按需要扩充分组属性。然后继续把依赖连接下推穿过选择算子，直到它位于表扫描之前。此时右侧已不再依赖左侧，可以把它转换成普通连接。后续优化再把谓词向下推，产生图 7 所示的计划。</p>
+
+      <figure>
+        <img src="assets/paper2015-q1-steps1-2-crop-p10.png" alt="Query Q1 的变换步骤 1 和 2" />
+        <figcaption>图 3–4：Query Q1 的变换步骤 1–2。图 3 引入变量绑定域，图 4 把 <var>D</var> 的属性加入分组键。</figcaption>
+      </figure>
+      <p>图 5 继续把依赖连接下推到选择算子之下。</p>
+
+      <figure>
+        <img src="assets/paper2015-q1-steps4-5-crop-p11.png" alt="Query Q1 的变换步骤 4 和 5" />
+        <figcaption>图 6–7：Query Q1 的变换步骤 4–5。图 6 在表扫描前把依赖连接变成普通连接；图 7 再把选择谓词下推，使其成为连接谓词。</figcaption>
+      </figure>
+
+      <p>在很多情况下——本例也是如此——还可以彻底消除与域 <var>D</var> 的连接。如果域的所有属性都通过等值连接与已有属性相连，就可以直接从已有属性推导出域属性。在本例中，连接完成后必然有 <code>d.id = e2.sid</code>，因此可以用映射算子 <var>χ<sub>d.id:e2.sid</sub></var> 替换与 <var>D</var> 的连接，如图 8 所示。</p>
+
+      <figure>
+        <img src="assets/paper2015-substitution-q2-crop-p12.png" alt="Q1 的可选解耦步骤与 Q2 的横向信息传递计划" />
+        <figcaption>图 8–9：Query Q1 的可选解耦步骤，以及 Query Q2 采用横向信息传递后的优化形式。</figcaption>
+      </figure>
+
+      <p>图 8 中这种替换的优点是查询的两个部分变得完全独立，原嵌套结构不再留下任何痕迹。</p>
+      <p>不过，替换会产生原元组集合的超集。就这个例子而言，引用完整性很可能会阻止额外元组出现；但一般来说，去掉与域的连接并改用替换，可能产生更大的中间结果，因为连接原本具有的过滤作用也随之消失。这不会影响最终结果，因为这些元组仍会在更高层、原依赖连接对应的位置被过滤掉，但查询运行时间可能受到影响。因此，是否移除这个连接必须由查询优化器决定，第 4 节将继续讨论。</p>
+      <p>通过替换消除 <var>σ<sub>d.id=e2.sid</sub></var> 时还需要谨慎。既然 <code>d.id</code> 由 <code>e2.sid</code> 推导而来，看起来似乎可以直接删除这个选择；但只有在 <code>e2.sid</code> 不可为 <code>NULL</code> 时才安全。如果 <code>e2.sid</code> 可能取 <code>NULL</code>，就必须保留这个选择——此时它实际上只是一次非 <code>NULL</code> 检查。</p>
+
+      <h3>3.4 示例查询 Q2 的优化</h3>
+      <p>图 9 展示了动机查询 Q2 的最终计划。这里无法消除 <var>D</var>，因为查询包含使用 <var>D</var> 中值的非等值连接，因而不能做属性替换。具体来说，<code>s.year</code> 并不是通过等值条件与 <code>e2.date</code> 连接，所以无法把嵌套子查询的求值完全解耦。外层查询的绑定域必须横向传递给嵌套查询的求值过程。不过需要注意的是，所有依赖连接都已经消失，并被高效的普通代数算子替代。</p>
+
+      <h3>3.5 反连接示例</h3>
+      <p>最后讨论一个依赖反连接示例。SQL 的 <code>ALL</code> 子句会把一个值与某个可能相关的子查询产生的全部值进行比较；依赖反连接可以用来变换这类查询。设有两个抽象关系：</p>
+      <ul>
+        <li><code>R: {[A, ..., X, ...]}</code></li>
+        <li><code>S: {[B, ..., Y, ...]}</code></li>
+      </ul>
+      <p>查询写作：</p>
+      <pre><code>Q3: select R.*
+    from   R
+    where  R.X = all (select S.Y
+                      from S
+                      where S.B = R.A)</code></pre>
+      <p>显然，不能把这个查询直接翻译成普通的依赖连接；但可以否定比较谓词，并使用依赖反连接。去嵌套优化过程中，依赖反连接可以进一步变换成“普通”反连接：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>R</mi><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x025B6;</mi></mrow></mo><mrow><mi>X</mi><mo>&#x02260;</mo><mi>Y</mi></mrow></msub><msub><mi>&#x003C3;</mi><mrow><mrow><mi mathvariant="normal">S</mi><mo>&#x0002E;</mo><mi mathvariant="normal">B</mi><mo>&#x0003D;</mo><mi mathvariant="normal">R</mi><mo>&#x0002E;</mo><mi mathvariant="normal">A</mi></mrow></mrow></msub><mo stretchy="false">&#x00028;</mo><mi>S</mi><mo stretchy="false">&#x00029;</mo><mo>&#x021D2;</mo><mi>R</mi><msub><mo lspace="0.22em" rspace="0.22em"><mrow><mi>&#x025B7;</mi></mrow></mo><mrow><mo stretchy="false">&#x00028;</mo><mi>X</mi><mo>&#x02260;</mo><mi>Y</mi><mo stretchy="false">&#x00029;</mo><mo>&#x02227;</mo><mo stretchy="false">&#x00028;</mo><mrow><mi mathvariant="normal">S</mi><mo>&#x0002E;</mo><mi mathvariant="normal">B</mi><mo>&#x0003D;</mo><mi mathvariant="normal">R</mi><mo>&#x0002E;</mo><mi mathvariant="normal">A</mi></mrow><mo stretchy="false">&#x00029;</mo></mrow></msub><mi>S</mi></mrow></math>
+      </div>
+      <p>这里 <code>▶</code> 表示论文自定义的依赖反连接，<code>▷</code> 表示普通反连接。</p>
+
+      <figure>
+        <img src="assets/paper2015-antijoin-q3-crop-p14.png" alt="Q3 的依赖反连接转换成普通反连接" />
+        <figcaption>Q3：否定比较谓词后，把依赖反连接转换成普通反连接。</figcaption>
+      </figure>
+    </main>
+
+    <footer>
+      <h2>译注</h2>
+      <ol class="notes">
+        <li>原文给出的 <code>exams</code> 模式没有列出后续查询使用的 <code>grade</code> 属性；本译文未擅自补入。</li>
+        <li>第 1 节原文写作 “in the worst case we will have the <strong>some</strong> join effort”。根据语法和上下文，<code>some</code> 应为 <code>same</code> 的排印错误，本译文按“相同的连接工作量”处理。</li>
+        <li>原文第 5 节介绍句的英语表达不够自然；本译文结合其语义译为“把其他知名 DBMS 与 HyPer 系统进行比较”。</li>
+        <li>公式中的 <code>∘</code> 表示元组拼接，不是函数复合；<code>a:f</code> 表示由函数 <var>f</var> 计算得到的新输出属性 <var>a</var>。</li>
+        <li>第 3.2 节原文有一句 “otherwise we wave to replicate it in both sides”，其中 <code>wave</code> 显然是 <code>have</code> 的排印错误；本译文按“必须在两侧复制”处理。</li>
+      </ol>
+    </footer>
+  </article>
+</body>
+</html>

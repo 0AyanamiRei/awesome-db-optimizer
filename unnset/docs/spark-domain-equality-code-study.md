@@ -17,8 +17,6 @@ Spark 对本文等值例子的处理是：**把内层 Filter 中的相关等值�
 
 返回[论文问题与两系统比较](domain-equality-substitution-survey.md)；另见 [DuckDB 独立调查](duckdb-domain-equality-code-study.md)。
 
-
-
 ## 1. 先看 Spark 要把什么改成什么
 
 从论文 Q1 中取出求最低成绩的部分，暂时不加入外层的另一张 `exams` 表：
@@ -80,8 +78,6 @@ LEFT JOIN (
 
 因此，改写后的内层可以多计算外层不需要的键。正确性依靠“分组计算 + 上层按键取回”的完整结构，不要求两个输入具有相同的键集合。这个等值计划形状也直接出现在 Spark 的[实现示例](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/DecorrelateInnerQuery.scala#L32)和[聚合等值单测的期望计划](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/test/scala/org/apache/spark/sql/catalyst/optimizer/DecorrelateInnerQuerySuite.scala#L141)中。
 
-
-
 ## 2. 这些改写接在 Spark 的哪个阶段
 
 先区分两个动作：**内层去相关**消除内层计划中的 `OuterReference`；**外层子查询改写**把装着内层计划的 `ScalarSubquery` 表达式替换成真正的逻辑 Join。前一个动作完成时，后一个动作还没有发生。
@@ -131,9 +127,9 @@ flowchart TD
 
 对本文简单 MIN 例子，最终使用 `LeftOuter`。对于无法证明每个绑定至多返回一行的标量子查询，代码根据 `needSingleJoin` 选择 `LeftSingle`，以保留标量子查询的多行报错语义。[标记计算](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/subquery.scala#L583)、[Join 构造](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/subquery.scala#L901)
 
-
-
 ## 3. 顺着等值例子走一遍递归
+
+
 
 ### 3.1 先认识递归传递的三份信息
 
@@ -232,8 +228,6 @@ Project [s.id, m AS min_grade]
 
 回到论文完整 Q1 时，上图左侧要换成原来的外层输入，例如 `students s JOIN exams e ON s.id=e.sid`；原先 `e.grade = (标量子查询)` 中的子查询被替换成 `m`，继续由外层条件 `e.grade=m` 约束。不能在接回外层时把这个原有条件丢掉。
 
-
-
 ## 4. 如果不能直接提升，DomainJoin 怎样完成去相关
 
 
@@ -319,8 +313,6 @@ LEFT JOIN g ON g.d_cutoff <=> s.cutoff;
 
 论文中“把域连接向内层下推”的过程，在这段代码中体现为：先把绑定需求沿计划向下传，到不相关子树时按剩余需求建立占位节点，再向上重建 Filter、Aggregate 等算子。等值优化就嵌在这个递归过程里；本文的 Filter 路径没有先构造完整 D，再交给一个独立的“等值域连接删除规则”。
 
-
-
 ## 5. 两个判断具体检查什么，怎样参与 Filter 改写
 
 
@@ -399,8 +391,6 @@ Equality(Attribute(y), OuterReference(x))  →  {x → y}
 
 在没有使用新去相关框架的路径中，这类不支持直接提升的条件可能被分析阶段拒绝；使用新框架时，可以允许它们交给后续 DomainJoin 路径处理。因此，看到 `canPullUpOverAgg=false`，不能直接解释成“Spark 不支持这个相关子查询”。要继续看当前是否启用框架，以及这个返回值是在分析阶段还是改写阶段使用。[框架选择](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/analysis/ValidateSubqueryExpression.scala#L253)、[分析阶段拒绝条件](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/analysis/ValidateSubqueryExpression.scala#L362)、[分析阶段调用点](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/analysis/ValidateSubqueryExpression.scala#L444)
 
-
-
 ## 6. 两个绑定只替换一个：域具体缩小在哪里
 
 现在让一个内层查询同时依赖 `s.id` 和 `s.cutoff`：
@@ -450,8 +440,6 @@ Join LeftOuter [s.id = e2.sid AND s.cutoff <=> d_cutoff]
 
 若实际外层绑定只有 `(id,cutoff)={(1,60),(2,90)}`，缩小后的域只有 `{60,90}`。内层可能同时计算 `(1,60),(1,90),(2,60),(2,90)` 中能通过筛选的组合；上层只取回实际需要的 `(1,60)` 和 `(2,90)`。**域的列减少了，但提前约束组合的能力也减少了，不能由此直接推出性能更好。**
 
-
-
 ## 7. 哪些语义还需要额外处理
 
 
@@ -490,8 +478,6 @@ Join LeftOuter [s.id = e2.sid AND s.cutoff <=> d_cutoff]
 
 
 这些判断都在内层递归过程中执行，发生在实际域展开之前。尤其是非 INNER Join，不能直接拿前面的 Filter 算法去删除 ON 中的等值条件；外连接对未匹配行的保留行为需要单独维护。[Join 分支](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/DecorrelateInnerQuery.scala#L940)、[集合算子分支](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/DecorrelateInnerQuery.scala#L1053)
-
-
 
 ## 8. 对照源码阅读，以及成本结论的范围
 

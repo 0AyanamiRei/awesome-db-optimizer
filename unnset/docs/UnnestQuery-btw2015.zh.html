@@ -148,7 +148,7 @@
         <li>单位：慕尼黑工业大学，德国慕尼黑</li>
         <li>原文：<a href="../paper/UnnestQuery-btw2015.pdf">UnnestQuery-btw2015.pdf</a></li>
       </ul>
-      <p class="scope">翻译范围：摘要以及第 1–3 节（PDF 物理页 1–14，印刷页 383–396）。</p>
+      <p class="scope">翻译范围：摘要以及第 1–4 节（PDF 物理页 1–15，印刷页 383–397）。</p>
       <p class="notation">术语约定：<code>unnesting</code> 译为“去嵌套”，<code>de-correlation</code> 译为“去相关”，<code>dependent join</code> 译为“依赖连接”。普通内连接写作 <code>⋈</code>；论文中的依赖连接是左半边为实心的蝴蝶结，本文用与原字形对应的字符 <code>⧑</code> 表示。</p>
     </header>
 
@@ -456,6 +456,17 @@ where  exists (select *
         <img src="assets/paper2015-antijoin-q3-crop-p14.png" alt="Q3 的依赖反连接转换成普通反连接" />
         <figcaption>Q3：否定比较谓词后，把依赖反连接转换成普通反连接。</figcaption>
       </figure>
+
+      <h2>4 优化</h2>
+      <p>简单去嵌套一旦成功，就会彻底消除查询中相关性的所有痕迹。也就是说，得到的代数表达式看起来就像查询原本没有使用相关子查询一样。不过，一般去嵌套需要增加用于计算域 <var>D</var> 的投影，以及与 <var>D</var> 的连接，这会带来一些额外开销。当然，计算 <var>D</var> 通常仍然远胜于嵌套求值，因为计算 <var>D</var> 及其连接只产生一次性开销，而嵌套求值会导致平方级的运行时间。尽管如此，完全消除 <var>D</var> 仍然很有吸引力，而且有时确实可行，前面的示例查询 Q1（见图 8）就是如此。</p>
+      <p>一般而言，如果能够用子树中原本就存在的值替代 <var>D</var>，就可以消除它。等值连接中经常会出现这种情况。例如，若查询包含表达式 <code>D ⋈[D.a=R.b] R</code>，那么通过查看 <code>R.b</code> 的值，就能知道 <code>D.a</code> 中<strong>能够到达原依赖连接</strong>的那些可能取值。这里强调的部分很重要：<var>D</var> 当然可能包含 <var>R</var> 中不存在的值，但这些值永远找不到连接伙伴，因此也就永远不会到达原依赖连接。所以，我们可以忽略它们。</p>
+      <p>要判断能否进行替换，首先必须分析查询树，找出由连接条件和过滤条件所形成的等价类。例如，过滤条件 <code>σ[a=b]</code> 意味着 <var>a</var> 和 <var>b</var> 属于同一个等价类。我们知道，在最终结果中，<var>a</var> 和 <var>b</var> 的值相同，因此可以用 <var>b</var> 替换 <var>a</var>。计算这些等价关系相对直接。外连接可能带来问题，因为它可能使上述例子中的 <var>a</var> 和 <var>b</var> 不再相等；不过，已知最上层与 <var>D</var> 的连接会拒绝 <code>NULL</code>（NULL-rejecting），因此这里不存在这个问题。</p>
+      <p>确定等价类 <var>C</var> 之后，就可以按照下面的规则判断是否能够进行替换：</p>
+      <div class="formula">
+        <math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>D</mi><mo lspace="0.22em" rspace="0.22em">⧑</mo><mi>T</mi><mo>⊆</mo><msub><mi>χ</mi><mrow><mi mathvariant="script">A</mi><mo>(</mo><mi>D</mi><mo>)</mo><mo>:</mo><mi>B</mi></mrow></msub><mo>(</mo><mi>T</mi><mo>)</mo><mspace width="1em" /><mtext>当</mtext><mspace width="1em" /><mo>∃</mo><mi>B</mi><mo>⊆</mo><mi mathvariant="script">A</mi><mo>(</mo><mi>T</mi><mo>)</mo><mo>:</mo><mi mathvariant="script">A</mi><mo>(</mo><mi>D</mi><mo>)</mo><msub><mo>≡</mo><mi>C</mi></msub><mi>B</mi><mo>.</mo></mrow></math>
+      </div>
+      <p>因此，我们可以不再与 <var>D</var> 连接，而是使用映射算子扩展 <var>T</var>，利用等价属性计算出原本来自 <var>D</var> 的属性值。注意，这一规则成立的前提是 <var>D</var> 是一个集合。还要注意，替换可能增大中间结果：两种表达式之间的关系不是 <code>=</code>，而是 <code>⊆</code>。基数增大的原因，是失去了与 <var>D</var> 连接时可能具有的裁剪能力。原先只对 <var>T</var> 中能够在 <var>D</var> 中找到连接伙伴的元组计算相关子树，替换后则会对 <var>T</var> 中的每个元组都进行计算。那些没有连接伙伴的元组，只会在查询树更高处、执行原依赖连接的位置被消除，因此中间结果可能更大。</p>
+      <p>所以，只有当与 <var>D</var> 的连接过滤作用不强时，替换才划算。查询 Q1 就属于这种情况，因此使用替换是一个好选择；但在一般情况下，查询优化器必须比较两种方案的成本，并选择开销更小的一种。对于过滤作用较强的连接，最好保留 <var>D</var>，从而尽早消除元组。</p>
     </main>
 
     <footer>
@@ -467,6 +478,8 @@ where  exists (select *
         <li>公式中的 <code>∘</code> 表示元组拼接，不是函数复合；<code>a:f</code> 表示由函数 <var>f</var> 计算得到的新输出属性 <var>a</var>。</li>
         <li>第 3.2 节原文有一句 “otherwise we wave to replicate it in both sides”，其中 <code>wave</code> 显然是 <code>have</code> 的排印错误；本译文按“必须在两侧复制”处理。</li>
       </ol>
+      <h2>延伸阅读</h2>
+      <p><a href="domain-equality-substitution-survey.md">Spark 与 DuckDB 如何实现第 4 节的等值绑定替换</a>：分别追踪两者的源码，再比较域连接消除、过滤保留和成本判断。此链接为补充调查，不属于论文原文。</p>
     </footer>
   </article>
 </body>

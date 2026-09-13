@@ -68,7 +68,61 @@ DuckDB 先通过相关子查询展开生成 `DelimJoin` / `DelimGet`，已经明
 
 两条路径直接选择是否保留过滤时，都以结构启发式为主，没有在所查分支中比较 D 的实际覆盖率、聚合工作量和物理成本。完整过程见 [DuckDB 独立源码调查](duckdb-domain-equality-code-study.md)。
 
-## 4. 两者的差异，应该怎样理解
+<a id="unified-framework"></a>
+
+## 4. 统一的代码框架：相关状态下传，返回时重建，最后处理域
+
+Spark 和 DuckDB 可以放进同一个代码框架来读。这个框架描述的是**信息怎样在计划树中流动**，不是说两边使用同名类或同一轮函数：
+
+```text
+输入：带外层引用的子查询计划
+
+1. 建立相关性载体
+   Spark：ScalarSubquery + OuterReference
+   DuckDB：LogicalDependentJoin + correlated_columns
+
+2. 从当前算子向子树传递相关状态
+   state = “下面还需要哪些外层绑定、这些绑定当前由哪些列表示”
+   对 Filter / Project / Aggregate / Join / SetOp 等节点分别处理
+   再递归 child
+
+3. 从 child 返回时重建当前算子
+   合并 child 返回的绑定映射和接回条件
+   把接回所需的绑定列补进 Aggregate 的分组与输出
+   用映射重写仍留在当前节点的表达式
+
+4. 到达独立子树后实现绑定域 D
+   若 state 为空：不引入域连接
+   若仍有未替代绑定：建立“外层绑定的去重关系 + 域列 + 成员资格条件”
+
+5. 应用等值替代并决定域连接的去向
+   内层列可以表示某个域列时，更新绑定映射和上层接回条件
+   域连接可以被删除，也可以保留为聚合前的 SEMI 过滤
+
+6. 将内层结果接回外层
+   按绑定键连接，恢复标量空输入、多行检查、NULL 和 COUNT 等语义
+```
+
+这里的 D 不是一个必须在代码中叫作 `D` 的对象，而是一组协同的逻辑结构：外层绑定的去重输入、域列的属性映射、内层使用这些列的条件，以及最终按绑定取回结果的连接。这个定义也解释了为什么“删除域连接”不能只看一个等号：还要同时改写引用、保持聚合按绑定隔离，并决定原来的域成员资格过滤是否仍需保留。
+
+从遍历方向看，用户的概括可以精确成两层。第一层是**状态下传**：从根节点进入子树时，递归把相关绑定需求和上下文传下去；这可以理解成 dependent join 的依赖被下推，但不意味着把同一个算子物理搬过计划树。第二层是**返回时重建**：递归调用完成后，父节点消费子树返回的映射、条件和输出绑定。DuckDB 在这之后还有显式的 `GeneratedDedupRefEliminator::RewriteSubtree` 子树先行重写；Spark 则在 `DecorrelateInnerQuery` 返回计划后，由 `rewriteDomainJoins` 另行展开仍存在的 `DomainJoin`。因此，“自底向上处理 D”是一个有用的总体印象，但不能当成两边完全相同的函数调用顺序。
+
+同一个阶段在两套源码中的落点如下：
+
+| 统一阶段 | Spark 的代码落点 | DuckDB 的代码落点 |
+| --- | --- | --- |
+| 建立相关性载体 | `PullupCorrelatedPredicates` 处理 `ScalarSubquery`；`DecorrelateInnerQuery.apply` 读取 `OuterReference` | `PlanCorrelatedSubquery` 创建 `LogicalDependentJoin` |
+| 状态下传与算子递归 | `decorrelate(plan, parentOuterReferences, aggregated, underSetOp)` | `FlattenDependentJoins::DecorrelateSubtree` 与 `PushDownCorrelatedNodeInternal` |
+| 返回时补齐绑定 | `Filter` 返回 `joinCond/map`；`Aggregate` 补分组和输出 | `UnnestingState`、`ColumnBindingRewrite`、`PushDownAggregate` |
+| 域的逻辑表示 | 剩余需求产生 `DomainJoin`；等值映射可在此之前扣除需求 | `DelimGet`、`DelimJoin`；flatten 时先把域接入计划 |
+| 等值后的域处理 | `rewriteDomainJoins` 物化仍存在的域 | `GeneratedDedupRefEliminator` 删除连接或转为 `SEMI`；关闭 CTE 路径时由 `Deliminator` 处理 |
+| 外层接回 | `RewriteCorrelatedScalarSubquery.constructLeftJoins` | `FinalizeDependentJoin` 及后续 Delim/CTE 重写 |
+
+这些落点分别对应 Spark 的 [`DecorrelateInnerQuery.apply`](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/DecorrelateInnerQuery.scala#L464) 与 [`constructLeftJoins`](https://github.com/apache/spark/blob/d7cb6592d67f92d11239e1cead153d6fc80fce18/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/optimizer/subquery.scala#L901)，以及 DuckDB 的 [`DecorrelateSubtree`](https://github.com/duckdb/duckdb/blob/154c2c8d5f67aa8ddbadf93598a4a29051430a0c/src/planner/subquery/flatten_dependent_join.cpp#L306) 与 [`GeneratedDedupRefEliminator::RewriteSubtree`](https://github.com/duckdb/duckdb/blob/154c2c8d5f67aa8ddbadf93598a4a29051430a0c/src/planner/subquery/delim_join_cte_rewriter.cpp#L1082)。
+
+所以两者的统一表述应是：**先把相关子查询表示成带绑定状态的逻辑计划，再沿计划树下传依赖、在返回时重建算子和绑定输出，最后把仍需的域实现出来或用等值映射消除，并把结果按绑定接回外层。** Spark 倾向于在域占位符创建前扣除可替代绑定；DuckDB 倾向于先生成 Delim 域，再在另一轮中替换或保留域过滤。这是同一框架中的不同实现时机。
+
+## 5. 两者的差异，应该怎样理解
 
 
 | 比较项         | Spark 的所查路径           | DuckDB 的所查路径                            |

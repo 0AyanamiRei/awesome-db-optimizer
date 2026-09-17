@@ -68,6 +68,47 @@ DuckDB 先通过相关子查询展开生成 `DelimJoin` / `DelimGet`，已经明
 
 两条路径直接选择是否保留过滤时，都以结构启发式为主，没有在所查分支中比较 D 的实际覆盖率、聚合工作量和物理成本。完整过程见 [DuckDB 独立源码调查](duckdb-domain-equality-code-study.md)。
 
+## 3.1 用同一条混合谓词 SQL 看插入时机
+
+考虑下面同时包含等值和非等值相关条件的查询：
+
+```sql
+SELECT s.id,
+       (SELECT MIN(e2.grade)
+        FROM exams e2
+        WHERE e2.sid = s.id AND e2.grade < s.cutoff) AS min_grade
+FROM students s;
+```
+
+这里 `e2.sid = s.id` 可以用内层的 `e2.sid` 表示绑定键；`e2.grade < s.cutoff` 却不能由某个等值列替代，它仍然需要当前外层行的 `cutoff`。因此，问题不是“有没有等号”，而是**等号消掉一部分绑定后，剩下的绑定域在哪里插入，以及原来的域连接是否还承担过滤作用**。
+
+| 观察点 | Spark | DuckDB |
+| --- | --- | --- |
+| 域结构何时出现 | `DecorrelateInnerQuery` 递归处理过滤条件时，先记录 `s.id → e2.sid`，从需求集合扣除 `id`；随后只为仍需的 `s.cutoff` 建立 `DomainJoin`。因此它从一开始就可能是“剩余绑定域”。 | `LogicalDependentJoin` 展开为 `DelimJoin`，内层通过 `DelimGet` 读取去重的相关绑定。此时 Delim 结构先承载完整相关上下文，等值列替换在后续 flatten/CTE 重写阶段发生。 |
+| 聚合看到的绑定 | 聚合按 `e2.sid` 以及接回结果所需的 `cutoff` 维度隔离；`e2.grade < cutoff` 仍是聚合前的相关过滤。 | flatten 先把 Delim 绑定列纳入聚合的分组和输出；随后 `GeneratedDedupRefEliminator` 可将域列使用改写为 `e2.sid` 等内层列，同时保留 `cutoff` 的绑定关系。 |
+| `DelimGet`/`DomainJoin` 的去向 | 若剩余需求只有可由内层列表示的部分，`DomainJoin` 根本不会创建；本例因 `cutoff` 仍被非等值谓词使用，不能据等值替换把整个域结构都消掉。 | `DelimGet` 是内层读取域的入口，`DelimJoin` 是把按域计算的结果接回外层的依赖连接。等值替换成功后，`DelimJoin` 可以删除；若域来源的选择条件会影响聚合前结果，则可改写为精确 `SEMI` 连接，继续过滤不属于域的 `sid`。 |
+
+用计划形状表示，Spark 更接近“先缩小绑定需求，再插入域”：
+
+```text
+外层 students(s.id, s.cutoff)
+  └─ 仅为 cutoff 保留的 DomainJoin
+       └─ Aggregate(MIN(e2.grade), 绑定: e2.sid + cutoff)
+            └─ Filter(e2.sid = 绑定的 id, e2.grade < cutoff)
+```
+
+DuckDB 更接近“先把依赖域显式放进树，再做替换”：
+
+```text
+DelimJoin(外层 students, 按相关绑定接回)
+  └─ Aggregate(MIN(e2.grade), 绑定列来自 DelimGet)
+       └─ Filter(e2.sid = DelimGet.sid,
+                 e2.grade < DelimGet.cutoff)
+            └─ exams e2
+```
+
+后续重写可能把上图中的 `DelimGet.sid` 改成 `e2.sid`，并删除 `DelimJoin`；也可能只删除其接回职责、在 `exams` 与域之间留下 `SEMI` 过滤。对于这条 SQL，非等值条件使 `cutoff` 的相关性继续存在，所以“`sid` 可替换”不等于“整个 `DelimGet`/`DomainJoin` 都没有必要”。这正是两套实现的关键差异：Spark 的插入点体现为**剩余变量需求**，DuckDB 的插入点体现为**已物化的 Delim 域及其后续消除/保留决策**。
+
 <a id="unified-framework"></a>
 
 ## 4. 统一的代码框架：相关状态下传，返回时重建，最后处理域

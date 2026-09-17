@@ -202,6 +202,31 @@
 
     .small { color: var(--muted); font-size: .9em; }
 
+    /* Chapter 3 follows the paper's single-column prose and original figure order. */
+    #holistic > p { text-align: justify; }
+    #holistic code { padding: 0; background: transparent; overflow-wrap: anywhere; }
+    #holistic .paper-figure {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      break-inside: avoid;
+    }
+    #holistic .figure-viewport { overflow-x: auto; background: #fff; }
+    #holistic .figure-viewport a { display: block; }
+    #holistic .paper-figure img { width: 100%; height: auto; max-height: none; }
+    #holistic .paper-figure figcaption { color: var(--muted); }
+    #holistic .translation-note {
+      margin: 1rem 0 1.8rem;
+      color: var(--muted);
+      font-size: .88em;
+    }
+    #holistic .math { font-family: "STIX Two Math", "Cambria Math", serif; }
+
+    @media (max-width: 760px) {
+      #holistic .figure-viewport img { min-width: 680px; max-width: none; }
+    }
+
     @media (prefers-color-scheme: dark) {
       :root {
         --page: #151917;
@@ -237,7 +262,7 @@
         <li>原文：<a href="../paper/UnnestQuery-btw2025.pdf">UnnestQuery-btw2025.pdf</a></li>
         <li>前置阅读：<a href="UnnestQuery-btw2015.zh.html">2015 版中译</a></li>
       </ul>
-      <p class="lede"><strong>阅读策略：</strong>读者已经通读 2015 版，因此本文档完整保留 2025 版真正新增的 2.3、第 3–5 节；第 1、2.1–2.2、6–7 节只做压缩导读。公式和伪代码直接用 HTML 排版，不依赖 LaTeX 插件。</p>
+      <p class="lede"><strong>译文范围：</strong>第三章按原论文逐段完整翻译，保留专业词汇的英文原词，以及原始图示和伪代码；第 2.3、4–5 节为重点中译与导读，第 1、2.1–2.2、6–7 节为压缩导读。</p>
     </header>
 
     <nav aria-label="目录">
@@ -247,7 +272,7 @@
         <li><a href="#intro">1 引言（摘要）</a></li>
         <li><a href="#background">2 背景</a></li>
         <li><a href="#limitations">2.3 旧算法的局限</a></li>
-        <li><a href="#holistic">3 整体式查询去嵌套</a></li>
+        <li><a href="#holistic">3 Holistic Query Unnesting（完整翻译）</a></li>
         <li><a href="#complex-sql">4 复杂 SQL 构造</a></li>
         <li><a href="#evaluation">5 评估</a></li>
         <li><a href="#related">6–7 相关工作与结论</a></li>
@@ -329,184 +354,125 @@
         <p>嵌套越深，这个问题越严重。Sam Arch 提供的真实查询名为 <code>crash.sql</code>，其中包含六层嵌套连接。旧策略产生多个巨大的中间笛卡尔积；这些组合随后虽然都会被过滤掉，却已经消耗了内存和 CPU。这个案例促使作者开发一种同时考虑全部依赖连接的整体式方法，从根源上避免无效域的交叉相乘。</p>
       </section>
 
-      <section id="holistic">
-        <h2><span class="tag focus">重点翻译</span>3 整体式查询去嵌套</h2>
-        <p>新算法在一次过程中联合处理嵌套依赖连接。它可以看成 2015 方法的自顶向下版本：仍然使用自由变量绑定域 <var>D</var>，但不再把显式的 <var>D</var> 连接逐层穿过代数树，而是在遍历状态中记录“这里最终需要加入哪个 <var>D</var>”，并持续改写算子，直到 <var>D</var> 不再需要或能够安全加入。</p>
-        <p>算法分为三个部分：</p>
-        <ol>
-          <li>预处理：识别所有非平凡依赖连接，并记录主算法所需的访问点。</li>
-          <li>主过程：按从上到下的顺序消除非平凡依赖连接。</li>
-          <li>算子规则：定义选择、映射、分组、窗口、连接等算子如何响应去嵌套状态。</li>
-        </ol>
-        <p class="callout warning">会议论文因篇幅没有给出完整形式化定义和正确性证明，而是将其放在技术报告 <cite>A Formalization of Top-Down Unnesting</cite> 中。因此，本节是算法说明与伪代码，不应误读成论文内已经完成的形式化证明。</p>
+      <section id="holistic" aria-labelledby="holistic-title">
+        <h2 id="holistic-title">3 Holistic Query Unnesting</h2>
+        <aside class="translation-note">本章对应原论文 PDF 第 7–16 页，正文逐段翻译，保留原有章节层级、段落顺序和专业词汇。图 2–6、运行过程图以及各算子的伪代码均取自原 PDF，保留原文的符号、颜色、行号和命名。点击图像可查看原图；窄屏可在图像区域横向滚动。<a href="../paper/UnnestQuery-btw2025.pdf#page=7">对照原文</a></aside>
 
-        <h3>3.1 识别非平凡依赖连接</h3>
-        <p>首先要找出右侧确实访问左侧属性的依赖连接。最直接的实现使用 indexed algebra：对每一次列访问，分别找到访问该列的算子 <var>o₁</var> 和产生该列的算子 <var>o₂</var>，然后计算两者的最低公共祖先（LCA）。如果 LCA 不是 <var>o₁</var> 自身，那么这个祖先必然是负责提供该绑定的依赖连接；算法把 <var>o₁</var> 记录到该连接的 <code>accessing</code> 集合中。</p>
+        <p>本节介绍一种 holistic unnesting algorithm，它在一次遍历中共同处理嵌套的 dependent joins。可以将其视为 [NK15] 的一个 top-down 变体，因为它采用了相同的思想：将 free variable bindings 的 domain <var>D</var> 向下推。不过，我们采用了不同的表述方式：算法并不将 <var>D</var> 显式地沿树向下推，而是记住需要加入哪个 <var>D</var>，并在一次 top-down 遍历中重写所有算子，直到 <var>D</var> 不再需要，或者可以安全地加入。</p>
 
-        <figure>
-          <img src="assets/paper2025-annotations-crop-p8.png" alt="论文图 2：为嵌套依赖连接标注访问算子" />
-          <figcaption>图 2：外层连接的访问点为 σ6、σ9；内层连接的访问点为 σ9。</figcaption>
+        <p>我们将算法分成三个部分：首先是一个准备阶段，识别所有 non-trivial dependent joins，并为它们标注主算法所需的信息；其次是消除 dependent joins 的逻辑，这是主算法，会按 top-to-bottom 的顺序对所有 non-trivial dependent joins 调用；第三部分是各个算子的 unnesting rules。需要说明的是，受篇幅所限，我们没有在此给出该方法的形式化描述；形式化定义和正确性证明可以在技术报告 [Ne24] 中找到。</p>
+
+        <h3 id="holistic-identifying">3.1 识别 Non-Trivial Dependent Joins</h3>
+
+        <p>首先，我们需要识别所有 non-trivial dependent joins，也就是右侧访问了左侧所提供属性的 dependent joins。最容易实现这一点的方法是使用 indexed algebra [FMN23]，它允许我们查询 algebra expressions 的结构。如果具备这一功能，我们就考察每一次列访问，计算访问该列的算子 <span class="math">◦<sub>1</sub></span> 与提供该列的算子 <span class="math">◦<sub>2</sub></span> 的 lowest common ancestor（LCA）。如果 LCA 不是 <span class="math">◦<sub>1</sub></span> 本身，它就必然是一个 dependent join <span class="math">⧑<sub>3</sub></span>；我们为 <span class="math">⧑<sub>3</sub></span> 添加标注，记录 <span class="math">◦<sub>1</sub></span> 正在访问 <span class="math">⧑<sub>3</sub></span> 的左侧。上一节示例查询的标注如图 2 所示。没有 accessing operators 的 dependent joins 是 trivial 的，可以直接转换为 regular joins。</p>
+
+        <figure class="paper-figure" id="holistic-fig2">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-fig2-p8.png"><img src="assets/paper2025-ch3-fig2-p8.png" alt="图 2：带算子编号的嵌套查询树；accessing(⧑¹)={σ⁶,σ⁹}，accessing(⧑⁵)={σ⁹}。" /></a></div>
+          <figcaption>图 2：示例查询的标注。</figcaption>
         </figure>
 
-        <p>没有访问算子的依赖连接是平凡的，可以直接改成普通连接。Indexed algebra 能在不增加额外数据结构的情况下，以 <var>O(log n)</var> 完成一次 LCA 查询；不支持该能力的系统也能通过维护各子树可用列集合得到相同信息，只是渐近复杂度更差。</p>
+        <p>Indexed algebra 很适合这个阶段，因为它无需任何额外的数据结构，就能在 <var>O(log n)</var> 时间内完成每次 LCA 计算。如果 DBMS 不支持这一功能，也可以通过追踪树中不同部分的可用列集合来计算相同的信息，只是其渐近复杂度会更差。</p>
 
-        <h3>3.2 消除依赖连接</h3>
-        <p>识别完成后，算法按从根到叶的顺序处理依赖连接。如果某个依赖连接嵌套在另一个连接之中，通常会在消除祖先连接时一并消除；如果祖先过程提前停止，也可能稍后单独处理。关键约束是：<strong>绝不把两个不同的绑定域 <var>D</var> 穿过彼此的依赖连接</strong>，从而避免 2.3 节的域笛卡尔积问题。</p>
+        <h3 id="holistic-eliminating">3.2 消除 Dependent Joins</h3>
 
-        <h4>第一步：广义简单消除</h4>
-        <pre><code>函数 simpleDJoinElimination(join):
-  对 accessing(join) 中的每个算子 op：
-    如果 op 到 join 的路径是线性的：
-      如果 op 是可合并进 join 的选择：
-        把选择合并进 join，并从 accessing(join) 删除 op
-      否则，如果 op 是能够移到 join 上方的 map：
-        把 map 移到 join 上方，并从 accessing(join) 删除 op
+        <p>识别出所有 non-trivial dependent joins 之后，我们按 top-to-bottom 的顺序处理它们，逐个将其消除。如果一个 dependent join 嵌套在另一个 dependent join 中，它通常会在其祖先 join 被消除时一并消除。不过，情况并非总是如此：正如下文将看到的，消除祖先 join 的过程可能在到达后代 join 之前就停止。但我们绝不会把不同的 <var>D</var> 集合推过 dependent joins，因此消除了第 2.3 节讨论的问题。</p>
 
-  如果 accessing(join) 为空：
-    把 join 转成普通连接
-
-  返回是否成功转换</code></pre>
-        <p>这里的“线性”是指算子允许按输入分区处理。选择可以在条件允许时并入连接；map（有些系统称为 projection）不能简单删除，但可以尝试移到连接上方。如果所有访问点都被移除，依赖连接就变成普通连接。2.2 节的 <code>EXISTS</code> 示例只需要这一步；本文的嵌套示例则不行。</p>
-        <figure>
-          <img src="assets/paper2025-fig3-simple-djoin-elimination-p9.png" alt="论文图 3：简单依赖连接消除伪代码" />
-          <figcaption>图 3：论文原始的简单依赖连接消除伪代码。</figcaption>
+        <figure class="paper-figure" id="holistic-fig3">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-fig3-p9.png"><img src="assets/paper2025-ch3-fig3-p9.png" alt="图 3：simpleDJoinElimination 的原始伪代码，保留 1–12 行。检查 accessing 中算子到 join 的路径是否 linear，移动 selection 或 map；访问集为空时转换为 regular join。" /></a></div>
+          <figcaption>图 3：简单的 Dependent Join 消除。</figcaption>
         </figure>
 
-        <h4>第二步：维护整体式状态</h4>
-        <p>如果简单消除不足，就启动完整算法。状态分为全局不变部分和随当前查询片段变化的部分：</p>
-        <pre><code>UnnestingInfo:
-  join       当前要消除的 L ⧑ R
-  outerRefs  右侧读取的左侧列，即 𝒜(L) ∩ ℱ(R)
-  D          Π_outerRefs(L)
-  parent     外层去嵌套状态（若存在）
+        <p>在贯穿本文的示例中，我们会从 <span class="math">⧑<sup>1</sup></span> 开始，首先尝试 simple dependent join elimination。这是对 [NK15] 中 simple unnesting 的推广，如图 3 所示：我们检查所有正在访问 join 左侧的算子 <code>op</code>，并检查从该算子到 join 的路径是否仅由 linear operators 构成，即允许对其输入进行分区的算子，参见 [G.20]。使用 indexed algebra 可以在 <var>O(log n)</var> 时间内完成这个检查；否则，也可以从 <code>op</code> 到 <code>join</code> 做一次线性遍历。如果条件成立，我们就可以将 <code>op</code> 向上移动到 join。若 <code>op</code> 是一个 selection，我们就在允许的情况下将它合并进 join，从而消除这个 accessing operator。对于 map（有时也称为 projection），我们不能直接将其删除，但可以检查是否能将它移动到 join 上方。如果可以，就进行这样的移动，同样将该算子从 accessing operators 列表中移除。如果之后不再剩下任何 accessing operator，就可以直接将 dependent join 转换为 regular join。对于第 2.2 节的 <code>EXISTS</code> 查询，这一步已经足够；但在贯穿本文的示例中，没有一个 dependent join 能以这种方式消除。</p>
 
-Unnesting:
-  info       指向共享的 UnnestingInfo
-  cclasses   用 union-find 保存列等价类
-  repr       outerRefs 到替代列的映射</code></pre>
-        <figure>
-          <img src="assets/paper2025-fig4-unnesting-state-p9.png" alt="论文图 4：去嵌套状态" />
-          <figcaption>图 4：去嵌套过程中维护的状态。</figcaption>
-        </figure>
-        <p><code>parent</code> 用于识别当前过程内部遇到的嵌套依赖连接。<code>cclasses</code> 支持传递等价推理：如果已有 <code>a=b</code> 和 <code>b=c</code>，外层引用 <code>c</code> 就可能用当前可见的 <code>a</code> 替换。实际采用的替代关系记录在 <code>repr</code> 中。</p>
-        <pre><code>函数 rewriteColumns(op, unnesting):
-  对 op 中的每一个列引用 c：
-    如果 repr 中存在 c：
-      用 repr[c] 替换 c</code></pre>
-        <figure>
-          <img src="assets/paper2025-fig5-rewrite-columns-p10.png" alt="论文图 5：重写外层列引用" />
-          <figcaption>图 5：统一重写外层列引用的辅助函数。</figcaption>
+        <figure class="paper-figure" id="holistic-fig4">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-fig4-p9.png"><img src="assets/paper2025-ch3-fig4-p9.png" alt="图 4：原始状态定义。UnnestingInfo 包含 join、outerRefs、D、parent；Unnesting 包含 info、cclasses 和 repr。" /></a></div>
+          <figcaption>图 4：Unnesting 过程中维护的状态。</figcaption>
         </figure>
 
-        <h4>第三步：主消除过程</h4>
-        <pre><code>函数 dJoinElimination(join, parentState, parentAccessing):
-  如果简单消除成功：
-    若存在父状态：
-      按父状态重写被移动的 map
-      继续用父状态 unnest 当前连接
-    返回
+        <p>如果 simple unnesting 不足以完成任务，就启动完整的 unnesting algorithm。它必须重写 dependent join 的右侧，使其中不再出现来自外侧的引用。为此，它维护如图 4 所示的状态。状态分为始终保持不变的部分（<code>UnnestingInfo</code>），以及在查询的不同部分中发生变化的部分（<code>Unnesting</code>）。全局部分存储 join 本身、outer references 集合，也就是左侧被右侧访问的那些列，以及对应的 domain computation <var>D</var>。<code>parent</code> 字段使算法能够识别嵌套的 dependent joins。在查询片段的局部部分，它维护一个 union-find 数据结构 <code>cclasses</code>，用于追踪 equivalent columns。我们利用它进行传递推理。如果查询包含形如 <var>a = b</var> 和 <var>b = c</var> 的谓词，并且存在对 <var>c</var> 的 outer reference，那么当 <var>a</var> 可用时，就可以用 <var>a</var> 替换它。如果我们已经用其他列替换了某个 outer reference，就把这一关系存入 <code>repr</code>，从而能够查到该 outer reference 的新名称。</p>
 
-  如果这是嵌套情形：
-    取出位于 join.left 中的父访问点
-    先用父状态 unnest(join.left)
-    重写当前连接条件及被移动的 map
+        <p>算法会用其他列替换 outer references，因此可以方便地引入下面这个辅助函数，重写某个算子中出现的所有列引用；它会在找到合适的替代列之后被调用：</p>
 
-  为当前 join 创建 UnnestingInfo 和局部 Unnesting
-  若存在父状态，把位于 join.right 的父访问点并入当前访问集
-
-  把 join.condition 提供的等价关系加入 cclasses
-  unnest(join.right, 当前状态, 合并后的访问集)
-
-  对每个外层引用 c：
-    向 join.condition 加入
-    c IS NOT DISTINCT FROM repr[c]</code></pre>
-        <p>这个过程首先处理嵌套连接的左侧，再建立当前连接自己的状态，并把仍然落在右侧的父访问点合并进来。最后加入空值安全的相等条件，使改写后的列仍按 SQL 的 <code>NULL</code> 语义与原外层绑定对应。</p>
-        <p class="callout warning"><strong>伪代码译注：</strong>Figure 6 原稿有几处明显排印错误：第 19 行缺少函数参数之间的分隔；第 36 行按上下文应传入新建的局部 <code>Unnesting</code> 状态而不是 <code>UnnestingInfo</code>；第 39 行的 <code>repr</code> 也属于局部状态。上面的中文伪代码按作者在正文中描述的意图进行了规范化。</p>
-        <figure>
-          <img src="assets/paper2025-fig6-djoin-elimination-p11.png" alt="论文图 6：依赖连接消除主过程" />
-          <figcaption>图 6：论文给出的完整主过程伪代码。</figcaption>
+        <figure class="paper-figure" id="holistic-fig5">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-fig5-p10.png"><img src="assets/paper2025-ch3-fig5-p10.png" alt="图 5：rewriteColumns(op, unnesting)。遍历 op 的列引用 c；如果 unnesting.repr 包含 c，就用 unnesting.repr[c] 替换它。" /></a></div>
+          <figcaption>图 5：重写 Outer Columns 引用的辅助函数。</figcaption>
         </figure>
 
-        <h4>完整运行示例</h4>
-        <ol class="steps">
-          <li>从最外层依赖连接开始，初始化 <code>outerRefs={T1.a}</code>、空的 <code>cclasses</code> 和 <code>repr</code>，并调用 <code>unnest(Γ4, {σ6, σ9})</code>。</li>
-          <li>处理 Γ4 时先递归处理输入，返回时再把外层引用加入分组键。随后遇到另一个非平凡依赖连接。</li>
-          <li>先处理内层连接的左输入。选择 σ6 提供等价关系 <code>T2.a=T1.a</code>，因此把两列加入同一个等价类，并从访问列表删除 σ6。</li>
-          <li>访问列表清空时有两个选择：加入显式域 <code>D:=Π[a:=T1.a](σ[f=123](T1))</code>，或者用等价列 <code>T2.a</code> 替换 <code>T1.a</code>。论文假设 σ2 具有选择性，因此示例选择保留显式域连接。</li>
-          <li>随后把父级和当前层需要的外部引用合并为 <code>{T1.a,T2.b}</code>，处理另一侧的 Γ8、σ9 和 T3。为同时展示另一条分支，示例假设优化器这次选择替换，记录 <code>T1.a→T3.a</code>、<code>T2.b→T3.b</code>。</li>
-          <li>沿递归栈返回时统一重写列、扩充分组键，并在连接条件中补上空值安全的等值关系。整个过程始终没有构造 <code>domain(T1.a) × domain(T2.b)</code>。</li>
-        </ol>
+        <p>有了这些基础设施，我们现在可以描述真正的 elimination algorithm。它会按从根向下的顺序对每个 dependent join 调用；如果在 unnesting 过程中遇到另一个 dependent join，还可以选择性地传入父级 <code>Unnesting</code> 结构，参见第 3.3 节。它首先检查 simple unnesting 是否足够。如果足够，就停止；否则，在嵌套情形下，它会先对左侧执行 unnesting。接着，它创建一个新的 <code>Unnesting</code> 结构，必要时将其与父级 unnesting 合并，然后对右侧执行 unnesting。这一步的伪代码如图 6 所示。</p>
 
-        <figure>
-          <img src="assets/paper2025-holistic-run-start-p12.png" alt="整体式算法运行开始" />
-          <figcaption>运行开始：从最外层连接和 Γ4 向下处理。</figcaption>
-        </figure>
-        <figure>
-          <img src="assets/paper2025-holistic-run-left-p13.png" alt="处理嵌套连接左侧并选择显式域" />
-          <figcaption>处理嵌套连接左侧：建立等价类，并在显式域与列替换之间做代价选择。</figcaption>
-        </figure>
-        <figure>
-          <img src="assets/paper2025-holistic-run-final-p14.png" alt="整体式去嵌套的最终计划" />
-          <figcaption>最终计划：嵌套依赖已被联合消除，没有产生独立绑定域的全组合。</figcaption>
+        <figure class="paper-figure" id="holistic-fig6">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-fig6-p11.png"><img src="assets/paper2025-ch3-fig6-p11.png" alt="图 6：dJoinElimination(join, parentUnnesting, parentAccessing) 的完整原始伪代码，保留行号、缩进和变量名；先处理父级状态与嵌套左输入，再合并访问点、处理右输入，最后添加绑定匹配条件。" /></a></div>
+          <figcaption>图 6：Dependent Join 消除的一般情形。</figcaption>
         </figure>
 
-        <h3>3.3 各类算子的去嵌套规则</h3>
-        <p>所有算子共享两条通用逻辑：</p>
-        <ol>
-          <li>若调用 <code>unnest(op, state, accessing)</code> 时访问集已经为空，遍历就停止；优化器要么在这里加入 <code>state.D ⋈ op</code>，要么根据 <code>cclasses</code> 用等价列替换全部外层引用。</li>
-          <li>递归进入输入时，如果当前算子本身是访问点，就把它从访问集中删除。</li>
-        </ol>
+        <p>接下来，我们通过一次完整的 unnesting 运行来说明该算法。对于贯穿本文的示例，算法从 <span class="math">⧑<sup>1</sup></span> 开始，然后将状态初始化如下：</p>
 
-        <h4>选择与 map</h4>
-        <pre><code>unnest(selection):
-  把选择谓词中的等价关系加入 cclasses
-  unnest(selection.input)
-  按 repr 重写选择条件
+        <figure class="paper-figure" id="holistic-state-initial">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-state-initial-p12.png"><img src="assets/paper2025-ch3-state-initial-p12.png" width="1098" height="441" alt="原文第 12 页第一幅运行图。outerRef={T₁.a}，cclasses=∅，repr=∅；下一步为 unnest(Γ⁴,{σ⁶,σ⁹})。" /></a></div>
+        </figure>
 
-unnest(map):
-  unnest(map.input)
-  按 repr 重写 map 的计算表达式</code></pre>
+        <p>我们将在第 3.3 节介绍 <code>unnest</code> 子过程的确切规则。不过，直观地说，对 group by <span class="math">Γ<sup>4</sup></span> 的 unnesting，是先递归地对其输入执行 unnesting，然后再将 outer column references 加入 group by。执行这些步骤后，得到如下状态：</p>
 
-        <h4>分组与窗口</h4>
-        <pre><code>unnest(groupby):
-  static := 分组键为空，或 grouping sets 包含空集合
-  unnest(groupby.input)
-  重写 groupby 中的列
-  把每个 outerRef 的替代列加入分组键
-  如果 static：
-    用 D LEFT JOIN groupby 包装结果，
-    按映射后的 outerRefs 连接
+        <figure class="paper-figure" id="holistic-state-below-groupby">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-state-below-groupby-p12.png"><img src="assets/paper2025-ch3-state-below-groupby-p12.png" width="1098" height="444" alt="原文第 12 页第二幅运行图。stack=[Γ⁴]；下一步为 unnest(⧑⁵,{σ⁶,σ⁹})，outerRef、cclasses、repr 与初始化相同。" /></a></div>
+        </figure>
 
-unnest(window):
-  unnest(window.input)
-  重写窗口表达式中的列
-  把每个 outerRef 的替代列加入 PARTITION BY</code></pre>
-        <p>静态聚合是没有普通分组键的聚合。即使输入为空，它也必须产生一行，因此需要左外连接（或系统支持时使用 group join）保留每个外层绑定。窗口函数同样必须按外层绑定分别计算，所以外层引用要进入 <code>PARTITION BY</code>。</p>
-        <p class="small">原文 group-by 伪代码中的 <code>groupy</code> 是 <code>groupby</code> 的排印错误，本文已按正确名称处理。</p>
+        <p>我们遇到了另一个 dependent join，simple elimination 对它也不足以完成任务。稍后我们会将其 unnesting state 与外层 dependent join 的状态合并；现在先对左输入执行 unnesting：</p>
 
-        <h4>连接</h4>
-        <pre><code>unnest(join):
-  把访问点分成左侧访问和右侧访问
+        <figure class="paper-figure" id="holistic-state-left-select">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-state-left-select-p13.png"><img src="assets/paper2025-ch3-state-left-select-p13.png" width="1098" height="441" alt="原文第 13 页第一幅运行图。outerRef={T₁.a}，cclasses={{T₁.a,T₂.a}}，repr=∅；stack=[Γ⁴,⧑⁵]，下一步为 unnest(σ⁶,{σ⁶})。" /></a></div>
+        </figure>
 
-  如果 join 本身是另一个非平凡依赖连接：
-    调用 dJoinElimination，把父子过程合并
-    返回
+        <p>对 selection 执行 unnesting 时，我们将该 selection 所蕴含的等价条件加入 <code>cclasses</code> 数据结构，从 accessing list（即 <code>unnest</code> 的第二个函数参数）中移除这个 selection，并递归处理其输入：</p>
 
-  如果只有左侧访问外层列，且连接不需保留右侧未匹配行：
-    只 unnest 左侧，并重写连接条件
-    返回
+        <figure class="paper-figure" id="holistic-state-left-scan">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-state-left-scan-p13.png"><img src="assets/paper2025-ch3-state-left-scan-p13.png" width="1098" height="444" alt="原文第 13 页第二幅运行图。stack=[Γ⁴,⧑⁵,σ⁶]；下一步为 unnest(T₂⁷,{})，accessing list 已空，cclasses={{T₁.a,T₂.a}}，repr=∅。" /></a></div>
+        </figure>
 
-  如果只有右侧访问外层列，且连接不需保留左侧未匹配行：
-    只 unnest 右侧，并重写连接条件
-    返回
+        <p>此时 accessing list 已经为空，我们有两种选择：引入与 <span class="math">D := Π<sub>a:=T₁.a</sub>(σ<sub>f=123</sub>(T₁))</span> 的 join，并用它替换 <span class="math">T₁.a</span>；或者利用所有 outer column references 都已在 <code>cclasses</code> 中得到绑定这一事实，直接用等价的 <span class="math">T₂.a</span> 替换 <span class="math">T₁.a</span>。最优选择取决于 <span class="math">σ<sup>2</sup></span> 的 selectivity。现在我们先假设 <span class="math">σ<sup>2</sup></span> 具有选择性，因此引入一个 join。随后我们沿调用栈返回，直到再次到达 <span class="math">⧑<sup>5</sup></span>，并沿途重写列。注意，在这个例子中，重写不会产生变化，因为我们决定不用 <span class="math">T₂.a</span> 替换 <span class="math">T₁.a</span>。下一次 <code>unnest</code> 调用将处理 <span class="math">Γ<sup>8</sup></span>：</p>
 
-  否则：
-    分别创建左右状态并 unnest 两侧
-    按连接类型重写连接条件
-    对每个 outerRef 加入
-      left.repr[c] IS NOT DISTINCT FROM right.repr[c]
-    合并左右两侧的 cclasses 和 repr</code></pre>
-        <p>连接的列替换必须考虑连接类型：左外连接用左侧代表列，右外连接用右侧；全外连接要逐行判断哪一侧存在，可使用 <code>COALESCE(left.repr[c], right.repr[c])</code>。这也是新算法不能只做机械列改名的原因。</p>
+        <figure class="paper-figure" id="holistic-state-right-groupby">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-state-right-groupby-p14.png"><img src="assets/paper2025-ch3-state-right-groupby-p14.png" width="1098" height="597" alt="原文第 14 页第一幅运行图。左输入已有显式 domain join；outerRef={T₁.a,T₂.b}，cclasses=∅，repr=∅；stack=[Γ⁴,⧑⁵]，下一步为 unnest(Γ⁸,{σ⁹})。" /></a></div>
+        </figure>
+
+        <p>另一侧的处理方式类似：我们递归到 group by 下方，再递归到 selection 下方；从 accessing list 中移除 <span class="math">σ<sup>9</sup></span>，并将它的约束加入 equivalence classes。随后，我们再次需要决定是加入一个 join，还是采用 substitution。为了展示两种情况，我们现在假设 optimizer 决定采用 substitution，尽管对于这个查询而言，这种选择不太可能发生。于是，我们将 <span class="math">T₁.a → T₃.a</span>、<span class="math">T₂.b → T₃.b</span> 加入 <code>repr</code>，并在向上返回时重写所有列。由此得到如下 unnested plan：</p>
+
+        <figure class="paper-figure" id="holistic-final-plan">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-final-plan-p14.png"><img src="assets/paper2025-ch3-final-plan-p14.png" width="1098" height="600" alt="原文第 14 页最终 unnested plan。Γ⁴ 按 T₃.a 分组，Γ⁸ 按 T₃.a、T₃.b 分组；上层 joins 保留 T₁.a=T₃.a 和 T₂.b=T₃.b 的匹配，左分支保留显式 domain join。" /></a></div>
+        </figure>
+
+        <h3 id="holistic-rules">3.3 Unnesting Rules</h3>
+
+        <p>下面简要讨论各个算子的 unnesting rules。这些规则与 [NK15] 中的 push down rules 类似，因此受篇幅所限，我们只概述其中最重要的规则。所有算子共享如下逻辑：1）当调用 <code>unnest(◦, info, accessing)</code> 且 <code>accessing</code> 为空时，unnesting 停止；我们要么将 <span class="math">◦</span> 替换为 <span class="math"><code>info.D</code> ⋈ ◦</span>，要么使用 <code>info.cclasses</code> 中的 equivalent columns 替换所有 outer references；2）递归进入算子 <span class="math">◦</span> 的某个输入时，必要时将 <span class="math">◦</span> 从 accessing list 中移除。我们没有显式列出这些公共逻辑的代码。</p>
+
+        <p>对于 selection，unnesting 逻辑登记 filter conditions，并在递归返回时重写所有列：</p>
+        <figure class="paper-figure" id="holistic-rule-selection">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-rule-selection-p15.png"><img src="assets/paper2025-ch3-rule-selection-p15.png" width="1098" height="117" alt="selection 的原始伪代码：将 select.predicate 的等价关系加入 info.cclasses；unnest(select.input, info, accessing)；rewriteColumns(select.condition, info)。" /></a></div>
+        </figure>
+
+        <p>对于 map，处理方式类似，只需在完成输入的 unnesting 之后对列进行重命名：</p>
+        <figure class="paper-figure" id="holistic-rule-map">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-rule-map-p15.png"><img src="assets/paper2025-ch3-rule-map-p15.png" width="1098" height="96" alt="map 的原始伪代码：unnest(map.input, info, accessing)，然后 rewriteColumns(map.computations, info)。" /></a></div>
+        </figure>
+
+        <p>group by 算子对其输入执行 unnesting，并将 outer references 加入 group by attributes。注意，有一个特殊情形：group by 是 static 的，即 <code>SELECT</code> 子句包含 aggregate functions，却没有 <code>GROUP BY</code>。在这种情况下，即使输入为空，也必须产生非空输出；我们通过 outer join 来实现这一点，或者在系统支持时使用 group join [MN11]：</p>
+        <figure class="paper-figure" id="holistic-rule-groupby">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-rule-groupby-p15.png"><img src="assets/paper2025-ch3-rule-groupby-p15.png" width="1098" height="213" alt="group by 的原始伪代码：检测空分组或包含空集的 grouping sets；处理输入并重写列；将 info.repr[c] 加入分组；static 情况使用 info.D 与聚合结果的 left outer join。" /></a></div>
+        </figure>
+
+        <p>Window operators 在概念上的处理方式与 group by 类似。我们必须将 outer references 加入 <code>PARTITION BY</code> 子句，以便针对每一种 binding 分别计算 window functions：</p>
+        <figure class="paper-figure" id="holistic-rule-window">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-rule-window-p15.png"><img src="assets/paper2025-ch3-rule-window-p15.png" width="1098" height="144" alt="window 的原始伪代码：处理输入，重写 window 中的列，并把每个 outerRef 的 info.repr[c] 加入 window.partitionby。" /></a></div>
+        </figure>
+
+        <p>对于 join，我们检查是否遇到了另一个 dependent join，并在需要时合并这两个消除过程。否则，我们检查所有 dependent accesses 是否只发生在一侧。如果是，并且该 join type 不需要追踪 join partners 的数量，就可以像处理 selection 一样直接递归。若不满足这一条件，就对两侧都执行 unnesting，并按需更新 join condition：</p>
+        <figure class="paper-figure" id="holistic-rule-join">
+          <div class="figure-viewport"><a href="assets/paper2025-ch3-rule-join-p16.png"><img src="assets/paper2025-ch3-rule-join-p16.png" width="1116" height="618" alt="join 的原始伪代码，保留 1–27 行及空行。拆分左右 accessing；遇到 dependent join 时调用 dJoinElimination；适用时仅处理一侧，否则处理两侧、补充 NULL 安全绑定比较并合并 cclasses 和 repr。" /></a></div>
+        </figure>
+
+        <p>注意，join 需要采用不同的列重写逻辑，因为我们必须考虑 join type，才能决定使用 join 的哪一侧进行替换。Left outer join 会输出左侧未匹配的行，因此使用左侧进行替换；right outer join 则使用右侧。Full outer join 必须针对每一行决定采用哪一侧，可以使用诸如 <code>COALESCE(unnestLeft.repr[c], unnestRight.repr[c])</code> 的表达式来替换列。</p>
+
+        <aside class="translation-note">译注：为便于逐页核对，上述原图及伪代码未修订原稿中的排印问题，包括图 6 的 <code>parentUnnestring</code>、<code>info</code>／<code>unnest</code> 引用，group by 代码中的 <code>groupy</code>，以及 join 代码中的 <code>unnestingLeft</code>／<code>unnestLeft</code> 命名差异。它们保留的是论文原稿，不应视为可直接执行的代码。</aside>
       </section>
 
       <section id="complex-sql">

@@ -1,0 +1,117 @@
+# 原文逐节覆盖表
+
+本表逐项对应本地 PDF 的 **Part II 书签**，保留只有标题或参考文献的小节。页码是起始页；章末及同页的小节范围见[原文梳理](part-ii-overview.md)。M01–M18 对应[教学提纲](outline.md)的模块。
+
+“正文”只描述原书是否实际写了内容，不代表教材已经重证其中所有结论。段内的 Eager/Lazy 变体、CD-A/B/C、Cross Products 等标题不都在书签里，其教学位置已在提纲中列出。
+
+| 编号 | 原文标题 | 印刷页 / PDF 页 | 教学模块 | 原文状态 |
+| --- | --- | --- | --- | --- |
+| II | II Foundations | [197 / 218](../Query%20opt.pdf#page=218) | 全范围 | 扉页 |
+| 5 | Logic, Null, and Boolean Expressions | [199 / 220](../Query%20opt.pdf#page=220) | M01 | 正文；§5.6 未展开 |
+| 5.1 | Two-Valued Logic | [199 / 220](../Query%20opt.pdf#page=220) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.2 | Null Values | [199 / 220](../Query%20opt.pdf#page=220) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.2.1 | Functions and Operators | [199 / 220](../Query%20opt.pdf#page=220) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.2.2 | Comparison Operators | [201 / 222](../Query%20opt.pdf#page=222) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.3 | Three-Valued Logic | [202 / 223](../Query%20opt.pdf#page=223) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.4 | Preparation of Boolean Expressions | [204 / 225](../Query%20opt.pdf#page=225) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.5 | Equivalence Classes based on Equality | [204 / 225](../Query%20opt.pdf#page=225) | M01 | 正文 / 定义 / 公式或例子 |
+| 5.6 | Nullability Inference | [206 / 227](../Query%20opt.pdf#page=227) | M01 | 仅标题 |
+| 5.7 | Bibliography | [206 / 227](../Query%20opt.pdf#page=227) | M01 | 文献 |
+| 6 | Functional Dependencies | [207 / 228](../Query%20opt.pdf#page=228) | M02 | 简短正文 + 占位 |
+| 6.1 | Functional Dependencies | [207 / 228](../Query%20opt.pdf#page=228) | M02 | 正文 / 定义 / 公式或例子 |
+| 6.2 | Functional Dependencies in the presence of NULL values | [208 / 229](../Query%20opt.pdf#page=229) | M02 | 定义 + XXX 待补说明 |
+| 6.3 | Deriving Functional Dependencies over algebraic operators | [208 / 229](../Query%20opt.pdf#page=229) | M02 | XXX 占位 |
+| 6.4 | Bibliography | [208 / 229](../Query%20opt.pdf#page=229) | M02 | 仅标题 |
+| 7 | An Algebra for Sets, Bags, and Sequences | [209 / 230](../Query%20opt.pdf#page=230) | M03–M15 | 主体正文；含若干未完成条目 |
+| 7.1 | Sets, Bags, and Sequences | [209 / 230](../Query%20opt.pdf#page=230) | M03 | 正文 / 定义 / 公式或例子 |
+| 7.1.1 | Sets | [209 / 230](../Query%20opt.pdf#page=230) | M03 | 正文 / 定义 / 公式或例子 |
+| 7.1.2 | Duplicate Data: Bags | [211 / 232](../Query%20opt.pdf#page=232) | M03 | 正文 / 定义 / 公式或例子 |
+| 7.1.3 | Explicit Duplicate Control | [214 / 235](../Query%20opt.pdf#page=235) | M03 | 正文 / 定义 / 公式或例子 |
+| 7.1.4 | Ordered Data: Sequences | [215 / 236](../Query%20opt.pdf#page=236) | M03 | 正文 / 定义 / 公式或例子 |
+| 7.2 | Aggregation Functions | [216 / 237](../Query%20opt.pdf#page=237) | M04 | 正文 / 定义 / 公式或例子 |
+| 7.3 | Operators | [220 / 241](../Query%20opt.pdf#page=241) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.1 | Preliminaries | [221 / 242](../Query%20opt.pdf#page=242) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.2 | Signatures | [223 / 244](../Query%20opt.pdf#page=244) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.3 | Projection | [225 / 246](../Query%20opt.pdf#page=246) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.4 | Selection | [226 / 247](../Query%20opt.pdf#page=247) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.5 | Map | [226 / 247](../Query%20opt.pdf#page=247) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.6 | Unary Grouping | [227 / 248](../Query%20opt.pdf#page=248) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.7 | Unnest Operators | [228 / 249](../Query%20opt.pdf#page=249) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.8 | Flatten Operator | [229 / 250](../Query%20opt.pdf#page=250) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.9 | Join Operators | [229 / 250](../Query%20opt.pdf#page=250) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.10 | Groupjoin | [230 / 251](../Query%20opt.pdf#page=251) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.11 | Min/Max Operators | [231 / 252](../Query%20opt.pdf#page=252) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.3.12 | Other Dependent Operators | [232 / 253](../Query%20opt.pdf#page=253) | M05 | 正文 / 定义 / 公式或例子 |
+| 7.4 | Linearity of Algebraic Operators | [233 / 254](../Query%20opt.pdf#page=254) | M06 | 正文 / 定义 / 公式或例子 |
+| 7.4.1 | Linearity of Algebraic Operators | [233 / 254](../Query%20opt.pdf#page=254) | M06 | 正文 / 定义 / 公式或例子 |
+| 7.4.2 | Exploiting Linearity | [238 / 259](../Query%20opt.pdf#page=259) | M06 | 正文 / 定义 / 公式或例子 |
+| 7.5 | Representations | [239 / 260](../Query%20opt.pdf#page=260) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.5.1 | Three Different Representations | [239 / 260](../Query%20opt.pdf#page=260) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.5.2 | Conversion between Representations | [241 / 262](../Query%20opt.pdf#page=262) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.5.3 | Conversion between Bulk Types | [241 / 262](../Query%20opt.pdf#page=262) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.5.4 | Adjusting the Algebra | [242 / 263](../Query%20opt.pdf#page=263) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.5.5 | Partial Preaggregation | [243 / 264](../Query%20opt.pdf#page=264) | M07 | 正文 / 定义 / 公式或例子 |
+| 7.6 | A Note on Equivalences | [243 / 264](../Query%20opt.pdf#page=264) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.7 | Simple Reorderability | [244 / 265](../Query%20opt.pdf#page=265) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.7.1 | Unary Operators | [244 / 265](../Query%20opt.pdf#page=265) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.7.2 | Push-Down/Pull-Up of Unary into/from Binary Operators | [246 / 267](../Query%20opt.pdf#page=267) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.7.3 | Binary Operators | [248 / 269](../Query%20opt.pdf#page=269) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.8 | Predicate Detachment and Attachment | [253 / 274](../Query%20opt.pdf#page=274) | M08 | 正文 / 定义 / 公式或例子 |
+| 7.9 | Basic Equivalences for D-Join | [255 / 276](../Query%20opt.pdf#page=276) | M09 | 正文 / 定义 / 公式或例子 |
+| 7.10 | Equivalences for Outerjoins | [257 / 278](../Query%20opt.pdf#page=278) | M10 | 正文 / 定义 / 公式或例子 |
+| 7.10.1 | Outerjoin Simplification | [264 / 285](../Query%20opt.pdf#page=285) | M10 | 正文 / 定义 / 公式或例子 |
+| 7.10.2 | Generalized Outerjoin | [265 / 286](../Query%20opt.pdf#page=286) | M10 | 正文 / 定义 / 公式或例子 |
+| 7.11 | Equivalences for Unary Grouping | [266 / 287](../Query%20opt.pdf#page=287) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.1 | An Elementary Fact about Grouping | [266 / 287](../Query%20opt.pdf#page=287) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.2 | Join | [267 / 288](../Query%20opt.pdf#page=288) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.3 | Left Outerjoin | [277 / 298](../Query%20opt.pdf#page=298) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.4 | Left Outerjoin with Default | [281 / 302](../Query%20opt.pdf#page=302) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.5 | Full Outerjoin | [282 / 303](../Query%20opt.pdf#page=303) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.6 | D-Join | [285 / 306](../Query%20opt.pdf#page=306) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.7 | Groupjoin | [286 / 307](../Query%20opt.pdf#page=307) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.11.8 | Intersection and Difference | [291 / 312](../Query%20opt.pdf#page=312) | M11 | 正文 / 定义 / 公式或例子 |
+| 7.12 | Eliminating Redundant Joins | [292 / 313](../Query%20opt.pdf#page=313) | M12 | 正文 / 定义 / 公式或例子 |
+| 7.13 | Semijoin and Antijoin Reducer | [293 / 314](../Query%20opt.pdf#page=314) | M12 | 正文 / 定义 / 公式或例子 |
+| 7.14 | Outerjoin Simplification | [294 / 315](../Query%20opt.pdf#page=315) | M12 | 仅标题；实质内容另见 §7.10.1 |
+| 7.15 | Correct and Complete Exploration of the Core Search Space | [294 / 315](../Query%20opt.pdf#page=315) | M13 | 正文 / 定义 / 公式或例子 |
+| 7.15.1 | The Core Search Space | [294 / 315](../Query%20opt.pdf#page=315) | M13 | 正文 / 定义 / 公式或例子 |
+| 7.15.2 | Exploration | [296 / 317](../Query%20opt.pdf#page=317) | M13 | 正文 / 定义 / 公式或例子 |
+| 7.15.3 | More Issues | [304 / 325](../Query%20opt.pdf#page=325) | M13 | 正文 / 定义 / 公式或例子 |
+| 7.16 | Logical Algebra for Sequences | [308 / 329](../Query%20opt.pdf#page=329) | M14 | 正文 / 定义 / 公式或例子 |
+| 7.16.1 | Introduction | [308 / 329](../Query%20opt.pdf#page=329) | M14 | 正文 / 定义 / 公式或例子 |
+| 7.16.2 | Algebraic Operators | [309 / 330](../Query%20opt.pdf#page=330) | M14 | 正文 / 定义 / 公式或例子 |
+| 7.16.3 | Equivalences | [312 / 333](../Query%20opt.pdf#page=333) | M14 | 正文 / 定义 / 公式或例子 |
+| 7.16.4 | Bibliography | [312 / 333](../Query%20opt.pdf#page=333) | M14 | 简短文献指向 |
+| 7.17 | Literature | [312 / 333](../Query%20opt.pdf#page=333) | M15 | 文献导览 |
+| 7.18 | ToDo | [313 / 334](../Query%20opt.pdf#page=334) | M15 | ToDo |
+| 8 | Declarative Query Representation | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 提要、文献与空标题 |
+| 8.1 | Calculus Representations | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 文献线索 |
+| 8.2 | Datalog | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 仅标题 |
+| 8.3 | Tableaux Representation | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 短说明 + 文献 |
+| 8.4 | Monoid Comprehension | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 文献线索 |
+| 8.5 | Expressiveness | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 主题与文献线索 |
+| 8.6 | Bibliography | [315 / 336](../Query%20opt.pdf#page=336) | M16 | 仅标题 |
+| 9 | Translation and Lifting | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 标题框架 |
+| 9.1 | Query Language to Calculus | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 章/节标题，无实质推导 |
+| 9.2 | Query Language to Algebra | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 章/节标题，无实质推导 |
+| 9.3 | Calculus to Algebra | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 章/节标题，无实质推导 |
+| 9.4 | Algebra to Calculus | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 章/节标题，无实质推导 |
+| 9.5 | Bibliography | [317 / 338](../Query%20opt.pdf#page=338) | M17 | 章/节标题，无实质推导 |
+| 10 | Query Equivalence, Containment, Minimization, and Factorization | [319 / 340](../Query%20opt.pdf#page=340) | M18 | 正文与研究提要混合 |
+| 10.1 | Set Semantics | [320 / 341](../Query%20opt.pdf#page=341) | M18 | 正文 / 定义 / 公式或例子 |
+| 10.1.1 | Conjunctive Queries | [320 / 341](../Query%20opt.pdf#page=341) | M18 | 正文 / 定义 / 公式或例子 |
+| 10.1.2 | … with Inequalities | [322 / 343](../Query%20opt.pdf#page=343) | M18 | 正文 / 定义 / 公式或例子 |
+| 10.1.3 | … with Negation | [323 / 344](../Query%20opt.pdf#page=344) | M18 | 短说明 + 文献 |
+| 10.1.4 | … under Constraints | [323 / 344](../Query%20opt.pdf#page=344) | M18 | 文献线索 |
+| 10.1.5 | … with Aggregation | [323 / 344](../Query%20opt.pdf#page=344) | M18 | 文献线索 |
+| 10.2 | Bag Semantics | [323 / 344](../Query%20opt.pdf#page=344) | M18 | 研究提要 |
+| 10.2.1 | Conjunctive Queries | [323 / 344](../Query%20opt.pdf#page=344) | M18 | 研究提要 + 文献 |
+| 10.3 | Sequences | [324 / 345](../Query%20opt.pdf#page=345) | M18 | 路径查询结果提要 |
+| 10.3.1 | Path Expressions | [324 / 345](../Query%20opt.pdf#page=345) | M18 | 语言片段 + 复杂度/文献提要 |
+| 10.4 | Minimization | [325 / 346](../Query%20opt.pdf#page=346) | M18 | 文献线索 |
+| 10.5 | Detecting common subexpressions | [325 / 346](../Query%20opt.pdf#page=346) | M18 | 文献线索 + 空小节 |
+| 10.5.1 | Simple Expressions | [325 / 346](../Query%20opt.pdf#page=346) | M18 | 标题与段内标题 |
+| 10.5.2 | Algebraic Expressions | [325 / 346](../Query%20opt.pdf#page=346) | M18 | 仅标题 |
+| 10.6 | Bibliography | [325 / 346](../Query%20opt.pdf#page=346) | M18 | 文献说明与结果提要 |
+
+共覆盖 107 个书签条目（含 Part II 扉页与六个章标题）。页段阅读记录及版本指纹见[资料记录](sources.md)。

@@ -24,9 +24,9 @@
 
 | 小节 | 本节要讲明白的事 | 原文 |
 | --- | --- | --- |
-| L07 X→Y 究竟约束什么 | 从两条记录的比较定义 FD | §6.1，p.207 |
-| L08 如何从已有 FD 得到新 FD | Armstrong 公理、派生规则、闭包与键 | §6.1，p.208 |
-| L09 FD、NULL 与重复行 | 含 NULL 的定义，值依赖和出现次数的区别；标出原文未完成的传播部分 | §6.2–6.4，p.208；B04 |
+| [L07 X→Y 究竟约束什么](lessons/07-functional-dependencies.md) | 从两条记录的比较定义 FD | §6.1，p.207 |
+| [L08 如何从已有 FD 得到新 FD](lessons/08-armstrong-closure-and-keys.md) | Armstrong 公理、派生规则、闭包与键 | §6.1，p.208 |
+| [L09 FD、NULL 与重复行](lessons/09-fd-null-duplicates-and-propagation.md) | 含 NULL 的定义，值依赖和出现次数的区别；标出原文未完成的传播部分 | §6.2–6.4，p.208；B04 |
 
 ## M03 · Set、Bag、Sequence（§7.1）
 

@@ -1,6 +1,6 @@
 # 教学提纲：按 Part II 的主题连续阅读
 
-本提纲对应原书第 5–10 章。L01–L73 是备课用的小节编号，**L01–L03 正文已完成，其余尚未编写**；每节以一个理解任务为中心，写作时可按阅读密度拆分。每行都列出原文依据，而非把另一本资料的大纲映射到本书标题。
+本提纲对应原书第 5–10 章。L01–L73 是备课用的小节编号，**第 5 章的 L01–L06 与 L06b 正文已完成，其余尚未编写**；每节以一个理解任务为中心，写作时可按阅读密度拆分。每行都列出原文依据，而非把另一本资料的大纲映射到本书标题。
 
 原文章节的全部书签另见[覆盖表](coverage.md)。下列页码均为本地 PDF 的印刷页；PDF 页 = 印刷页 + 21。
 
@@ -13,9 +13,10 @@
 | [L01 为什么二值逻辑的常识需要重新检查](lessons/01-two-valued-logic.md) | 先明确一个布尔式的输入与真值，再辨认常用恒等式 | §5.1，pp.199–200 |
 | [L02 NULL 改变了哪些操作](lessons/02-null-and-comparisons.md) | 普通值相等、SQL 相等、点等号分别做什么 | §5.2，pp.199–201 |
 | [L03 三个真值与两种解释上下文](lessons/03-three-valued-logic.md) | TRUE/FALSE/UNKNOWN，以及 WHERE 与 CHECK 的接受条件 | §5.3，p.202 |
-| L04 否定为什么会交换 UNKNOWN 的解释 | 用真值表推导 floor/ceiling 与否定的关系 | §5.3，pp.203–204；核对 B02 |
-| L05 预处理一个布尔表达式 | pareval、pushnot、pushunk 的作用与次序 | §5.4，p.204 |
-| L06 从相等谓词建立等价类 | “合取出现”、替换及 NULL 限定；说明 nullability 小节缺失 | §5.5–5.7，pp.204–206 |
+| [L04 否定为什么会交换 UNKNOWN 的解释](lessons/04-negation-and-interpretation.md) | 用真值表推导 floor/ceiling 与否定的关系 | §5.3，pp.203–204；核对 B02 |
+| [L05 预处理一个布尔表达式](lessons/05-prepare-boolean-expressions.md) | pareval、pushnot、pushunk 的作用与次序 | §5.4，p.204 |
+| [L06 从相等谓词建立等价类](lessons/06-equivalence-classes-and-nullability.md) | “合取出现”、替换及 NULL 限定；说明 nullability 小节缺失 | §5.5–5.7，pp.204–206 |
+| [L06b 量词、条件分配与第 5 章练习](lessons/06b-quantifiers-and-chapter-review.md) | 补图 5.2 的量词规律，解读 Exercise 1–3，并复盘第 5 章接口 | §5.1、§5.3，pp.200、203–204 |
 
 ## M02 · 数据约束：函数依赖（第 6 章）
 

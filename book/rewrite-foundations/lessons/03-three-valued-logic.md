@@ -22,27 +22,31 @@ amount > 100 AND status = 'paid'
 
 先补上最简单的 NOT。否定会交换 TRUE 与 FALSE；原先无法确定的条件，取否定之后仍无法确定。
 
-| p | ¬p |
-| --- | --- |
-| TRUE | FALSE |
-| FALSE | TRUE |
+
+| p       | ¬p      |
+| ------- | ------- |
+| TRUE    | FALSE   |
+| FALSE   | TRUE    |
 | UNKNOWN | UNKNOWN |
+
 
 所以，`NOT (amount > 100)` 并不会接受一个“未知金额其实不大于 100”的结论。金额为 NULL 时，内部比较得到 UNKNOWN，外层 NOT 仍得到 UNKNOWN。
 
 再看 AND 与 OR。原书图 5.4 将它们列成两个矩阵；这里按输入组合逐行展开，便于比较：
 
-| p | q | p ∧ q | p ∨ q |
-| --- | --- | --- | --- |
-| TRUE | TRUE | TRUE | TRUE |
-| TRUE | FALSE | FALSE | TRUE |
-| TRUE | UNKNOWN | UNKNOWN | TRUE |
-| FALSE | TRUE | FALSE | TRUE |
-| FALSE | FALSE | FALSE | FALSE |
-| FALSE | UNKNOWN | FALSE | UNKNOWN |
-| UNKNOWN | TRUE | UNKNOWN | TRUE |
-| UNKNOWN | FALSE | FALSE | UNKNOWN |
+
+| p       | q       | p ∧ q   | p ∨ q   |
+| ------- | ------- | ------- | ------- |
+| TRUE    | TRUE    | TRUE    | TRUE    |
+| TRUE    | FALSE   | FALSE   | TRUE    |
+| TRUE    | UNKNOWN | UNKNOWN | TRUE    |
+| FALSE   | TRUE    | FALSE   | TRUE    |
+| FALSE   | FALSE   | FALSE   | FALSE   |
+| FALSE   | UNKNOWN | FALSE   | UNKNOWN |
+| UNKNOWN | TRUE    | UNKNOWN | TRUE    |
+| UNKNOWN | FALSE   | FALSE   | UNKNOWN |
 | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
+
 
 理解这张表可以抓住两个决定性输入。对于 AND，一个 FALSE 就足以让整体为 FALSE；没有 FALSE 时，只有两个 TRUE 才能得到 TRUE，其余情况为 UNKNOWN。对于 OR，一个 TRUE 就足以让整体为 TRUE；没有 TRUE 时，只有两个 FALSE 才能得到 FALSE，其余情况为 UNKNOWN。
 
@@ -89,11 +93,13 @@ CREATE TABLE checked_orders (
 
 这条 CHECK 只在条件得到 FALSE 时判定违反约束；TRUE 和 UNKNOWN 都不会违反它。于是，同一个比较会产生下面的行为：
 
+
 | amount | amount > 100 | WHERE 是否保留 | 是否通过这条 CHECK |
-| --- | --- | --- | --- |
-| 150 | TRUE | 是 | 是 |
-| 80 | FALSE | 否 | 否 |
-| NULL | UNKNOWN | 否 | 是 |
+| ------ | ------------ | ---------- | ------------ |
+| 150    | TRUE         | 是          | 是            |
+| 80     | FALSE        | 否          | 否            |
+| NULL   | UNKNOWN      | 否          | 是            |
+
 
 表中的“通过”仅指这条 CHECK。它没有证明未知金额一定大于 100，只表示目前没有得到违反条件的 FALSE。如果业务同时要求金额必须填写，需要另外声明 `NOT NULL`；单独的 `CHECK (amount > 100)` 没有承担这个要求。
 
@@ -101,11 +107,13 @@ CREATE TABLE checked_orders (
 
 原书为这两种接受方式引入了显式的转换记号：`⌊p⌋⊥` 与 `⌈p⌉⊥`。原书把 `⊥` 印为下标，这里紧接在右括号之后显示。底部带横线的括号 `⌊…⌋` 将 UNKNOWN 转成 FALSE，顶部带横线的括号 `⌈…⌉` 将 UNKNOWN 转成 TRUE；原有的 TRUE 和 FALSE 都保持不变。这不是数值的取整运算。
 
-| p | ⌊p⌋⊥：将未知解释为假 | ⌈p⌉⊥：将未知解释为真 |
-| --- | --- | --- |
-| TRUE | TRUE | TRUE |
-| FALSE | FALSE | FALSE |
-| UNKNOWN | FALSE | TRUE |
+
+| p       | ⌊p⌋⊥：将未知解释为假 | ⌈p⌉⊥：将未知解释为真 |
+| ------- | ------------ | ------------ |
+| TRUE    | TRUE         | TRUE         |
+| FALSE   | FALSE        | FALSE        |
+| UNKNOWN | FALSE        | TRUE         |
+
 
 WHERE 的接受行为可以用 `⌊p⌋⊥` 表示：转换后为 TRUE 才保留。CHECK 的通过行为可以用 `⌈p⌉⊥` 表示：转换后为 TRUE 就不违反这条约束。两种转换都把三个可能的真值变成两个，但保留的是不同的接受规则。
 

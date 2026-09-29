@@ -58,8 +58,8 @@ Dependent join 是这套代数中的一个成员。它与其他算子同样需�
 
 | 顺序 | 教学内容 | 读完后应掌握 |
 | --- | --- | --- |
-| L07 | [X → Y 究竟约束什么](lessons/07-functional-dependencies.md) | FD 的量化定义、传递链和键的直觉 |
-| L08 | [Armstrong 公理、闭包与键](lessons/08-armstrong-closure-and-keys.md) | 公理、派生规则、属性闭包和最小键 |
+| L07 | [X → Y 究竟约束什么](lessons/07-functional-dependencies.md) | 排序例子、FD 定义的读法、三个常见误区与依赖来源 |
+| L08 | [如何从已有 FD 推出新 FD](lessons/08-armstrong-closure-and-keys.md) | 六条推理规则、属性闭包、超键与键 |
 | L09 | [FD、NULL、重复行与算子传播](lessons/09-fd-null-duplicates-and-propagation.md) | 点等号、值层 FD、重复边界和原文传播缺口 |
 
 第 7 章 §7.1 是重点基础模块，按下面的顺序阅读：

@@ -34,12 +34,12 @@
 
 | 小节 | 本节要讲明白的事 | 原文 |
 | --- | --- | --- |
-| L10 用有限集合描述结果 | schema、集合运算、特征函数与相等 | §7.1.1，pp.209–210 |
-| L11 Bag 保存了集合遗漏的信息 | 重数、成员关系、大小、singleton 与“只有一种值” | §7.1.2，pp.211–212 |
-| L12 Bag 运算怎样作用于重数 | 加法、min、截断减法，与 max-union 的区别 | §7.1.2，pp.212–214 |
-| L13 一条成立的分配律和一条反例 | 首次完整使用逐点重数证明；不依赖任何 join | §7.1.2，p.213 |
-| L14 为什么要显式控制重复 | set-faithfulness、Πᴰ、bag 算子与去重的组合 | §7.1.3，pp.214–215 |
-| L15 顺序带来了第三种相等 | sequence、首尾、连接、位置函数；线性先给直觉，M06 再展开 | §7.1.4，pp.215–216；回看 §7.1.1 |
+| [L10 用有限集合描述结果](lessons/10-sets-and-characteristic-functions.md) | schema、集合运算、特征函数与相等 | §7.1.1，pp.209–210 |
+| [L11 Bag 保存了集合遗漏的信息](lessons/11-bags-and-multiplicity.md) | 重数、成员关系、大小、singleton 与“只有一种值” | §7.1.2，pp.211–212 |
+| [L12 Bag 运算怎样作用于重数](lessons/12-bag-operations.md) | 加法、min、截断减法，与 max-union 的区别 | §7.1.2，pp.212–214 |
+| [L13 一条成立的分配律和一条反例](lessons/13-bag-laws-and-proof.md) | 首次完整使用逐点重数证明；不依赖任何 join | §7.1.2，p.213 |
+| [L14 为什么要显式控制重复](lessons/14-explicit-duplicate-control.md) | set-faithfulness、Πᴰ、bag 算子与去重的组合 | §7.1.3，pp.214–215 |
+| [L15 顺序带来了第三种相等](lessons/15-sequences-and-order.md) | sequence、首尾、连接、位置函数；线性先给直觉，M06 再展开 | §7.1.4，pp.215–216；回看 §7.1.1 |
 
 ## M04 · 聚合函数（§7.2）
 

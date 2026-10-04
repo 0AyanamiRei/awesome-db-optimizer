@@ -126,7 +126,9 @@ L06b 已重新核对图 5.2 的量词交换、分配、否定和空范围条件�
 
 L07–L09 于 2026-09-29 按可读性重构：每节以问题引导、表格化规则、配套小数据例子和带答案的自测。原文内容（排序例子、FD 定义、六条规则、`F⁺`、超键/键、点等号定义）与教学补充（示例数据、推导过程、属性闭包算法、选课表例题、算子传播检查表）在正文中分别标明。旧版错误键例题已纠正，详见 B15。
 
-L09 已重新核对 §6.2–§6.4 的 p.208：含 NULL 的 FD 使用点等号；§6.2 在定义后留下 `XXX explain why, discuss lax dependencies`，§6.3 只有 `XXX dependency graphs`，§6.4 只有 bibliography。L09 用 `=`/`=⁻` 的反例补上“为什么用点等号”；lax dependencies 未定义，不展开。算子传播检查表限定为不含 NULL 的教学补充，不说成原书定理。
+L09 已重新核对 §6.2–§6.4 的 p.208：含 NULL 的 FD 使用点等号；§6.2 在定义后留下 `XXX explain why, discuss lax dependencies`，§6.3 只有 `XXX dependency graphs`，§6.4 只有 bibliography。L09 用 `=`/`=⁻` 的反例补上“为什么用点等号”，并新增以 TiDB 工程约定为例的 strict/lax 区分、算子传播、优化用途、统计 FD 与证据等级；这些均标为教学补充，不说成原书定理。
+
+L09b 于 2026-10-01 调查 PostgreSQL `REL_18_0`、MySQL `mysql-8.4.0`、TiDB `v8.5.0`、Apache Calcite `calcite-1.40.0` 和 CockroachDB `v24.1.0` 的源码/官方文档。调查区分“属性结构存在”和“某条规则实际消费该属性”：例如 TiDB 的 aggregation elimination 在所查版本直接读取 `Schema().Keys`，不能据此声称它调用了 `FDSet` 闭包；PostgreSQL 的 extended statistics 只用于估算，不是等价改写许可。
 
 L10–L15 已重新核对 §7.1 的 pp.209–216：集合/Bag/Sequence 的特征函数、NULL 的点等号、Bag 的加法并与 min 交、截断差、`∪max`、set-faithfulness、`Πᴰ` 和 Sequence 的位置/连接语义已覆盖。L13 的成立式与反例按重数逐点核验；Sequence 的物理流实现说明保持为教学补充。
 

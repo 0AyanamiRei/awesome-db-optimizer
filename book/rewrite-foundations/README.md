@@ -12,7 +12,7 @@ Dependent join 是这套代数中的一个成员。它与其他算子同样需�
 
 ## 当前成果
 
-版本：**0.9，2026-09-22**。已逐页通读本地 PDF 的 Part II，覆盖正文、公式、例子、表格及占位内容；对部分符号和疑似问题另行查看页面图像。这个状态表示已经完成内容梳理，不表示独立验证了每一条公式、算法和所引文献。第 5 章的 L01–L06 与补充课 L06b、第 6 章的 L07–L09、以及第 7 章 §7.1 的 L10–L15 已完成。
+版本：**0.10，2026-10-01**。已逐页通读本地 PDF 的 Part II，覆盖正文、公式、例子、表格及占位内容；对部分符号和疑似问题另行查看页面图像。这个状态表示已经完成内容梳理，不表示独立验证了每一条公式、算法和所引文献。第 5 章的 L01–L06 与补充课 L06b、第 6 章的 L07–L09b、以及第 7 章 §7.1 的 L10–L15 已完成。
 
 第 5 章按下面的顺序阅读：
 
@@ -60,7 +60,8 @@ Dependent join 是这套代数中的一个成员。它与其他算子同样需�
 | --- | --- | --- |
 | L07 | [X → Y 究竟约束什么](lessons/07-functional-dependencies.md) | 排序例子、FD 定义的读法、三个常见误区与依赖来源 |
 | L08 | [如何从已有 FD 推出新 FD](lessons/08-armstrong-closure-and-keys.md) | 六条推理规则、属性闭包、超键与键 |
-| L09 | [FD、NULL、重复行与算子传播](lessons/09-fd-null-duplicates-and-propagation.md) | 点等号、值层 FD、重复边界和原文传播缺口 |
+| L09 | [FD、NULL、重复行与算子传播](lessons/09-fd-null-duplicates-and-propagation.md) | 点等号、strict/lax FD、重复边界、算子传播与优化机会 |
+| L09b | [从 FD 到开源优化器的实际代码](lessons/09b-fd-in-open-source-optimizers.md) | PostgreSQL、MySQL、TiDB、Calcite、CockroachDB 的表示、传播与消费者 |
 
 第 7 章 §7.1 是重点基础模块，按下面的顺序阅读：
 

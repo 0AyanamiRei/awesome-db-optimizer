@@ -26,7 +26,8 @@
 | --- | --- | --- |
 | [L07 X→Y 究竟约束什么](lessons/07-functional-dependencies.md) | 从两条记录的比较定义 FD | §6.1，p.207 |
 | [L08 如何从已有 FD 推出新 FD](lessons/08-armstrong-closure-and-keys.md) | Armstrong 公理、派生规则、闭包与键 | §6.1，p.208 |
-| [L09 FD、NULL 与重复行](lessons/09-fd-null-duplicates-and-propagation.md) | 含 NULL 的定义，值依赖和出现次数的区别；标出原文未完成的传播部分 | §6.2–6.4，p.208；B04 |
+| [L09 FD、NULL、重复行与算子传播](lessons/09-fd-null-duplicates-and-propagation.md) | strict/lax FD、值依赖和出现次数的区别、算子传播，以及排序/分组/DISTINCT/连接等优化用途 | §6.2–6.4，p.208；B04 |
+| [L09b 从 FD 到开源优化器的实际代码](lessons/09b-fd-in-open-source-optimizers.md) | 调查 PostgreSQL、MySQL、TiDB、Calcite、CockroachDB 的 FD 表示与实际消费者 | §6.2–6.3，源码版本记录见本节 |
 
 ## M03 · Set、Bag、Sequence（§7.1）
 
